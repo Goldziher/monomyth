@@ -32,15 +32,16 @@ disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [lint.typos]
-# `ser` is the conventional serde Serializer binding.
-extend_words = { ser = "ser" }
+# `ser` is the conventional serde Serializer binding; `heros` is the mechanical
+# PascalCase of Propp's "Hero's Reaction" variant (apostrophe dropped), not a typo.
+extend_words = { ser = "ser", heros = "heros" }
 extend_exclude = ["artifacts/**"]
 
 [hooks]
 stages = ["pre-commit"]
 
 [hooks.builtin]
-polylint = { exclude = [
+lint = { exclude = [
     "**/*.lock",
     "**/Cargo.lock",
     "**/uv.lock",
@@ -53,7 +54,7 @@ polylint = { exclude = [
     "artifacts/**",
     "corpus/raw/**",
 ] }
-polyfmt = { exclude = [
+fmt = { exclude = [
     "**/*.lock",
     "**/Cargo.lock",
     "**/uv.lock",

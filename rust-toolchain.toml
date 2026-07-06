@@ -1,0 +1,4 @@
+# Pin the toolchain. Edition 2024 + xberg's rust-version 1.91 floor; 1.96 is what we develop against.
+[toolchain]
+channel = "1.96"
+components = ["rustfmt", "clippy"]
