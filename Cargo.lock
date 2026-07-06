@@ -2073,6 +2073,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-text"
+version = "0.1.0"
+dependencies = [
+ "monomyth-core",
+]
+
+[[package]]
 name = "monostate"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

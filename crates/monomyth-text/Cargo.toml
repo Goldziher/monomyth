@@ -1,0 +1,15 @@
+[package]
+name = "monomyth-text"
+description = "The text frontend: a pure, deterministic string renderer over the monomyth domain model."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[dependencies]
+monomyth-core = { workspace = true }
+
+[lints]
+workspace = true

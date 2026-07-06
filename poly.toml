@@ -33,8 +33,9 @@ disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [lint.typos]
 # `ser` is the conventional serde Serializer binding; `heros` is the mechanical
-# PascalCase of Propp's "Hero's Reaction" variant (apostrophe dropped), not a typo.
-extend_words = { ser = "ser", heros = "heros" }
+# PascalCase of Propp's "Hero's Reaction" variant (apostrophe dropped); `ratatui`
+# is the TUI crate name. None are typos.
+extend_words = { ser = "ser", heros = "heros", ratatui = "ratatui" }
 extend_exclude = ["artifacts/**"]
 
 [hooks]
