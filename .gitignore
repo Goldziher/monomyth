@@ -3,6 +3,9 @@
 # poly (polylint) cache
 /.polylint/
 
+# LLM provider secrets (copied from xberg-io) — never commit
+/.env
+
 # OS
 .DS_Store
 
