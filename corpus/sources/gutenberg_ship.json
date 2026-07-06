@@ -1,0 +1,21 @@
+{
+  "source": "pg_key_works",
+  "note": "Curated ship-safe (US-PD) Project Gutenberg works — the 'select' step. Each entry records translator_year to document the pre-1930-translation rule; the pipeline warns if >= 1930. Expand this list to scale the ship corpus.",
+  "works": [
+    {
+      "pg_id": 4925,
+      "title": "Bulfinch's Mythology: The Age of Fable",
+      "domain": "myth",
+      "translator_year": null,
+      "note": "PD compilation (Bulfinch d. 1867)"
+    },
+    { "pg_id": 16328, "title": "Beowulf", "domain": "myth", "translator_year": 1910, "note": "Gummere translation" },
+    {
+      "pg_id": 2591,
+      "title": "Grimms' Fairy Tales",
+      "domain": "folklore",
+      "translator_year": 1884,
+      "note": "Margaret Hunt translation"
+    }
+  ]
+}
