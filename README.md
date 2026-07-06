@@ -56,8 +56,7 @@ hard invariant enforced at ingest, retrieval, and CI. See
 crates/            Rust workspace (engine, generation, knowledge, frontends, cli) — being built
 artifacts/
   frameworks/      the domain schema: validated framework + crosswalk JSON (committed)
-  text/            generated corpus chunks (regenerated, gitignored)
-corpus/            corpus tooling: license ledger (manifest.json) + framework validator
+corpus/            license & namespace ledger (manifest.json)
 adrs/              Architecture Decision Records (MADR)
 .ai-rulez/         AI-assistant governance config (generates CLAUDE.md, etc. via ai-rulez)
 poly.toml          poly (polylint) config — Rust + docs formatting/linting
@@ -65,11 +64,11 @@ poly.toml          poly (polylint) config — Rust + docs formatting/linting
 
 ## Development
 
-- Frameworks validator: `python3 corpus/frameworks/validate.py` (canonical counts + crosswalk
-  referential integrity + license-ledger invariant).
-- Format & lint: `poly fmt --fix .` then `poly lint .` (`artifacts/**` and `corpus/raw/**` are
-  excluded — data, not source).
+- Format & lint: `poly fmt --fix .` then `poly lint .` (`artifacts/**` is excluded — data, not source).
 - Rust: `cargo fmt`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`.
+
+Ingestion, retrieval, and validation of the framework artifacts are owned by the Rust
+`monomyth-knowledge` crate (xberg) — being built.
 
 Conventions and agent guidance live in [`.ai-rulez/`](./.ai-rulez); the decision history lives in
 [`adrs/`](./adrs).

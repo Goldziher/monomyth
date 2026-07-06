@@ -1,17 +1,5 @@
 /target
 
-# Python (corpus pipeline)
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# Cached raw downloads (re-fetchable; not source of truth)
-/corpus/raw/
-
-# Generated, reproducible text chunks (rebuild via `python -m monomyth_corpus fetch ...`)
-/artifacts/text/
-
 # poly (polylint) cache
 /.polylint/
 

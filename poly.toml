@@ -32,9 +32,9 @@ disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [lint.typos]
-# `ser` is the conventional serde Serializer binding; `certifi` is the Python TLS-cert package.
-extend_words = { ser = "ser", certifi = "certifi" }
-extend_exclude = ["artifacts/**", "corpus/raw/**"]
+# `ser` is the conventional serde Serializer binding.
+extend_words = { ser = "ser" }
+extend_exclude = ["artifacts/**"]
 
 [hooks]
 stages = ["pre-commit"]
