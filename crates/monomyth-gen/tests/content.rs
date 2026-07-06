@@ -31,6 +31,9 @@ const CANNED_TITLE: &str = "The Ashen Threshold";
 const CANNED_NAME: &str = "Riverwatch";
 /// The canned description every description-slot fill produces.
 const CANNED_DESCRIPTION: &str = "A windswept keep where the river forks under a bruised sky.";
+/// A ship-namespace source in the embedded ledger, used to prove grounding
+/// provenance names its source. Coupled to that ledger entry existing.
+const TEST_SOURCE_ID: &str = "polti";
 
 /// A scripted structured backend: returns canned prose shaped to the requested
 /// schema (a `TextProse` for the title, a `NamedProse` otherwise). Deterministic
@@ -176,15 +179,20 @@ struct EntityStructure {
 
 /// A byte-comparable fingerprint of everything structural: location keys + exits +
 /// occupancy, entity keys + role/archetype/location, item keys, the arc's stage
-/// sequence, and the player's location.
+/// sequence, the current stage, and the player's location.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct StructuralFingerprint {
     locations: BTreeMap<u64, Vec<(Direction, LocationId)>>,
     location_entities: BTreeMap<u64, BTreeSet<EntityId>>,
     location_items: BTreeMap<u64, BTreeSet<ItemId>>,
     entities: BTreeMap<u64, EntityStructure>,
+    // Items are compared by their actual keys (in insertion order) rather than by
+    // ordinal: the before/after snapshots are the same world mutated in place, so
+    // the keys are stable, and comparing them catches any key churn a content pass
+    // might introduce.
     items: Vec<ItemId>,
     arc: Vec<MonomythStage>,
+    current_stage: MonomythStage,
     player_location: LocationId,
 }
 
@@ -229,6 +237,7 @@ fn fingerprint(world: &World) -> StructuralFingerprint {
         entities,
         items: world.items.keys().collect(),
         arc: world.story.arc.iter().map(|beat| beat.stage).collect(),
+        current_stage: world.story.current_stage,
         player_location: world.player.location,
     }
 }
@@ -269,10 +278,9 @@ async fn fill_content_grounds_provenance_on_an_ingested_ship_source() {
         .expect("the default pipeline generates a world");
 
     let knowledge = test_knowledge();
-    // `polti` is a ship-namespace source in the embedded ledger.
     knowledge
         .ingest(
-            "polti",
+            TEST_SOURCE_ID,
             IngestInput::new("The Suppliant implores a Power in authority."),
         )
         .await
@@ -297,7 +305,7 @@ async fn fill_content_grounds_provenance_on_an_ingested_ship_source() {
         .notes
         .clone();
     assert!(
-        notes.contains("polti"),
+        notes.contains(TEST_SOURCE_ID),
         "provenance notes must name the grounding source, got: {notes}",
     );
 }

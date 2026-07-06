@@ -16,8 +16,11 @@
 //! play-time stream that starts fresh at seed position zero.
 //!
 //! Passes are isolated into sub-streams: a root RNG seeded from the world seed
-//! hands each pass, in pipeline order, a fresh child seed. Adding or reordering a
-//! pass therefore does not perturb the draws of the others.
+//! hands each pass, in pipeline order, a fresh child seed. Because the child
+//! seeds are derived sequentially, *appending* a pass leaves every earlier pass's
+//! sub-stream seed unchanged; inserting or reordering a pass shifts the seeds of
+//! everything downstream. Within a pass, changing how many draws it makes never
+//! affects any other pass's sub-stream.
 //!
 //! # Example
 //!

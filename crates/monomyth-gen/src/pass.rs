@@ -46,8 +46,9 @@ pub(crate) fn draw_range_inclusive(rng: &mut ChaCha8Rng, low: usize, high: usize
     // `high - low + 1` is the count of values in the inclusive range; it is at
     // least 1, so the modulo is well defined.
     let span = high - low + 1;
-    let span = u64::try_from(span).unwrap_or(1);
-    let offset = usize::try_from(rng.next_u64() % span).unwrap_or(0);
+    let span = u64::try_from(span).expect("usize span fits in u64 on supported platforms");
+    // The modulo result is `< span <= usize::MAX`, so it always fits back in usize.
+    let offset = usize::try_from(rng.next_u64() % span).expect("modulo result fits in usize");
     low + offset
 }
 

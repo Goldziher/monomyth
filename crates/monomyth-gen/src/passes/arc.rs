@@ -65,6 +65,11 @@ impl ProceduralPass for ArcPass {
 
         // Ground a small number of quests in one seed-chosen Booker plot.
         let plots = BookerPlot::all();
+        // Guard the `len() - 1` against underflow, mirroring the situations guard
+        // below; a non-empty plot set leaves the draw sequence unchanged.
+        if plots.is_empty() {
+            return Err(GenError::Invariant("the Booker plot set is empty"));
+        }
         let plot = plots
             .get(draw_range_inclusive(rng, 0, plots.len() - 1))
             .copied()
