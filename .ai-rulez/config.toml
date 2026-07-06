@@ -1,0 +1,27 @@
+version = "4.0"
+name = "monomyth"
+description = "Adventure generation engine — text-based adventures and dynamically-generated pixel-art games, grounded in comparative mythology. Rust workspace + xberg RAG."
+gitignore = true
+
+presets = [
+    "claude",
+    "cursor",
+    "gemini",
+    "windsurf",
+    "copilot",
+    "continue-dev",
+    "amp",
+    "cline",
+    "codex",
+    "opencode",
+    "junie",
+    "antigravity",
+]
+
+builtins = ["rust", "documentation", "default-commands"]
+
+[[mcp_servers]]
+name = "ai-rulez"
+description = "Manage AI governance config via MCP."
+command = "npx"
+args = ["-y", "ai-rulez@latest", "mcp"]
