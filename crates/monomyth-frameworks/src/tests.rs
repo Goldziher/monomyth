@@ -10,7 +10,7 @@ use crate::macro_tier::{AtuCategory, BookerPlot, MonomythStage};
 use crate::meso_tier::{DundesMotifeme, PoltiSituation, ProppFunction};
 use crate::micro_tier::MotifClass;
 
-/// Mechanical PascalCase of an artifact `name`: split on whitespace, strip every
+/// Mechanical `PascalCase` of an artifact `name`: split on whitespace, strip every
 /// non-alphanumeric character from each word, uppercase its first character, and
 /// concatenate. This is the exact rule the enum variant identifiers follow, so a
 /// round-trip through it is a pure normalization check.
@@ -74,8 +74,8 @@ macro_rules! parity_test {
                 |variant| variant.id(),
                 |variant| variant.info().name.clone(),
             );
-            for id in 1..=$count {
-                let id = id as u16;
+            let count = u16::try_from($count).expect("artifact count fits u16");
+            for id in 1..=count {
                 assert_eq!(
                     <$enum>::from_id(id).map(|variant| variant.id()),
                     Some(id),
@@ -84,7 +84,7 @@ macro_rules! parity_test {
             }
             assert_eq!(<$enum>::from_id(0), None, "id 0 has no variant");
             assert_eq!(
-                <$enum>::from_id(($count as u16) + 1),
+                <$enum>::from_id(count + 1),
                 None,
                 "id past the count has no variant",
             );

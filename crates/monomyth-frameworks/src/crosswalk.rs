@@ -63,6 +63,9 @@ struct PlotItem {
     polti_situation_ids: Vec<u16>,
 }
 
+// Field names mirror the JSON keys in character_crosswalk.json, so the shared
+// `_ids` suffix is fixed by the artifact, not a naming smell.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Deserialize)]
 struct CharacterItem {
     propp_role_ids: Vec<u16>,

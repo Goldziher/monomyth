@@ -30,8 +30,16 @@ serde_json = "1.0.150"
 slotmap = { version = "1.0.7", features = ["serde"] }
 thiserror = "2.0.18"
 
+# Lints are defined once here and inherited by every crate via `[lints] workspace = true`.
+# Priorities: group lints use priority -1 so individual overrides (priority 0/1) win.
 [workspace.lints.rust]
 unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Deliberate domain convention: the taxonomy enums pair with a `*Info` record
+# (`MonomythStage` / `MonomythStageInfo`), so the repeated stem is intentional.
+module_name_repetitions = { level = "allow", priority = 1 }
