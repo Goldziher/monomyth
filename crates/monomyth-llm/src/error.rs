@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+use crate::backend::Usage;
+
 /// An opaque error returned by a [`crate::StructuredBackend`].
 ///
 /// The real backend maps xberg's error type into this so downstream code never
@@ -62,6 +64,9 @@ pub enum LlmError {
         attempts: u32,
         /// The final deserialization error message.
         last_error: String,
+        /// Token usage accumulated across every attempt, when reported — the
+        /// failed call still costs the caller, so its cost is surfaced here.
+        usage: Option<Usage>,
     },
 }
 

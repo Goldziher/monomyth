@@ -82,12 +82,16 @@ impl Llm {
     /// Generate a value of type `T`, constraining the model to `T`'s JSON schema.
     ///
     /// On a deserialization failure the prompt is augmented with the parser error
-    /// and retried up to [`MAX_RETRIES`] times.
+    /// and retried up to [`MAX_RETRIES`] times. Token usage is accumulated across
+    /// every attempt, so [`Generated::usage`] (and [`LlmError::Parse`]'s `usage`)
+    /// reflect the full cost of the call, not just the final round-trip.
     ///
     /// # Errors
     ///
     /// - [`LlmError::Schema`] if `T`'s schema cannot be serialized.
-    /// - [`LlmError::Backend`] if a backend call fails.
+    /// - [`LlmError::Backend`] if a backend call fails. A backend error on *any*
+    ///   attempt terminates the retry loop immediately; only deserialization
+    ///   failures trigger a retry.
     /// - [`LlmError::Parse`] if no attempt produced valid output.
     pub async fn generate<T>(
         &self,
@@ -100,16 +104,26 @@ impl Llm {
         let schema = serde_json::to_value(schema_for!(T))?;
         let mut current_prompt = prompt.to_owned();
         let mut last_error = String::new();
+        let mut total_usage: Option<Usage> = None;
+        let mut attempts_made = 0;
 
         for attempt in 1..=MAX_ATTEMPTS {
+            attempts_made = attempt;
             let (value, usage) = self
                 .backend
                 .complete_json(&current_prompt, schema_name, &schema)
                 .await
                 .map_err(|source| LlmError::backend(format!("generate '{schema_name}'"), source))?;
 
+            total_usage = accumulate_usage(total_usage, usage);
+
             match serde_json::from_value::<T>(value) {
-                Ok(value) => return Ok(Generated { value, usage }),
+                Ok(value) => {
+                    return Ok(Generated {
+                        value,
+                        usage: total_usage,
+                    });
+                }
                 Err(error) => {
                     last_error = error.to_string();
                     if attempt < MAX_ATTEMPTS {
@@ -120,8 +134,9 @@ impl Llm {
         }
 
         Err(LlmError::Parse {
-            attempts: MAX_ATTEMPTS,
+            attempts: attempts_made,
             last_error,
+            usage: total_usage,
         })
     }
 
@@ -138,6 +153,16 @@ impl Llm {
             .await
             .map_err(|source| LlmError::backend("text completion", source))?;
         Ok(Generated { value, usage })
+    }
+}
+
+/// Fold a call's usage into the running total, treating a missing running total
+/// or a missing per-call usage as "nothing to add" rather than zero.
+fn accumulate_usage(total: Option<Usage>, next: Option<Usage>) -> Option<Usage> {
+    match (total, next) {
+        (Some(total), Some(next)) => Some(total.saturating_add(&next)),
+        (existing @ Some(_), None) | (None, existing @ Some(_)) => existing,
+        (None, None) => None,
     }
 }
 
@@ -343,7 +368,12 @@ mod tests {
             json!({ "name": "y" }),
             json!({ "name": "z" }),
         ];
-        let backend = FakeBackend::with_json(malformed, None);
+        let per_call = Usage {
+            prompt_tokens: Some(4),
+            completion_tokens: Some(2),
+            total_tokens: Some(6),
+        };
+        let backend = FakeBackend::with_json(malformed, Some(per_call));
 
         let error = llm_with(backend)
             .generate::<Hero>("forge a hero", "hero")
@@ -351,15 +381,88 @@ mod tests {
             .expect_err("generation must fail when every response is malformed");
 
         match error {
-            LlmError::Parse { attempts, .. } => {
+            LlmError::Parse {
+                attempts, usage, ..
+            } => {
                 assert_eq!(
                     attempts, MAX_ATTEMPTS,
                     "attempts must equal MAX_ATTEMPTS (MAX_RETRIES + 1)"
                 );
                 assert_eq!(attempts, 3, "documented total attempt count is 3");
+                assert_eq!(
+                    usage,
+                    Some(Usage {
+                        prompt_tokens: Some(12),
+                        completion_tokens: Some(6),
+                        total_tokens: Some(18),
+                    }),
+                    "a failed call still costs the caller: usage sums over all 3 attempts",
+                );
             }
             other => panic!("expected LlmError::Parse, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn should_accumulate_usage_across_a_retry() {
+        let per_call = Usage {
+            prompt_tokens: Some(5),
+            completion_tokens: Some(3),
+            total_tokens: Some(8),
+        };
+        // First response is malformed (triggers one retry), second recovers.
+        let backend = FakeBackend::with_json(
+            vec![
+                json!({ "name": "Enkidu" }),
+                json!({ "name": "Enkidu", "level": 3 }),
+            ],
+            Some(per_call),
+        );
+
+        let Generated { usage, .. } = llm_with(backend)
+            .generate::<Hero>("forge a hero", "hero")
+            .await
+            .expect("second attempt should recover");
+
+        assert_eq!(
+            usage,
+            Some(Usage {
+                prompt_tokens: Some(10),
+                completion_tokens: Some(6),
+                total_tokens: Some(16),
+            }),
+            "reported usage must sum both round-trips, not just the successful one",
+        );
+    }
+
+    #[tokio::test]
+    async fn should_wrap_backend_error_with_operation_context() {
+        // An empty response script makes `complete_json` return a `BackendError`.
+        let backend = FakeBackend::with_json(Vec::new(), None);
+
+        let error = llm_with(backend)
+            .generate::<Hero>("forge a hero", "hero")
+            .await
+            .expect_err("a backend failure must surface");
+
+        match error {
+            LlmError::Backend { context, source } => {
+                assert_eq!(
+                    context, "generate 'hero'",
+                    "context must name the operation and schema",
+                );
+                assert_eq!(source.to_string(), "no scripted responses remain");
+            }
+            other => panic!("expected LlmError::Backend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_reject_a_whitespace_only_model() {
+        assert!(
+            matches!(Llm::from_env("   "), Err(LlmError::EmptyModel)),
+            "a whitespace-only model string must be rejected as empty",
+        );
     }
 
     #[tokio::test]
