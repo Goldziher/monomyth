@@ -2028,6 +2028,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-gen"
+version = "0.1.0"
+dependencies = [
+ "monomyth-core",
+ "monomyth-frameworks",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "monomyth-knowledge"
 version = "0.1.0"
 dependencies = [
