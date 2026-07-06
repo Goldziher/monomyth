@@ -23,6 +23,8 @@
 //! and snapshot-testable; the numeric ids are an artifact detail, reachable via
 //! [`MonomythStage::id`] / [`MonomythStage::from_id`] but never on the wire.
 
+#![forbid(unsafe_code)]
+
 mod character;
 mod crosswalk;
 mod info;
