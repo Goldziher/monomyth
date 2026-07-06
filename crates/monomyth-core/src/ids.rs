@@ -23,4 +23,8 @@ new_key_type! {
 
     /// Stable key for a [`Quest`](crate::Quest) in [`Story::quests`](crate::Story).
     pub struct QuestId;
+
+    /// Stable key for a [`NarrativeNode`](crate::NarrativeNode) in
+    /// [`NarrativeStructure::nodes`](crate::NarrativeStructure).
+    pub struct NarrativeNodeId;
 }

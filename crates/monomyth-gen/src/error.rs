@@ -36,6 +36,13 @@ pub enum GenError {
     #[error("internal generator invariant violated: {0}")]
     Invariant(&'static str),
 
+    /// A pass assembled a malformed narrative structure.
+    ///
+    /// The [`BackbonePass`](crate::BackbonePass) validates the graph it builds; a
+    /// failure here signals a bug in the backbone assembly rather than bad input.
+    #[error("generated narrative structure is invalid")]
+    Narrative(#[from] monomyth_core::NarrativeError),
+
     /// An LLM call in the content phase failed (backend error, or model output
     /// that could not be parsed into the requested schema).
     #[error("content generation LLM call failed")]

@@ -18,7 +18,7 @@ use slotmap::SlotMap;
 
 use crate::content::Content;
 use crate::entity::{Entity, Item, Player};
-use crate::ids::{EntityId, ItemId, LocationId};
+use crate::ids::{EntityId, ItemId, LocationId, NarrativeNodeId};
 use crate::rng::RngState;
 use crate::story::Story;
 
@@ -26,7 +26,12 @@ use crate::story::Story;
 ///
 /// A named constant so a loader can reject or migrate an incompatible world
 /// rather than misinterpreting its fields.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// Bumped 1 → 2 for the breaking narrative-structure change: the flat `Story.arc`
+/// / `current_stage` fields were replaced by a branching
+/// [`NarrativeStructure`](crate::NarrativeStructure) and a
+/// [`WorldState::cursor`] play position.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// A compass or vertical direction connecting two locations.
 ///
@@ -88,6 +93,13 @@ pub struct WorldState {
     pub turn: u64,
     /// Named boolean flags set by gameplay (quest triggers, doors, …).
     pub flags: BTreeMap<String, bool>,
+    /// The player's current position in the
+    /// [`Story::structure`](crate::Story::structure), starting at its
+    /// [`root`](crate::NarrativeStructure::root).
+    ///
+    /// [`Default`] is a null [`NarrativeNodeId`]; generation and any bootstrap must
+    /// set it to the structure's root before play.
+    pub cursor: NarrativeNodeId,
 }
 
 /// A node in the world graph: its prose, its exits, and what occupies it.

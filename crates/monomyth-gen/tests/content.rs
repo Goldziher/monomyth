@@ -178,8 +178,8 @@ struct EntityStructure {
 }
 
 /// A byte-comparable fingerprint of everything structural: location keys + exits +
-/// occupancy, entity keys + role/archetype/location, item keys, the arc's stage
-/// sequence, the current stage, and the player's location.
+/// occupancy, entity keys + role/archetype/location, item keys, the narrative
+/// spine's stage sequence, the cursor's stage, and the player's location.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct StructuralFingerprint {
     locations: BTreeMap<u64, Vec<(Direction, LocationId)>>,
@@ -191,8 +191,8 @@ struct StructuralFingerprint {
     // the keys are stable, and comparing them catches any key churn a content pass
     // might introduce.
     items: Vec<ItemId>,
-    arc: Vec<MonomythStage>,
-    current_stage: MonomythStage,
+    spine: Vec<MonomythStage>,
+    cursor_stage: Option<MonomythStage>,
     player_location: LocationId,
 }
 
@@ -230,14 +230,19 @@ fn fingerprint(world: &World) -> StructuralFingerprint {
         })
         .collect();
 
+    let structure = &world.story.structure;
     StructuralFingerprint {
         locations,
         location_entities,
         location_items,
         entities,
         items: world.items.keys().collect(),
-        arc: world.story.arc.iter().map(|beat| beat.stage).collect(),
-        current_stage: world.story.current_stage,
+        spine: structure
+            .spine()
+            .into_iter()
+            .filter_map(|id| structure.node(id).map(|node| node.stage))
+            .collect(),
+        cursor_stage: structure.node(world.state.cursor).map(|node| node.stage),
         player_location: world.player.location,
     }
 }

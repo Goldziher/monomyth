@@ -29,6 +29,8 @@ pub enum ContentKind {
     Synopsis,
     /// A line of spoken dialogue.
     Dialogue,
+    /// The prose of a branch choice on a [`NarrativeEdge`](crate::NarrativeEdge).
+    Choice,
 }
 
 /// A description of the prose a [`Content`] slot needs, independent of any value.

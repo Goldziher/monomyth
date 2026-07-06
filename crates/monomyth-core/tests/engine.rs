@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use monomyth_core::{
     Action, ActionError, Content, ContentKind, ContentPrompt, Direction, Entity, EntityId,
-    EntityKind, Event, ExamineTarget, Item, ItemId, Location, LocationId, Player, Provenance,
-    Quest, RngState, SCHEMA_VERSION, StageBeat, Story, World, WorldMeta, WorldState, apply,
+    EntityKind, Event, ExamineTarget, Item, ItemId, Location, LocationId, NarrativeNode,
+    NarrativeStructure, NodeKind, Player, Provenance, Quest, RngState, SCHEMA_VERSION, Story,
+    World, WorldMeta, WorldState, apply,
 };
 use monomyth_frameworks::{MonomythStage, PoltiSituation, arc_functions};
 use slotmap::SlotMap;
@@ -88,12 +89,22 @@ fn fixture(seed: u64) -> Fixture {
         entity.location = Some(start);
     }
 
+    // A minimal single-node structure whose sole node is both root and ending.
+    let mut nodes = SlotMap::with_key();
+    let root = nodes.insert(NarrativeNode::new(
+        "CallToAdventure",
+        NodeKind::Ending,
+        MonomythStage::CallToAdventure,
+        Content::empty(ContentPrompt::new(ContentKind::Synopsis, "the call")),
+    ));
+    let structure = NarrativeStructure {
+        nodes,
+        root,
+        endings: BTreeSet::from([root]),
+    };
     let story = Story {
-        arc: vec![StageBeat::new(
-            MonomythStage::CallToAdventure,
-            Content::empty(ContentPrompt::new(ContentKind::Synopsis, "the call")),
-        )],
-        current_stage: MonomythStage::CallToAdventure,
+        structure,
+        plot: None,
         quests: {
             let mut quests = SlotMap::with_key();
             quests.insert(Quest {
@@ -116,7 +127,10 @@ fn fixture(seed: u64) -> Fixture {
         items,
         player: Player::new(start),
         story,
-        state: WorldState::default(),
+        state: WorldState {
+            cursor: root,
+            ..WorldState::default()
+        },
         rng: RngState::new(seed),
     };
 
@@ -346,13 +360,15 @@ fn identical_action_sequences_yield_identical_events_and_worlds() {
 }
 
 #[test]
-fn stage_beat_functions_match_arc_crosswalk() {
+fn narrative_node_arc_functions_match_crosswalk() {
     let stage = MonomythStage::TheRoadOfTrials;
-    let beat = StageBeat::new(
+    let node = NarrativeNode::new(
+        "TheRoadOfTrials",
+        NodeKind::Beat,
         stage,
         Content::empty(ContentPrompt::new(ContentKind::Synopsis, "trials")),
     );
-    assert_eq!(beat.functions(), arc_functions(stage));
+    assert_eq!(node.arc_functions(), arc_functions(stage));
 }
 
 #[test]

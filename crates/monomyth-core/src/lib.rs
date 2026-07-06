@@ -26,7 +26,7 @@
 //!
 //! # Grounding
 //!
-//! The story vocabulary is not invented: [`StageBeat`], [`Quest`], and the
+//! The story vocabulary is not invented: [`NarrativeNode`], [`Quest`], and the
 //! character facets on [`Entity`] are bound to the framework artifacts through
 //! `monomyth-frameworks`.
 //!
@@ -54,6 +54,7 @@ mod content;
 mod engine;
 mod entity;
 mod ids;
+mod narrative;
 mod rng;
 mod story;
 mod world;
@@ -61,7 +62,10 @@ mod world;
 pub use content::{Content, ContentKind, ContentPrompt, Provenance, ProvenanceSource};
 pub use engine::{Action, ActionError, Event, ExamineTarget, apply};
 pub use entity::{DEFAULT_MAX_HEALTH, Entity, EntityKind, Item, Player};
-pub use ids::{EntityId, ItemId, LocationId, QuestId};
+pub use ids::{EntityId, ItemId, LocationId, NarrativeNodeId, QuestId};
+pub use narrative::{
+    EdgeKind, NarrativeEdge, NarrativeError, NarrativeNode, NarrativeStructure, NodeKind,
+};
 pub use rng::RngState;
-pub use story::{Quest, StageBeat, Story};
+pub use story::{Quest, Story};
 pub use world::{Direction, Location, SCHEMA_VERSION, World, WorldMeta, WorldState};

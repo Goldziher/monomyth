@@ -43,10 +43,9 @@ mod pass;
 mod passes;
 
 use monomyth_core::{
-    Content, ContentKind, ContentPrompt, LocationId, Player, RngState, SCHEMA_VERSION, Story,
-    World, WorldMeta, WorldState,
+    Content, ContentKind, ContentPrompt, LocationId, NarrativeStructure, Player, RngState,
+    SCHEMA_VERSION, Story, World, WorldMeta, WorldState,
 };
-use monomyth_frameworks::MonomythStage;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
@@ -54,7 +53,7 @@ pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
 pub use content_passes::{EntityContentPass, LocationContentPass, TitleContentPass};
 pub use error::GenError;
 pub use pass::ProceduralPass;
-pub use passes::{ArcPass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass};
+pub use passes::{BackbonePass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass};
 
 /// A generator with two ordered pipelines: the deterministic procedural passes
 /// that assemble structure from a seed, and the content passes that later fill the
@@ -99,18 +98,18 @@ impl Generator {
 
     /// Build a generator with the standard procedural and content pipelines.
     ///
-    /// The procedural order — [`MapPass`] → [`ArcPass`] → [`CastPass`] →
-    /// [`ItemsPass`] — is fixed: the map lays down the location graph that the cast
-    /// and items are placed into, and the arc grounds the story spine
-    /// independently. The content order — [`TitleContentPass`] →
-    /// [`LocationContentPass`] → [`EntityContentPass`] — fills the prose slots the
-    /// procedural passes left empty.
+    /// The procedural order — [`BackbonePass`] → [`MapPass`] → [`CastPass`] →
+    /// [`ItemsPass`] — is fixed and plan-first: the backbone grounds the branching
+    /// narrative structure independently, then the map lays down the location graph
+    /// that the cast and items are placed into. The content order —
+    /// [`TitleContentPass`] → [`LocationContentPass`] → [`EntityContentPass`] —
+    /// fills the prose slots the procedural passes left empty.
     #[must_use]
     pub fn with_default_passes() -> Self {
         Self::with_pipelines(
             vec![
+                Box::new(BackbonePass::new()),
                 Box::new(MapPass::new()),
-                Box::new(ArcPass::new()),
                 Box::new(CastPass::new()),
                 Box::new(ItemsPass::new()),
             ],
@@ -177,9 +176,9 @@ impl Generator {
     }
 }
 
-/// A structureless world the passes fill in: empty slotmaps, an empty arc, a
-/// placeholder opening stage (overwritten by [`ArcPass`]), and a bootstrap player
-/// at the null location (overwritten by [`MapPass`]).
+/// A structureless world the passes fill in: empty slotmaps, an empty narrative
+/// structure (overwritten by [`BackbonePass`]), and a bootstrap player at the null
+/// location (overwritten by [`MapPass`]).
 fn bootstrap_world(seed: u64) -> World {
     World {
         meta: WorldMeta {
@@ -192,8 +191,8 @@ fn bootstrap_world(seed: u64) -> World {
         items: slotmap_default(),
         player: Player::new(LocationId::default()),
         story: Story {
-            arc: Vec::new(),
-            current_stage: MonomythStage::CallToAdventure,
+            structure: NarrativeStructure::default(),
+            plot: None,
             quests: slotmap_default(),
         },
         state: WorldState::default(),
@@ -276,15 +275,26 @@ mod tests {
     }
 
     #[test]
-    fn arc_covers_every_stage_in_order() {
+    fn spine_covers_every_stage_in_order() {
         let world = generated();
-        assert!(!world.story.arc.is_empty(), "the arc must be non-empty");
-        let stages = world.story.arc.iter().map(|beat| beat.stage);
+        let structure = &world.story.structure;
+        assert_eq!(structure.validate(), Ok(()), "the structure must be valid");
+        // With no forks yet, the spine is the whole trunk.
+        let spine = structure.spine();
+        let stages = spine
+            .iter()
+            .map(|&id| structure.node(id).expect("spine node exists").stage);
         assert!(
             stages.eq(MonomythStage::all().iter().copied()),
-            "beats must be the monomyth stages, unique and in order",
+            "the spine must cover the monomyth stages, unique and in id order",
         );
-        assert_eq!(world.story.current_stage, MonomythStage::CallToAdventure);
+        // The cursor starts at the root, which is the first stage.
+        let root = structure.root();
+        assert_eq!(world.state.cursor, root);
+        assert_eq!(
+            structure.node(root).expect("root exists").stage,
+            MonomythStage::CallToAdventure,
+        );
     }
 
     #[test]
@@ -345,8 +355,8 @@ mod tests {
             slots.push(&item.name);
             slots.push(&item.description);
         }
-        for beat in &world.story.arc {
-            slots.push(&beat.synopsis);
+        for node in world.story.structure.nodes.values() {
+            slots.push(&node.synopsis);
         }
         for quest in world.story.quests.values() {
             slots.push(&quest.title);

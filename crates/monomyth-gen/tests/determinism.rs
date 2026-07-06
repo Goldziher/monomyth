@@ -20,7 +20,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// An intentional change to the generator (new pass, changed layout, reordered
 /// draws) is expected to change this value; update it deliberately and review the
 /// diff. An unexpected change means the generator lost determinism or drifted.
-const GOLDEN_SEED_42_FNV1A: u64 = 0x9780_5926_969d_4982;
+const GOLDEN_SEED_42_FNV1A: u64 = 0x303c_390a_3107_5b74;
 
 /// A tiny, dependency-free FNV-1a over raw bytes.
 fn fnv1a(bytes: &[u8]) -> u64 {
