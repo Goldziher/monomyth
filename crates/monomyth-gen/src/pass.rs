@@ -56,3 +56,13 @@ pub(crate) fn draw_range_inclusive(rng: &mut ChaCha8Rng, low: usize, high: usize
 pub(crate) fn draw_bool(rng: &mut ChaCha8Rng) -> bool {
     rng.next_u64() & 1 == 1
 }
+
+/// Draw a `bool` that is `true` with probability `permille` in 1000.
+///
+/// Integer permille keeps the decision float-free and stream-stable, matching the
+/// modulo reduction the other helpers use. `permille >= 1000` is always `true`;
+/// `0` is always `false`. Consumes exactly one stream word regardless of outcome,
+/// so a caller's stream position never depends on the result.
+pub(crate) fn draw_chance(rng: &mut ChaCha8Rng, permille: u16) -> bool {
+    rng.next_u64() % 1000 < u64::from(permille)
+}

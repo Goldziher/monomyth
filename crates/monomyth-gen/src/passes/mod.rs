@@ -10,7 +10,7 @@ mod cast;
 mod items;
 mod map;
 
-pub use backbone::BackbonePass;
+pub use backbone::{BackbonePass, NarrativeConfig, PlotChoice};
 pub use cast::CastPass;
 pub use items::ItemsPass;
 pub use map::{MAX_ROOMS, MIN_ROOMS, MapPass};

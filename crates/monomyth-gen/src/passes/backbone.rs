@@ -1,112 +1,104 @@
 //! [`BackbonePass`]: build the branching narrative skeleton from the framework
 //! artifacts.
 //!
-//! This is the macro tier of narrative generation. In this milestone the backbone
-//! is a **linear trunk**: one [`NarrativeNode`] per [`MonomythStage`] in artifact
-//! `id` order (deterministic, grounded in scholarship rather than invented),
-//! chained by a single [`EdgeKind::Sequence`] edge each. The first stage node is
-//! the [`root`](NarrativeStructure::root) (a [`NodeKind::Origin`]); the last is the
-//! sole ending (a [`NodeKind::Ending`]).
+//! This is the macro tier of narrative generation. It lays a trunk of one
+//! [`NarrativeNode`] per [`MonomythStage`] in artifact `id` order (deterministic,
+//! grounded in scholarship rather than invented), chained by [`EdgeKind::Sequence`]
+//! edges — the spine. At the corpus-flagged **optional** stages
+//! ([`MonomythStage::info`]`().optional`) it opens **player-choice fork diamonds**:
+//! the mandatory spine skips the optional beat via its primary `Sequence` edge,
+//! while a [`EdgeKind::Choice`] edge detours through it and reconverges on the next
+//! mandatory stage. Because consecutive optional stages exist, optionals are grouped
+//! into *runs* and each run is one detour; forks add edges, not nodes, so the node
+//! count is fixed at the number of stages and the graph is always a reconverging DAG.
 //!
-//! Player-choice fork diamonds at the corpus-flagged *optional* stages are the next
-//! milestone; the node/edge model already accommodates them (the empty edge labels
-//! and node guards are the forward seams), so this pass builds the fork-less spine
-//! without foreclosing them.
+//! Whether a run forks is a seeded [`draw_chance`] over
+//! [`NarrativeConfig::fork_chance_permille`]; the roll is taken once per run
+//! regardless of outcome, so the stream position never depends on graph shape.
 //!
-//! Each synopsis slot is left empty, hinted with the stage and the Propp functions
-//! that realize it. The pass also records the seed-chosen [`BookerPlot`] on the
-//! story and grounds one or two quests in that plot via its Polti situations.
+//! The pass also records the seed-chosen [`BookerPlot`] on the story and grounds one
+//! or two quests in that plot via its Polti situations. Every prose slot (node
+//! synopsis, edge label) is left empty for a later content layer.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use monomyth_core::{
-    Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode,
+    Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode, NarrativeNodeId,
     NarrativeStructure, NodeKind, Quest, World,
 };
 use monomyth_frameworks::{BookerPlot, MonomythStage, arc_functions, plot_situations};
 use rand_chacha::ChaCha8Rng;
 
 use crate::error::GenError;
-use crate::pass::{ProceduralPass, draw_range_inclusive};
+use crate::pass::{ProceduralPass, draw_chance, draw_range_inclusive};
 
 /// The fewest quests the backbone pass grounds in the chosen plot.
 const MIN_QUESTS: usize = 1;
 /// The most quests the backbone pass grounds in the chosen plot.
 const MAX_QUESTS: usize = 2;
+/// Default probability (permille) that an optional-stage run forks into a choice.
+const DEFAULT_FORK_CHANCE_PERMILLE: u16 = 500;
+
+/// How the macro [`BookerPlot`] backbone is chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlotChoice {
+    /// Draw the plot from the seed.
+    Seeded,
+    /// Use a fixed plot, consuming no randomness.
+    Fixed(BookerPlot),
+}
+
+/// Tunable knobs for narrative-structure generation (the macro layer).
+///
+/// v1 exposes the macro controls. Branch factor, a node budget, a reconvergence
+/// toggle, and the meso/micro tier switches are deferred to later layers, which is
+/// why they are absent here rather than present-but-ignored.
+#[derive(Debug, Clone, Copy)]
+pub struct NarrativeConfig {
+    /// How the Booker plot is chosen.
+    pub plot: PlotChoice,
+    /// Probability, in permille (0..=1000), that a run of optional stages forks
+    /// into a player choice rather than being taken inline on the spine.
+    pub fork_chance_permille: u16,
+}
+
+impl Default for NarrativeConfig {
+    fn default() -> Self {
+        Self {
+            plot: PlotChoice::Seeded,
+            fork_chance_permille: DEFAULT_FORK_CHANCE_PERMILLE,
+        }
+    }
+}
+
+/// A maximal run of consecutive optional stages, by index into
+/// [`MonomythStage::all`]. Its mandatory anchor is `first - 1` and its
+/// reconvergence target is `last + 1`; both are guaranteed to exist because the
+/// first and last Campbell stages are mandatory.
+#[derive(Debug, Clone, Copy)]
+struct Run {
+    first: usize,
+    last: usize,
+}
 
 /// Builds the branching narrative structure, positions the play cursor, records the
 /// macro plot, and seeds quests.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct BackbonePass;
+pub struct BackbonePass {
+    config: NarrativeConfig,
+}
 
 impl BackbonePass {
-    /// Construct the backbone pass.
+    /// Construct the backbone pass with the default [`NarrativeConfig`].
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Assemble the linear trunk of stage nodes into a [`NarrativeStructure`].
-    ///
-    /// Nodes are inserted in [`MonomythStage`] `id` order, so the `SlotMap` insertion
-    /// order — and therefore the serialized output — is deterministic. The trunk
-    /// makes no RNG draws, so it does not perturb the pass's stream position.
-    fn build_structure() -> Result<NarrativeStructure, GenError> {
-        let stages = MonomythStage::all();
-        let last = stages
-            .len()
-            .checked_sub(1)
-            .ok_or(GenError::Invariant("the monomyth arc has no stages"))?;
-
-        // Build via a default structure so the pass need not name the `slotmap`
-        // crate directly (it is a transitive dependency through the model).
-        let mut structure = NarrativeStructure::default();
-        let mut ids = Vec::with_capacity(stages.len());
-        for (index, &stage) in stages.iter().enumerate() {
-            let kind = if index == 0 {
-                NodeKind::Origin
-            } else if index == last {
-                NodeKind::Ending
-            } else {
-                NodeKind::Beat
-            };
-            let hint = format!(
-                "monomyth stage {stage:?} ({} of {}); realizes Propp functions {:?}",
-                index + 1,
-                stages.len(),
-                arc_functions(stage),
-            );
-            let node = NarrativeNode::new(
-                format!("{stage:?}"),
-                kind,
-                stage,
-                Content::empty(ContentPrompt::new(ContentKind::Synopsis, hint)),
-            );
-            ids.push(structure.nodes.insert(node));
-        }
-
-        // Chain each node to the next with a single Sequence edge.
-        for pair in ids.windows(2) {
-            let [from, to] = [pair[0], pair[1]];
-            let hint = format!(
-                "advance from {:?} to {:?}",
-                structure.nodes[from].stage, structure.nodes[to].stage,
-            );
-            structure.nodes[from].out.push(NarrativeEdge::new(
-                to,
-                EdgeKind::Sequence,
-                Content::empty(ContentPrompt::new(ContentKind::Choice, hint)),
-            ));
-        }
-
-        structure.root = *ids
-            .first()
-            .ok_or(GenError::Invariant("the monomyth arc has no stages"))?;
-        let ending = *ids
-            .last()
-            .ok_or(GenError::Invariant("the monomyth arc has no stages"))?;
-        structure.endings = BTreeSet::from([ending]);
-        Ok(structure)
+    /// Construct the backbone pass with an explicit configuration.
+    #[must_use]
+    pub fn with_config(config: NarrativeConfig) -> Self {
+        Self { config }
     }
 }
 
@@ -116,18 +108,30 @@ impl ProceduralPass for BackbonePass {
     }
 
     fn apply(&self, world: &mut World, rng: &mut ChaCha8Rng) -> Result<(), GenError> {
-        // Choose the macro plot first so the RNG position is independent of graph
-        // shape; the fork-less trunk itself makes no draws.
-        let plots = BookerPlot::all();
-        if plots.is_empty() {
-            return Err(GenError::Invariant("the Booker plot set is empty"));
-        }
-        let plot = plots
-            .get(draw_range_inclusive(rng, 0, plots.len() - 1))
-            .copied()
-            .ok_or(GenError::Invariant("Booker plot index out of range"))?;
+        // Choose the macro plot first; the fork rolls follow in a fixed order, so
+        // the stream position is independent of the resulting graph shape.
+        let plot = match self.config.plot {
+            PlotChoice::Fixed(plot) => plot,
+            PlotChoice::Seeded => {
+                let plots = BookerPlot::all();
+                if plots.is_empty() {
+                    return Err(GenError::Invariant("the Booker plot set is empty"));
+                }
+                plots
+                    .get(draw_range_inclusive(rng, 0, plots.len() - 1))
+                    .copied()
+                    .ok_or(GenError::Invariant("Booker plot index out of range"))?
+            }
+        };
 
-        let structure = Self::build_structure()?;
+        // One fork decision per optional-stage run, in id order (deterministic).
+        let runs = optional_runs()?;
+        let decisions: Vec<bool> = runs
+            .iter()
+            .map(|_| draw_chance(rng, self.config.fork_chance_permille))
+            .collect();
+
+        let structure = build_structure(&runs, &decisions)?;
         structure.validate()?;
         let root = structure.root();
 
@@ -157,5 +161,161 @@ impl ProceduralPass for BackbonePass {
         world.story.plot = Some(plot);
         world.state.cursor = root;
         Ok(())
+    }
+}
+
+/// The maximal runs of consecutive optional stages in `MonomythStage::all()` order.
+///
+/// # Errors
+///
+/// Returns [`GenError::Invariant`] if a run has no mandatory anchor before it or no
+/// mandatory stage after it (which would mean the first or last Campbell stage is
+/// optional — a corrupt framework artifact).
+fn optional_runs() -> Result<Vec<Run>, GenError> {
+    let stages = MonomythStage::all();
+    let mut runs = Vec::new();
+    let mut index = 0;
+    while index < stages.len() {
+        if !stages[index].info().optional {
+            index += 1;
+            continue;
+        }
+        let first = index;
+        let mut last = index;
+        while last + 1 < stages.len() && stages[last + 1].info().optional {
+            last += 1;
+        }
+        if first == 0 || last + 1 >= stages.len() {
+            return Err(GenError::Invariant(
+                "an optional stage run has no mandatory anchor",
+            ));
+        }
+        runs.push(Run { first, last });
+        index = last + 1;
+    }
+    Ok(runs)
+}
+
+/// A fresh empty choice-prose slot hinted with `hint`, filled by a later layer.
+fn choice_slot(hint: &str) -> Content {
+    Content::empty(ContentPrompt::new(ContentKind::Choice, hint))
+}
+
+/// Assemble the stage nodes and wire the spine plus one detour diamond per forked
+/// run. Forks add edges only, never nodes, so the graph is a reconverging DAG whose
+/// node count equals the stage count.
+fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructure, GenError> {
+    let stages = MonomythStage::all();
+    let last = stages
+        .len()
+        .checked_sub(1)
+        .ok_or(GenError::Invariant("the monomyth arc has no stages"))?;
+
+    // Build via a default structure so the pass need not name the `slotmap` crate
+    // directly (it is a transitive dependency through the model).
+    let mut structure = NarrativeStructure::default();
+    let mut ids = Vec::with_capacity(stages.len());
+    for (index, &stage) in stages.iter().enumerate() {
+        let hint = format!(
+            "monomyth stage {stage:?} ({} of {}); realizes Propp functions {:?}",
+            index + 1,
+            stages.len(),
+            arc_functions(stage),
+        );
+        let node = NarrativeNode::new(
+            format!("{stage:?}"),
+            NodeKind::Beat,
+            stage,
+            Content::empty(ContentPrompt::new(ContentKind::Synopsis, hint)),
+        );
+        ids.push(structure.nodes.insert(node));
+    }
+
+    // The anchors of forked runs, mapping each anchor's stage index to the index of
+    // the mandatory stage the detour reconverges on.
+    let forked: BTreeMap<usize, usize> = runs
+        .iter()
+        .zip(decisions)
+        .filter_map(|(run, &take)| take.then_some((run.first - 1, run.last + 1)))
+        .collect();
+
+    // Wire each node's out-edges: a forked anchor gets a primary Sequence "skip"
+    // edge to the reconvergence point plus a Choice edge into the optional run; every
+    // other node advances linearly.
+    for index in 0..stages.len() {
+        if index == last {
+            continue; // the final stage is the sole ending: no out-edge
+        }
+        let from = ids[index];
+        if let Some(&after) = forked.get(&index) {
+            let optional_stage = structure.nodes[ids[index + 1]].stage;
+            let skip_hint = format!("skip the optional {optional_stage:?} arc");
+            structure.nodes[from].out.push(NarrativeEdge::new(
+                ids[after],
+                EdgeKind::Sequence,
+                choice_slot(&skip_hint),
+            ));
+            let enter_hint = format!("enter the optional {optional_stage:?} arc");
+            structure.nodes[from].out.push(NarrativeEdge::new(
+                ids[index + 1],
+                EdgeKind::Choice,
+                choice_slot(&enter_hint),
+            ));
+        } else {
+            let to = ids[index + 1];
+            let hint = format!(
+                "advance from {:?} to {:?}",
+                structure.nodes[from].stage, structure.nodes[to].stage,
+            );
+            structure
+                .nodes
+                .get_mut(from)
+                .ok_or(GenError::Invariant("stage node missing during wiring"))?
+                .out
+                .push(NarrativeEdge::new(
+                    to,
+                    EdgeKind::Sequence,
+                    choice_slot(&hint),
+                ));
+        }
+    }
+
+    assign_kinds(&mut structure, &ids, last);
+
+    structure.root = ids[0];
+    structure.endings = BTreeSet::from([ids[last]]);
+    Ok(structure)
+}
+
+/// Set each node's [`NodeKind`] from its final topology: the first stage is the
+/// [`Origin`](NodeKind::Origin), the last is the [`Ending`](NodeKind::Ending), a
+/// fork anchor (out-degree > 1) is a [`Branch`](NodeKind::Branch), a reconvergence
+/// point (in-degree > 1) is a [`Merge`](NodeKind::Merge), and everything else a
+/// [`Beat`](NodeKind::Beat).
+fn assign_kinds(structure: &mut NarrativeStructure, ids: &[NarrativeNodeId], last: usize) {
+    let mut in_degree: BTreeMap<NarrativeNodeId, usize> =
+        ids.iter().map(|&id| (id, 0usize)).collect();
+    for &id in ids {
+        for edge in &structure.nodes[id].out {
+            if let Some(degree) = in_degree.get_mut(&edge.target) {
+                *degree += 1;
+            }
+        }
+    }
+    for (index, &id) in ids.iter().enumerate() {
+        let out_degree = structure.nodes[id].out.len();
+        let incoming = in_degree.get(&id).copied().unwrap_or(0);
+        let kind = if index == 0 {
+            NodeKind::Origin
+        } else if index == last {
+            NodeKind::Ending
+        } else if out_degree > 1 {
+            NodeKind::Branch
+        } else if incoming > 1 {
+            NodeKind::Merge
+        } else {
+            NodeKind::Beat
+        };
+        structure.nodes[id].kind = kind;
     }
 }

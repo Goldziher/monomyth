@@ -53,7 +53,9 @@ pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
 pub use content_passes::{EntityContentPass, LocationContentPass, TitleContentPass};
 pub use error::GenError;
 pub use pass::ProceduralPass;
-pub use passes::{BackbonePass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass};
+pub use passes::{
+    BackbonePass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass, NarrativeConfig, PlotChoice,
+};
 
 /// A generator with two ordered pipelines: the deterministic procedural passes
 /// that assemble structure from a seed, and the content passes that later fill the
@@ -215,7 +217,7 @@ mod tests {
     use monomyth_core::{Content, LocationId};
     use monomyth_frameworks::{MonomythStage, ProppRole};
 
-    use super::{Generator, MAX_ROOMS, MIN_ROOMS};
+    use super::{BackbonePass, Generator, MAX_ROOMS, MIN_ROOMS, NarrativeConfig, PlotChoice};
 
     /// The canonical world used across the structural assertions.
     fn generated() -> monomyth_core::World {
@@ -275,25 +277,154 @@ mod tests {
     }
 
     #[test]
-    fn spine_covers_every_stage_in_order() {
+    fn spine_covers_all_mandatory_stages_in_order() {
         let world = generated();
         let structure = &world.story.structure;
         assert_eq!(structure.validate(), Ok(()), "the structure must be valid");
-        // With no forks yet, the spine is the whole trunk.
-        let spine = structure.spine();
-        let stages = spine
+
+        let spine_stages: Vec<MonomythStage> = structure
+            .spine()
             .iter()
-            .map(|&id| structure.node(id).expect("spine node exists").stage);
+            .map(|&id| structure.node(id).expect("spine node exists").stage)
+            .collect();
+
+        // The spine is a strictly increasing subsequence of the canonical stage
+        // order: forked optionals are skipped, but order and uniqueness hold.
+        let canonical = MonomythStage::all();
+        let positions: Vec<usize> = spine_stages
+            .iter()
+            .map(|stage| {
+                canonical
+                    .iter()
+                    .position(|candidate| candidate == stage)
+                    .expect("spine stage is canonical")
+            })
+            .collect();
         assert!(
-            stages.eq(MonomythStage::all().iter().copied()),
-            "the spine must cover the monomyth stages, unique and in id order",
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "spine stages must be in strictly increasing id order, got {positions:?}",
         );
-        // The cursor starts at the root, which is the first stage.
+
+        // Every mandatory stage is on the spine; only forked optionals are skipped.
+        for stage in canonical {
+            if !stage.info().optional {
+                assert!(
+                    spine_stages.contains(stage),
+                    "mandatory stage {stage:?} must be on the spine",
+                );
+            }
+        }
+
+        // The cursor starts at the root, which is the first (mandatory) stage.
         let root = structure.root();
         assert_eq!(world.state.cursor, root);
         assert_eq!(
             structure.node(root).expect("root exists").stage,
             MonomythStage::CallToAdventure,
+        );
+    }
+
+    #[test]
+    fn all_forks_skip_every_optional_stage_and_reconverge() {
+        // With the fork chance pinned to certainty, every optional-stage run forks:
+        // the spine is exactly the mandatory stages, and each optional is reachable
+        // only via a Choice branch that reconverges on a Merge.
+        let generator =
+            Generator::new(vec![Box::new(BackbonePass::with_config(NarrativeConfig {
+                plot: PlotChoice::Seeded,
+                fork_chance_permille: 1000,
+            }))]);
+        let world = generator
+            .generate_structure(42)
+            .expect("backbone-only generation succeeds");
+        let structure = &world.story.structure;
+        assert_eq!(structure.validate(), Ok(()));
+
+        let spine_stages: Vec<MonomythStage> = structure
+            .spine()
+            .iter()
+            .map(|&id| structure.node(id).expect("spine node").stage)
+            .collect();
+        let mandatory: Vec<MonomythStage> = MonomythStage::all()
+            .iter()
+            .copied()
+            .filter(|stage| !stage.info().optional)
+            .collect();
+        assert_eq!(
+            spine_stages, mandatory,
+            "an all-forks spine must be exactly the mandatory stages",
+        );
+
+        // Node count is unchanged by forking — forks add edges, not nodes.
+        assert_eq!(
+            structure.nodes.len(),
+            MonomythStage::all().len(),
+            "forking must not add or remove nodes",
+        );
+
+        // Every optional stage node is off the spine (reachable only via a branch).
+        let on_spine: BTreeSet<MonomythStage> = spine_stages.iter().copied().collect();
+        let optional_off_spine = structure
+            .nodes
+            .values()
+            .filter(|node| node.stage.info().optional)
+            .inspect(|node| {
+                assert!(
+                    !on_spine.contains(&node.stage),
+                    "forked optional {:?} must be off the spine",
+                    node.stage,
+                );
+            })
+            .count();
+        assert_eq!(
+            optional_off_spine, 6,
+            "all six optional stages must fork off"
+        );
+
+        // The three optional-stage runs ({RefusalOfTheCall}, {Meeting, Temptress},
+        // {RefusalOfReturn, MagicFlight, RescueFromWithout}) each open one diamond:
+        // one fork anchor and one reconvergence merge apiece.
+        let forks = structure
+            .nodes
+            .keys()
+            .filter(|&id| structure.is_fork(id))
+            .count();
+        let merges = structure
+            .nodes
+            .keys()
+            .filter(|&id| structure.is_merge(id))
+            .count();
+        assert_eq!(forks, 3, "one fork per optional-stage run");
+        assert_eq!(merges, 3, "one reconvergence merge per optional-stage run");
+    }
+
+    #[test]
+    fn zero_fork_chance_yields_the_linear_trunk() {
+        let generator =
+            Generator::new(vec![Box::new(BackbonePass::with_config(NarrativeConfig {
+                plot: PlotChoice::Seeded,
+                fork_chance_permille: 0,
+            }))]);
+        let world = generator
+            .generate_structure(42)
+            .expect("backbone-only generation succeeds");
+        let structure = &world.story.structure;
+        assert_eq!(structure.validate(), Ok(()));
+        let spine_stages: Vec<MonomythStage> = structure
+            .spine()
+            .iter()
+            .map(|&id| structure.node(id).expect("spine node").stage)
+            .collect();
+        assert!(
+            spine_stages
+                .iter()
+                .copied()
+                .eq(MonomythStage::all().iter().copied()),
+            "with no forks the spine is the whole 17-stage trunk",
+        );
+        assert!(
+            structure.nodes.values().all(|node| node.out.len() <= 1),
+            "with no forks no node branches",
         );
     }
 
