@@ -12,12 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 xberg = { workspace = true }
-xberg-rag = { workspace = true, features = [
-    "vector-store",
-    "sqlite",
-    "pipeline",
-    "pipeline-embeddings",
-] }
+xberg-rag = { workspace = true, features = ["vector-store", "sqlite", "pipeline", "pipeline-embeddings"] }
 
 [dev-dependencies]
 async-trait = { workspace = true }

@@ -235,16 +235,17 @@
       "namespace": "ship",
       "domain": "scifi",
       "license": "Apache-2.0",
-      "url": "https://huggingface.co/datasets/deepmind/pg19"
+      "url": "https://huggingface.co/datasets/deepmind/pg19",
+      "note": "books published before 1919 (PD by age); Apache-2.0 covers the dataset packaging — verify per-book pre-1930 translation provenance before surfacing verbatim"
     },
     {
       "id": "fandom_dumps",
       "name": "Fandom genre-wiki dumps",
       "tier": "sharealike",
-      "namespace": "ship",
+      "namespace": "reference",
       "domain": "fantasy",
       "license": "CC-BY-SA",
-      "note": "editors' text CC-BY-SA; underlying franchise IP not ours to reproduce"
+      "note": "editors' text CC-BY-SA but underlying franchise IP not ours to reproduce; reference/priors only until an IP-stripping ingest filter exists"
     },
 
     {

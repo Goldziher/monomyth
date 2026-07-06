@@ -48,9 +48,7 @@ use xberg_rag::pipeline::{
     CoreEmbedder, Embedder, IngestRequest, RagPipelineConfig, ingest_document,
     retrieve as pipeline_retrieve,
 };
-use xberg_rag::{
-    CollectionSpec, DocumentId, Filter, FilterField, RetrieveMode, RetrieveQuery, RetrievedChunk,
-};
+use xberg_rag::{CollectionSpec, DocumentId, Filter, FilterField, RetrieveQuery, RetrievedChunk};
 
 pub use crate::error::KnowledgeError;
 pub use crate::ledger::{
@@ -144,6 +142,9 @@ impl KnowledgeQuery {
 
 /// A retrieved passage, carrying the licensing provenance needed to decide
 /// whether it may be surfaced.
+///
+/// A passage from a reference query is licensed for priors only and must never
+/// be shown verbatim; check [`Passage::is_surfaceable`] before rendering.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {
     /// The chunk text.
@@ -156,6 +157,18 @@ pub struct Passage {
     pub namespace: Namespace,
     /// The source's license string.
     pub license: String,
+}
+
+impl Passage {
+    /// Whether this passage may be shown to a user verbatim.
+    ///
+    /// Only `ship`-namespace passages are surfaceable; a reference passage
+    /// informs generation as a prior but must never be redistributed. Callers
+    /// that render passage text should gate on this.
+    #[must_use]
+    pub fn is_surfaceable(&self) -> bool {
+        self.namespace == Namespace::Ship
+    }
 }
 
 /// The ship-gated knowledge layer: vector store + embedder + license ledger.
@@ -266,6 +279,8 @@ impl Knowledge {
             ..IngestRequest::default()
         };
 
+        // Required for the `with()` test path, which builds a store directly and
+        // never calls `open()`; idempotent, so harmless after `open()` too.
         self.ensure_collection(SHIP_COLLECTION).await?;
         let config = RagPipelineConfig {
             chunking: &self.chunking,
@@ -286,7 +301,9 @@ impl Knowledge {
     /// A surfaceable query is ship-gated: it targets the `ship` collection and
     /// applies the `doc.metadata.namespace = "ship"` filter (collection *and*
     /// filter, defense in depth). A reference query draws on the reference
-    /// collection for priors only.
+    /// collection for priors only — those passages are **not** licensed for
+    /// verbatim display; callers must gate rendering on
+    /// [`Passage::is_surfaceable`].
     ///
     /// # Errors
     ///
@@ -300,10 +317,12 @@ impl Knowledge {
             (REFERENCE_COLLECTION, None)
         };
 
+        // Required for the `with()` test path, which builds a store directly and
+        // never calls `open()`; idempotent, so harmless after `open()` too.
         self.ensure_collection(collection).await?;
 
         let retrieve_query = RetrieveQuery {
-            mode: RetrieveMode::Vector,
+            // `mode` is set to `Vector` by `RetrieveQuery::vector` below.
             query_text: Some(query.text),
             filter,
             include_content: true,
@@ -410,9 +429,18 @@ fn build_passage(
         }
     })?;
 
-    // Fail closed: never surface a ship-collection chunk that is not tagged ship,
-    // even if it reached the collection out of band (direct write, backend bug).
-    if collection == SHIP_COLLECTION && namespace != Namespace::Ship {
+    // Fail closed on either collection/namespace mismatch, even if a chunk reached
+    // the collection out of band (direct write, backend bug): a ship collection
+    // must yield only ship-tagged chunks, and a reference collection only
+    // reference-tagged ones. Surfacing or mislabeling either way is refused.
+    let expected = match collection {
+        SHIP_COLLECTION => Some(Namespace::Ship),
+        REFERENCE_COLLECTION => Some(Namespace::Reference),
+        _ => None,
+    };
+    if let Some(expected) = expected
+        && namespace != expected
+    {
         return Err(KnowledgeError::NamespaceViolation {
             collection: collection.to_owned(),
             found: namespace,
@@ -532,6 +560,67 @@ mod tests {
         assert_eq!(passage.source_id, "polti");
     }
 
+    #[tokio::test]
+    async fn surfaceable_retrieve_never_returns_a_reference_tagged_doc_from_the_ship_collection() {
+        // Exercise layer 2 (the retrieval filter) independently of the ingest
+        // gate: write a reference-tagged document *directly* into the ship
+        // collection, bypassing `Knowledge::ingest`, then run a surfaceable query.
+        // The `doc.metadata.namespace = "ship"` filter must exclude it (result has
+        // no reference passage); if a store ever ignored the filter, layer 3
+        // (`build_passage`) would instead reject it as a `NamespaceViolation`.
+        // Either outcome proves a reference doc can never be surfaced.
+        let knowledge = test_knowledge();
+        knowledge
+            .ensure_collection(SHIP_COLLECTION)
+            .await
+            .expect("ship collection ensured");
+
+        let metadata = serde_json::json!({
+            META_SOURCE_ID: "smuggled",
+            META_NAMESPACE: "reference",
+            META_LICENSE: "in-copyright",
+            META_TIER: "reference",
+            META_DOMAIN: "myth",
+        });
+        let request = IngestRequest {
+            full_text: "The Suppliant implores a Power in authority for mercy and aid.".to_owned(),
+            metadata,
+            ..IngestRequest::default()
+        };
+        let config = RagPipelineConfig {
+            chunking: &knowledge.chunking,
+        };
+        ingest_document(
+            Arc::clone(&knowledge.store),
+            SHIP_COLLECTION,
+            request,
+            &config,
+            knowledge.embedder.as_ref(),
+        )
+        .await
+        .expect("direct write into the ship collection (bypassing the gate) succeeds");
+
+        match knowledge
+            .retrieve(KnowledgeQuery::surfaceable("a plea for mercy and aid", 5))
+            .await
+        {
+            Ok(passages) => assert!(
+                passages
+                    .iter()
+                    .all(|passage| passage.namespace == Namespace::Ship),
+                "the ship filter must exclude the reference-tagged document",
+            ),
+            Err(KnowledgeError::NamespaceViolation { found, .. }) => {
+                assert_eq!(
+                    found,
+                    Namespace::Reference,
+                    "layer 3 caught what layer 2 let through",
+                );
+            }
+            Err(other) => panic!("unexpected retrieval error: {other:?}"),
+        }
+    }
+
     fn tagged_metadata(namespace: &str) -> Value {
         serde_json::json!({
             META_SOURCE_ID: "somesource",
@@ -551,6 +640,27 @@ mod tests {
         match error {
             KnowledgeError::NamespaceViolation { found, .. } => {
                 assert_eq!(found, Namespace::Reference);
+            }
+            other => panic!("expected NamespaceViolation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_passage_refuses_ship_tag_in_reference_collection() {
+        // The symmetric fail-closed guard: a ship-tagged document sitting in the
+        // reference collection is inconsistent data and must be refused, not
+        // silently returned mislabeled.
+        let metadata = tagged_metadata("ship");
+        let error = build_passage(
+            &metadata,
+            Some("text".to_owned()),
+            1.0,
+            REFERENCE_COLLECTION,
+        )
+        .expect_err("a ship tag in the reference collection must be refused");
+        match error {
+            KnowledgeError::NamespaceViolation { found, .. } => {
+                assert_eq!(found, Namespace::Ship);
             }
             other => panic!("expected NamespaceViolation, got {other:?}"),
         }
