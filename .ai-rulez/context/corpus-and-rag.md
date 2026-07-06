@@ -44,4 +44,5 @@ Every stored document/chunk carries `namespace` (`ship` | `reference`), `license
   surfaced verbatim.
 
 Enforce the invariant **at retrieval**: any shippable query must filter with the xberg `Filter` IR
-(`Filter::Eq("doc.namespace", "ship")`). See the licensing-and-provenance rule.
+(`Filter::Eq("doc.metadata.namespace", "ship")` — the filter whitelist admits only `doc.metadata.*`
+for free-form tags). See the licensing-and-provenance rule.

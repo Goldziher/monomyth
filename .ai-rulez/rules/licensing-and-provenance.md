@@ -17,7 +17,8 @@ and the two must never blur. This rule is non-negotiable.
 - **The hard invariant:** a source tagged `reference` / `noncommercial` / `copyright` may **never**
   live in the `ship` namespace. Enforce it in three places:
   1. at ingest (refuse to write a non-`ship` source into a shippable collection),
-  2. at retrieval (shippable queries filter `Filter::Eq("doc.namespace", "ship")`),
+  2. at retrieval (shippable queries filter `Filter::Eq("doc.metadata.namespace", "ship")` — the
+     xberg-rag filter whitelist admits only `doc.metadata.*` for free-form tags),
   3. in CI (a check over the ledger + stored metadata).
 - **The `system` tier** marks an uncopyrightable idea/taxonomy (e.g. a list of stage or role names)
   that we independently encode — ship-safe even when the source book is in copyright. We reproduce

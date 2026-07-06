@@ -15,7 +15,7 @@ provenance ground truth and the enforcement point for a commercial product:
   redistributed / surfaced verbatim.
 
 The hard invariant: a source tagged `reference` / `noncommercial` / `copyright` may never live in the
-`ship` namespace. Enforced at ingest, at retrieval (xberg `Filter` on `doc.namespace`), and in CI.
+`ship` namespace. Enforced at ingest, at retrieval (xberg `Filter` on `doc.metadata.namespace`), and in CI.
 The `system` tier marks an uncopyrightable taxonomy (e.g. a list of stage names) as ship-safe even
 when the source book is in copyright. See [ADR-0005](../adrs/0005-commercial-licensing-ship-reference.md).
 
