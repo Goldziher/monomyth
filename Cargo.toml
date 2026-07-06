@@ -17,7 +17,9 @@ authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 # Dependencies are kept alphabetical (cargo-sort). Internal crates are the `monomyth-*` path
 # entries; the rest are shared third-party pinned to the versions used by the xberg-io workspace.
 [workspace.dependencies]
+anyhow = "1"
 async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 monomyth-core = { path = "crates/monomyth-core" }
 monomyth-frameworks = { path = "crates/monomyth-frameworks" }
