@@ -2031,12 +2031,19 @@ dependencies = [
 name = "monomyth-gen"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "monomyth-core",
  "monomyth-frameworks",
+ "monomyth-knowledge",
+ "monomyth-llm",
  "rand 0.9.4",
  "rand_chacha 0.9.0",
+ "schemars",
+ "serde",
  "serde_json",
  "thiserror",
+ "tokio",
+ "xberg-rag",
 ]
 
 [[package]]

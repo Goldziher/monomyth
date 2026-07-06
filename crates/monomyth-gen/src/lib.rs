@@ -33,6 +33,8 @@
 
 #![forbid(unsafe_code)]
 
+mod content;
+mod content_passes;
 mod error;
 mod pass;
 mod passes;
@@ -45,40 +47,76 @@ use monomyth_frameworks::MonomythStage;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
+pub use content_passes::{EntityContentPass, LocationContentPass, TitleContentPass};
 pub use error::GenError;
 pub use pass::ProceduralPass;
 pub use passes::{ArcPass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass};
 
-/// An ordered pipeline of procedural passes that assembles a world from a seed.
+/// A generator with two ordered pipelines: the deterministic procedural passes
+/// that assemble structure from a seed, and the content passes that later fill the
+/// empty prose slots with grounded, LLM-authored text.
 #[derive(Debug)]
 pub struct Generator {
     passes: Vec<Box<dyn ProceduralPass>>,
+    content_passes: Vec<Box<dyn ContentPass>>,
 }
 
 impl Generator {
-    /// Build a generator from an explicit, ordered list of passes.
+    /// Build a generator from an explicit, ordered list of procedural passes and
+    /// no content passes.
     ///
     /// The order is the determinism contract: each pass draws from its own
     /// sub-stream, but a pass may depend on structure an earlier pass produced
-    /// (the cast and item passes require the map pass to have run first).
+    /// (the cast and item passes require the map pass to have run first). Use
+    /// [`with_pipelines`](Self::with_pipelines) to also install a content pipeline.
     #[must_use]
     pub fn new(passes: Vec<Box<dyn ProceduralPass>>) -> Self {
-        Self { passes }
+        Self {
+            passes,
+            content_passes: Vec::new(),
+        }
     }
 
-    /// Build a generator with the standard pipeline.
+    /// Build a generator from explicit procedural and content pipelines.
     ///
-    /// The order — [`MapPass`] → [`ArcPass`] → [`CastPass`] → [`ItemsPass`] — is
-    /// fixed: the map lays down the location graph that the cast and items are
-    /// placed into, and the arc grounds the story spine independently.
+    /// The two halves are independent: the procedural passes run in
+    /// [`generate_structure`](Self::generate_structure), the content passes in
+    /// [`fill_content`](Self::fill_content).
+    #[must_use]
+    pub fn with_pipelines(
+        passes: Vec<Box<dyn ProceduralPass>>,
+        content_passes: Vec<Box<dyn ContentPass>>,
+    ) -> Self {
+        Self {
+            passes,
+            content_passes,
+        }
+    }
+
+    /// Build a generator with the standard procedural and content pipelines.
+    ///
+    /// The procedural order — [`MapPass`] → [`ArcPass`] → [`CastPass`] →
+    /// [`ItemsPass`] — is fixed: the map lays down the location graph that the cast
+    /// and items are placed into, and the arc grounds the story spine
+    /// independently. The content order — [`TitleContentPass`] →
+    /// [`LocationContentPass`] → [`EntityContentPass`] — fills the prose slots the
+    /// procedural passes left empty.
     #[must_use]
     pub fn with_default_passes() -> Self {
-        Self::new(vec![
-            Box::new(MapPass::new()),
-            Box::new(ArcPass::new()),
-            Box::new(CastPass::new()),
-            Box::new(ItemsPass::new()),
-        ])
+        Self::with_pipelines(
+            vec![
+                Box::new(MapPass::new()),
+                Box::new(ArcPass::new()),
+                Box::new(CastPass::new()),
+                Box::new(ItemsPass::new()),
+            ],
+            vec![
+                Box::new(TitleContentPass::new()),
+                Box::new(LocationContentPass::new()),
+                Box::new(EntityContentPass::new()),
+            ],
+        )
     }
 
     /// Assemble a fully-structured world from `seed`, leaving all content empty.
@@ -108,6 +146,31 @@ impl Generator {
         }
 
         Ok(world)
+    }
+
+    /// Fill `world`'s empty content slots by running the content passes in order.
+    ///
+    /// This is the non-deterministic content half of generation: each pass reads a
+    /// slot's hint, retrieves ship-safe grounding, prompts the LLM, and fills the
+    /// slot. It is quarantined from the procedural RNG — it never draws from
+    /// [`World::rng`](monomyth_core::World::rng) — and changes only content, never
+    /// structure (no elements, exits, roles, or keys are added, removed, or
+    /// altered). Run it after [`generate_structure`](Self::generate_structure).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GenError::Llm`] if a generation call fails, or
+    /// [`GenError::Knowledge`] if a grounding retrieval fails. A pass that fails
+    /// partway leaves earlier fills in place.
+    pub async fn fill_content(
+        &self,
+        world: &mut World,
+        context: &ContentContext<'_>,
+    ) -> Result<(), GenError> {
+        for pass in &self.content_passes {
+            pass.apply(world, context).await?;
+        }
+        Ok(())
     }
 }
 

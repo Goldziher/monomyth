@@ -1,10 +1,12 @@
-//! The error type for procedural generation.
+//! The error type for generation.
 //!
 //! Procedural generation is a pure function of a seed and rarely fails: the only
 //! failures are contract violations (an empty pipeline, or a pass run out of the
-//! order its inputs require). The later content phase will add real, fallible
-//! variants (IO, model errors); the enum is [`non_exhaustive`](macro@non_exhaustive)
-//! so those can be added without a breaking change.
+//! order its inputs require). The content phase adds the fallible variants that
+//! reach out of the process — an [`Llm`](GenError::Llm) call and a
+//! [`Knowledge`](GenError::Knowledge) retrieval. The enum is
+//! [`non_exhaustive`](macro@non_exhaustive) so further variants can be added
+//! without a breaking change.
 
 use thiserror::Error;
 
@@ -33,4 +35,13 @@ pub enum GenError {
     /// broken assumption.
     #[error("internal generator invariant violated: {0}")]
     Invariant(&'static str),
+
+    /// An LLM call in the content phase failed (backend error, or model output
+    /// that could not be parsed into the requested schema).
+    #[error("content generation LLM call failed")]
+    Llm(#[from] monomyth_llm::LlmError),
+
+    /// A ship-safe grounding retrieval in the content phase failed.
+    #[error("content grounding retrieval failed")]
+    Knowledge(#[from] monomyth_knowledge::KnowledgeError),
 }
