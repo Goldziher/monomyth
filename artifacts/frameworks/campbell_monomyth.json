@@ -1,0 +1,30 @@
+{
+  "framework": "campbell_monomyth",
+  "title": "Campbell — The Hero's Journey (Monomyth)",
+  "source": "Joseph Campbell, The Hero with a Thousand Faces (1949)",
+  "license": "system/idea (not copyrightable); stage names are a taxonomy, prose is NOT reproduced",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "The book text is under copyright (New World Library). The 17-stage / 3-act structure is an uncopyrightable system; descriptions here are authored for monomyth.",
+  "count": 17,
+  "acts": ["Departure", "Initiation", "Return"],
+  "items": [
+    { "id": 1,  "name": "Call to Adventure",              "act": "Departure",  "description": "The hero is presented with a problem, challenge, or disturbance that disrupts the ordinary world." },
+    { "id": 2,  "name": "Refusal of the Call",            "act": "Departure",  "description": "The hero hesitates or declines, out of fear, duty, or insecurity, before commitment is forced.", "optional": true },
+    { "id": 3,  "name": "Supernatural Aid",               "act": "Departure",  "description": "A mentor or protective figure provides guidance, a talisman, or knowledge for the road ahead." },
+    { "id": 4,  "name": "Crossing the First Threshold",   "act": "Departure",  "description": "The hero commits and passes out of the known world into the unknown, often past a guardian." },
+    { "id": 5,  "name": "Belly of the Whale",             "act": "Departure",  "description": "The final separation from the known world; a symbolic death and passage into transformation." },
+    { "id": 6,  "name": "The Road of Trials",             "act": "Initiation", "description": "A series of tests, tasks, and ordeals the hero must survive and learn from." },
+    { "id": 7,  "name": "The Meeting with the Goddess",   "act": "Initiation", "description": "Encounter with unconditional love or a powerful unifying force; the hero gains what is needed.", "optional": true },
+    { "id": 8,  "name": "Woman as Temptress",             "act": "Initiation", "description": "The hero faces temptations, material or otherwise, that may lead them from the quest.", "optional": true },
+    { "id": 9,  "name": "Atonement with the Father",      "act": "Initiation", "description": "Confrontation with the ultimate power/authority figure holding life-and-death over the hero." },
+    { "id": 10, "name": "Apotheosis",                     "act": "Initiation", "description": "A period of rest, fulfillment, or divine knowledge; the hero transcends former limits." },
+    { "id": 11, "name": "The Ultimate Boon",              "act": "Initiation", "description": "Achievement of the goal of the quest; the object, elixir, or wisdom sought is won." },
+    { "id": 12, "name": "Refusal of the Return",          "act": "Return",     "description": "Having found bliss or enlightenment, the hero may resist returning to the ordinary world.", "optional": true },
+    { "id": 13, "name": "The Magic Flight",               "act": "Return",     "description": "Escape with the boon, sometimes as a chase or pursuit if the prize was taken against opposition.", "optional": true },
+    { "id": 14, "name": "Rescue from Without",            "act": "Return",     "description": "Guides or aides bring the exhausted hero back, especially if they are wounded or reluctant.", "optional": true },
+    { "id": 15, "name": "The Crossing of the Return Threshold", "act": "Return", "description": "Re-entry into the ordinary world; the hero must integrate the transcendent wisdom with daily life." },
+    { "id": 16, "name": "Master of the Two Worlds",       "act": "Return",     "description": "The hero achieves balance between the material and spiritual, inner and outer worlds." },
+    { "id": 17, "name": "Freedom to Live",                "act": "Return",     "description": "Mastery leads to freedom from fear of death; the hero lives in the moment, neither anticipating nor regretting." }
+  ]
+}

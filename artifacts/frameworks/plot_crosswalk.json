@@ -1,0 +1,23 @@
+{
+  "framework": "plot_crosswalk",
+  "title": "Plot Binding — Booker Plot → Representative Polti Situations (genre ↔ conflict)",
+  "source": "authored synthesis for monomyth (Booker × Polti)",
+  "license": "authored synthesis; ship-safe",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Binds high-level genre to concrete conflict templates: each Booker plot suggests the Polti situations that typically instantiate it. Priors used to seed encounter selection; not exclusive.",
+  "reference_map": {
+    "booker_plot_id": "booker_plots",
+    "polti_situation_ids": "polti_situations"
+  },
+  "count": 7,
+  "items": [
+    { "id": 1, "name": "Overcoming the Monster", "booker_plot_id": 1, "polti_situation_ids": [2, 9, 31],  "description": "Deliverance, daring enterprise, and conflict with a god/great power." },
+    { "id": 2, "name": "Rags to Riches",         "booker_plot_id": 2, "polti_situation_ids": [12, 24, 30], "description": "Obtaining, rivalry of superior and inferior, and ambition." },
+    { "id": 3, "name": "The Quest",              "booker_plot_id": 3, "polti_situation_ids": [9, 11, 35],  "description": "Daring enterprise, the enigma, and recovery of a lost one." },
+    { "id": 4, "name": "Voyage and Return",      "booker_plot_id": 4, "polti_situation_ids": [5, 6, 10],   "description": "Pursuit, disaster, and abduction into a strange world." },
+    { "id": 5, "name": "Comedy",                 "booker_plot_id": 5, "polti_situation_ids": [28, 32, 33], "description": "Obstacles to love, mistaken jealousy, and erroneous judgment resolved." },
+    { "id": 6, "name": "Tragedy",                "booker_plot_id": 6, "polti_situation_ids": [3, 15, 30],  "description": "Crime pursued by vengeance, murderous adultery, and fatal ambition." },
+    { "id": 7, "name": "Rebirth",                "booker_plot_id": 7, "polti_situation_ids": [16, 20, 34], "description": "Madness, self-sacrifice for an ideal, and remorse leading to renewal." }
+  ]
+}

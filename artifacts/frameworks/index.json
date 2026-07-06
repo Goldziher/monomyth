@@ -1,0 +1,26 @@
+{
+  "index": "monomyth framework artifacts",
+  "note": "Generated + verified by corpus/frameworks/validate.py. The three-tier schema + character model that grounds the Rust domain model.",
+  "tiers": {
+    "macro": ["campbell_monomyth", "booker_plots", "atu_categories"],
+    "meso": ["propp_functions", "polti_situations", "dundes_motifemes"],
+    "micro": ["thompson_motif_classes"],
+    "character": ["propp_roles", "greimas_actants", "archetypes"],
+    "crosswalk": ["character_crosswalk", "arc_crosswalk", "plot_crosswalk"]
+  },
+  "frameworks": [
+    { "framework": "campbell_monomyth",       "count": 17, "namespace": "ship", "tier": "macro" },
+    { "framework": "booker_plots",            "count": 7,  "namespace": "ship", "tier": "macro" },
+    { "framework": "atu_categories",          "count": 7,  "namespace": "ship", "tier": "macro" },
+    { "framework": "propp_functions",         "count": 31, "namespace": "ship", "tier": "meso" },
+    { "framework": "polti_situations",        "count": 36, "namespace": "ship", "tier": "meso" },
+    { "framework": "dundes_motifemes",        "count": 8,  "namespace": "ship", "tier": "meso" },
+    { "framework": "thompson_motif_classes",  "count": 23, "namespace": "ship", "tier": "micro" },
+    { "framework": "propp_roles",             "count": 7,  "namespace": "ship", "tier": "character" },
+    { "framework": "greimas_actants",         "count": 6,  "namespace": "ship", "tier": "character" },
+    { "framework": "archetypes",              "count": 8,  "namespace": "ship", "tier": "character" },
+    { "framework": "character_crosswalk",     "count": 8,  "namespace": "ship", "tier": "crosswalk" },
+    { "framework": "arc_crosswalk",           "count": 17, "namespace": "ship", "tier": "crosswalk" },
+    { "framework": "plot_crosswalk",          "count": 7,  "namespace": "ship", "tier": "crosswalk" }
+  ]
+}

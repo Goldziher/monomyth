@@ -1,0 +1,23 @@
+{
+  "framework": "greimas_actants",
+  "title": "Greimas — Actantial Model",
+  "source": "Algirdas Julien Greimas, Structural Semantics (1966)",
+  "license": "system/idea (not copyrightable); descriptions authored for monomyth",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Six actants on three axes. More general than Propp's roles; the clean relational layer — every character in a scene fills one or more actant slots. Actants are functions, not characters: one character may be several actants; one actant may be several characters or an abstraction.",
+  "count": 6,
+  "axes": [
+    { "axis": "desire",       "positive": "Subject", "negative": "Object" },
+    { "axis": "power",        "positive": "Helper",  "negative": "Opponent" },
+    { "axis": "transmission", "positive": "Sender",  "negative": "Receiver" }
+  ],
+  "items": [
+    { "id": 1, "name": "Subject",  "axis": "desire",       "description": "The one who desires and pursues the object; typically the hero." },
+    { "id": 2, "name": "Object",   "axis": "desire",       "description": "That which is desired/sought — a person, thing, goal, or state." },
+    { "id": 3, "name": "Sender",   "axis": "transmission", "description": "The one who initiates the quest and dispatches the subject toward the object." },
+    { "id": 4, "name": "Receiver", "axis": "transmission", "description": "The one who benefits from the object being obtained (often the subject themselves)." },
+    { "id": 5, "name": "Helper",   "axis": "power",        "description": "Aids the subject in obtaining the object." },
+    { "id": 6, "name": "Opponent", "axis": "power",        "description": "Hinders the subject and opposes the acquisition of the object." }
+  ]
+}

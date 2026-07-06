@@ -1,0 +1,20 @@
+{
+  "framework": "dundes_motifemes",
+  "title": "Dundes — Paired Motifemes (Slot / Filler Structure)",
+  "source": "Alan Dundes, The Morphology of North American Indian Folktales (1964)",
+  "license": "system/idea; descriptions authored for monomyth",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Dundes applied Pike's emic/etic distinction to recast Propp's functions as 'motifemes' — structural SLOTS filled by interchangeable 'allomotifs'. The key insight for the generator: these come in tension→resolution PAIRS. `pairs_with` links each slot to its resolving slot; a well-formed beat sequence opens and later closes each pair.",
+  "count": 8,
+  "items": [
+    { "id": 1, "name": "Interdiction",       "polarity": "tension",    "pairs_with": 2, "description": "A prohibition is laid down (do not do X)." },
+    { "id": 2, "name": "Violation",          "polarity": "resolution", "pairs_with": 1, "description": "The prohibition is broken, releasing consequence." },
+    { "id": 3, "name": "Lack",               "polarity": "tension",    "pairs_with": 4, "description": "Something needed or desired is absent — the nuclear disequilibrium." },
+    { "id": 4, "name": "Lack Liquidated",    "polarity": "resolution", "pairs_with": 3, "description": "The lack is remedied, restoring equilibrium." },
+    { "id": 5, "name": "Task",               "polarity": "tension",    "pairs_with": 6, "description": "A difficult task or demand is imposed." },
+    { "id": 6, "name": "Task Accomplished",  "polarity": "resolution", "pairs_with": 5, "description": "The task is completed." },
+    { "id": 7, "name": "Deceit",             "polarity": "tension",    "pairs_with": 8, "description": "A deceptive scheme is set in motion." },
+    { "id": 8, "name": "Deception",          "polarity": "resolution", "pairs_with": 7, "description": "The deceit succeeds and its target is taken in." }
+  ]
+}

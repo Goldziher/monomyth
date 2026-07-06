@@ -1,0 +1,19 @@
+{
+  "framework": "booker_plots",
+  "title": "Booker — The Seven Basic Plots",
+  "source": "Christopher Booker, The Seven Basic Plots (2004)",
+  "license": "category labels/idea only; Booker's analysis is copyright and NOT reproduced — descriptions authored for monomyth",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "High-level plot-genre enum. Use only the seven category names (facts/ideas); descriptions are authored for monomyth.",
+  "count": 7,
+  "items": [
+    { "id": 1, "name": "Overcoming the Monster", "description": "The hero confronts and defeats a great evil or threatening force menacing their world." },
+    { "id": 2, "name": "Rags to Riches",         "description": "An ordinary or overlooked figure rises to greatness, loses it, and regains it transformed." },
+    { "id": 3, "name": "The Quest",              "description": "The hero and companions journey toward a distant goal, overcoming trials along the way." },
+    { "id": 4, "name": "Voyage and Return",      "description": "The hero travels into a strange world, survives its dangers, and returns changed." },
+    { "id": 5, "name": "Comedy",                 "description": "Confusion and misunderstanding escalate, then resolve into clarity, union, and reconciliation." },
+    { "id": 6, "name": "Tragedy",                "description": "A flawed protagonist's fatal course leads inexorably to downfall and ruin." },
+    { "id": 7, "name": "Rebirth",                "description": "A dark force falls over the protagonist until a redemptive act brings renewal and light." }
+  ]
+}

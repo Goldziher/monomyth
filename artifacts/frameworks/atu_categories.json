@@ -1,0 +1,19 @@
+{
+  "framework": "atu_categories",
+  "title": "Aarne-Thompson-Uther — Top-Level Tale-Type Categories",
+  "source": "Hans-Jörg Uther, The Types of International Folktales (2004)",
+  "license": "system/idea (the 7 top categories + number ranges); Uther's 2004 type descriptions are copyright and NOT reproduced — the per-type table comes from the CC-BY-SA `trilogy`/Bag-of-Tales datasets at fetch time",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Macro-tier genre skeleton: the 7 top groupings and their type-number ranges. Individual types (e.g. ATU 300 'The Dragon-Slayer') become plot-template presets, loaded later from the open derived datasets.",
+  "count": 7,
+  "items": [
+    { "id": 1, "name": "Animal Tales",                          "range": "1-299",     "description": "Tales in which animals are the principal actors (wild animals, the fox, birds, fish, domestic animals)." },
+    { "id": 2, "name": "Tales of Magic",                        "range": "300-749",   "description": "Wonder tales / fairy tales: supernatural adversaries, helpers, tasks, and objects. The heart of the magic-tale corpus." },
+    { "id": 3, "name": "Religious Tales",                       "range": "750-849",   "description": "Tales of God, saints, the afterworld, and the truth of religious belief." },
+    { "id": 4, "name": "Realistic Tales (Novelle)",             "range": "850-999",   "description": "Romantic and realistic tales won by cleverness, fidelity, or fortune, without the supernatural." },
+    { "id": 5, "name": "Tales of the Stupid Ogre (Giant, Devil)","range": "1000-1199", "description": "A dull-witted ogre, giant, or devil is outwitted by a clever protagonist." },
+    { "id": 6, "name": "Anecdotes and Jokes",                   "range": "1200-1999", "description": "Humorous tales of fools, married couples, professions, and tall tales." },
+    { "id": 7, "name": "Formula Tales",                         "range": "2000-2399", "description": "Cumulative, chain, catch, and endless tales built on repeated structure." }
+  ]
+}

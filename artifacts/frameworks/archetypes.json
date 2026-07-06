@@ -1,0 +1,20 @@
+{
+  "framework": "archetypes",
+  "title": "Story Archetypes (Jungian, via the Campbell/Vogler synthesis)",
+  "source": "C.G. Jung (archetypes) synthesized into 8 story functions (cf. Vogler, The Writer's Journey)",
+  "license": "labels/idea only; Vogler's descriptive prose is copyright and NOT reproduced — descriptions authored for monomyth",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "A character-archetype facet, orthogonal to Propp role and Greimas actant. Archetypes are function-flexible (a Shapeshifter can occupy Helper or Opponent), giving the generator controlled ambiguity and twist potential.",
+  "count": 8,
+  "items": [
+    { "id": 1, "name": "Hero",              "description": "The protagonist the audience identifies with; grows by facing and overcoming the central ordeal." },
+    { "id": 2, "name": "Mentor",            "aliases": ["Wise Old Man/Woman"], "description": "Guides, teaches, and gifts the hero; embodies the hero's higher self or accumulated wisdom." },
+    { "id": 3, "name": "Threshold Guardian","description": "Tests the hero's resolve at the boundary between worlds; an obstacle to be overcome, absorbed, or turned into an ally." },
+    { "id": 4, "name": "Herald",            "description": "Announces the call to adventure and signals that change is coming; sets the story in motion." },
+    { "id": 5, "name": "Shapeshifter",      "description": "Ambiguous and unstable in loyalty or identity; keeps the hero (and audience) uncertain of their true nature." },
+    { "id": 6, "name": "Shadow",            "description": "The antagonist or repressed dark side; embodies the hero's fears and the forces to be defeated or integrated." },
+    { "id": 7, "name": "Ally",              "description": "Companion who accompanies, aids, and complements the hero through the journey." },
+    { "id": 8, "name": "Trickster",         "description": "Agent of mischief and change; provides comic relief and punctures pretension, catalyzing transformation." }
+  ]
+}

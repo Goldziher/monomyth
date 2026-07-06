@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "generated_by": "monomyth corpus pipeline (Milestone 0)",
+  "commercial": true,
+  "tier_meaning": {
+    "system": "an uncopyrightable idea/system/taxonomy (e.g. a list of stage or role names) — ship-safe as an independently-authored encoding, even when the source book is in copyright; we reproduce NO prose from the source",
+    "public_domain": "PD — ship-safe, may be surfaced verbatim",
+    "cc0": "CC0 — ship-safe, no obligations",
+    "permissive": "CC-BY / MIT / Apache-2.0 — ship-safe with attribution",
+    "sharealike": "CC-BY-SA — ship-safe but ISOLATED so copyleft can't contaminate PD/CC0",
+    "noncommercial": "CC-BY-NC* — reference-only (this is a commercial product)",
+    "copyright": "in-copyright — reference-only, never redistributed",
+    "reference": "research/mixed-license — reference-only"
+  },
+  "namespaces": {
+    "ship": "may be surfaced verbatim in generated output",
+    "reference": "informs generation (structure/priors) only; never redistributed"
+  },
+  "domains": ["framework", "myth", "folklore", "esoterica", "newage", "scifi", "fantasy", "entity_kb"],
+  "sources": [
+    {
+      "id": "campbell_monomyth",
+      "name": "Campbell monomyth (17 stages)",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "system/idea",
+      "note": "stage taxonomy only; book prose not reproduced"
+    },
+    {
+      "id": "propp",
+      "name": "Propp functions + roles",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "system/idea",
+      "note": "31 functions + 7 roles; descriptions authored"
+    },
+    {
+      "id": "polti",
+      "name": "Polti's 36 Dramatic Situations",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "PD (1916 tr.)",
+      "url": "https://www.gutenberg.org/ebooks/search/?query=polti+dramatic+situations"
+    },
+    {
+      "id": "greimas",
+      "name": "Greimas actantial model",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "system/idea"
+    },
+    {
+      "id": "archetypes",
+      "name": "Story archetypes (8, Jung/Vogler)",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "labels/idea only",
+      "note": "labels are facts; Vogler's prose NOT used; safe as an authored enum"
+    },
+    {
+      "id": "booker",
+      "name": "Booker's 7 Basic Plots",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "labels/idea only",
+      "note": "category names only; analysis NOT used"
+    },
+    {
+      "id": "thompson_classes",
+      "name": "Thompson Motif-Index top-level classes (23)",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "lettered taxonomy (system)",
+      "note": "23 chapter roots only; fine-grained ~46k motifs load from `trilogy` (CC-BY-SA)"
+    },
+    {
+      "id": "atu_categories",
+      "name": "ATU top-level tale-type categories (7)",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "categories + ranges (system)",
+      "note": "7 groupings only; per-type table from `trilogy`/Bag-of-Tales"
+    },
+    {
+      "id": "dundes",
+      "name": "Dundes paired motifemes",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "system/idea"
+    },
+    {
+      "id": "crosswalks",
+      "name": "character/arc/plot crosswalks",
+      "tier": "system",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "authored synthesis",
+      "note": "our own mappings binding the tiers; ship-safe"
+    },
+
+    {
+      "id": "trilogy",
+      "name": "j-hagedorn/trilogy (ATU + Thompson motif index + tales)",
+      "tier": "sharealike",
+      "namespace": "ship",
+      "domain": "framework",
+      "license": "CC-BY-SA-4.0",
+      "url": "https://github.com/j-hagedorn/trilogy",
+      "note": "ISOLATE (share-alike); ATU + motif tables + priors"
+    },
+    {
+      "id": "bag_of_tales",
+      "name": "Bag-of-Tales (1518 folktales, 182 ATU types)",
+      "tier": "sharealike",
+      "namespace": "ship",
+      "domain": "folklore",
+      "license": "CC-BY-SA-4.0",
+      "url": "https://doi.org/10.5281/zenodo.6575263"
+    },
+
+    {
+      "id": "wikidata_myth",
+      "name": "Wikidata mythology subset",
+      "tier": "cc0",
+      "namespace": "ship",
+      "domain": "entity_kb",
+      "license": "CC0",
+      "url": "https://query.wikidata.org",
+      "note": "graph spine + canonical QIDs; subset via WDumper"
+    },
+    {
+      "id": "dbpedia_myth",
+      "name": "DBpedia Deity/MythologicalFigure",
+      "tier": "sharealike",
+      "namespace": "ship",
+      "domain": "entity_kb",
+      "license": "CC-BY-SA-3.0",
+      "url": "https://dbpedia.org/sparql",
+      "note": "abstracts for RAG; isolate"
+    },
+    {
+      "id": "manto",
+      "name": "MANTO (Greek myth relations)",
+      "tier": "reference",
+      "namespace": "reference",
+      "domain": "entity_kb",
+      "license": "UNCONFIRMED (CC-BY vs CC-BY-NC)",
+      "url": "https://www.manto-myth.org",
+      "note": "OPEN ITEM: confirm Zenodo release license before any ship use"
+    },
+
+    {
+      "id": "gutenberg_english",
+      "name": "sedthh/gutenberg_english",
+      "tier": "permissive",
+      "namespace": "ship",
+      "domain": "myth",
+      "license": "MIT wrapper, per-book PD",
+      "url": "https://huggingface.co/datasets/sedthh/gutenberg_english",
+      "note": "verify per-book PD; strip PG boilerplate"
+    },
+    {
+      "id": "pg_key_works",
+      "name": "Project Gutenberg key myth works",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "myth",
+      "license": "PD",
+      "url": "https://gutendex.com",
+      "note": "pre-1930 translations only"
+    },
+    {
+      "id": "fairytaleqa",
+      "name": "GEM/FairytaleQA",
+      "tier": "reference",
+      "namespace": "reference",
+      "domain": "folklore",
+      "license": "UNCONFIRMED (card: unknown)",
+      "url": "https://huggingface.co/datasets/GEM/FairytaleQA",
+      "note": "OPEN ITEM: confirm license; tales themselves are PD"
+    },
+
+    {
+      "id": "bae_reports",
+      "name": "Bureau of American Ethnology reports (1879-1931)",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "folklore",
+      "license": "US-Gov PD",
+      "url": "https://archive.org",
+      "note": "largest untapped ethnographic myth/legend corpus"
+    },
+    {
+      "id": "child_ballads",
+      "name": "Child, English & Scottish Popular Ballads",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "folklore",
+      "license": "PD",
+      "url": "https://www.gutenberg.org/ebooks/44969"
+    },
+    {
+      "id": "iapsop",
+      "name": "IAPSOP spiritualist/occult periodicals",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "newage",
+      "license": "PD (pre-1930)",
+      "url": "http://iapsop.com"
+    },
+    {
+      "id": "sacred_texts",
+      "name": "sacred-texts.com (PD-flagged sections)",
+      "tier": "reference",
+      "namespace": "reference",
+      "domain": "esoterica",
+      "license": "mixed PD + reserved-copyright",
+      "url": "https://sacred-texts.com",
+      "note": "PD body texts ship-able individually; interleaved © portions must be filtered; scrape intact+attributed"
+    },
+
+    {
+      "id": "pg19",
+      "name": "PG-19 (long-context PD books)",
+      "tier": "permissive",
+      "namespace": "ship",
+      "domain": "scifi",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/datasets/deepmind/pg19"
+    },
+    {
+      "id": "fandom_dumps",
+      "name": "Fandom genre-wiki dumps",
+      "tier": "sharealike",
+      "namespace": "ship",
+      "domain": "fantasy",
+      "license": "CC-BY-SA",
+      "note": "editors' text CC-BY-SA; underlying franchise IP not ours to reproduce"
+    },
+
+    {
+      "id": "tvtropes",
+      "name": "TV Tropes dump (RyokoExtra/TvTroper) + DBTropes",
+      "tier": "noncommercial",
+      "namespace": "reference",
+      "domain": "fantasy",
+      "license": "CC-BY-NC-SA-3.0",
+      "url": "https://huggingface.co/datasets/RyokoExtra/TvTroper",
+      "note": "NC blocks shipping — trope taxonomy for schema/priors only"
+    },
+    {
+      "id": "perseus",
+      "name": "Perseus / Open Greek & Latin (TEI)",
+      "tier": "noncommercial",
+      "namespace": "reference",
+      "domain": "myth",
+      "license": "CC-BY-NC-SA-3.0",
+      "url": "https://www.opengreekandlatin.org",
+      "note": "NC — reference-only for a commercial product"
+    },
+    {
+      "id": "duchas",
+      "name": "Dúchas.ie Schools' Collection",
+      "tier": "noncommercial",
+      "namespace": "reference",
+      "domain": "folklore",
+      "license": "CC-BY-NC-4.0",
+      "url": "https://www.duchas.ie",
+      "note": "NC — reference-only"
+    },
+    {
+      "id": "briggs",
+      "name": "Briggs, Dictionary of Fairies",
+      "tier": "copyright",
+      "namespace": "reference",
+      "domain": "folklore",
+      "license": "in-copyright",
+      "note": "creature-taxonomy reference only; do not ship text"
+    },
+    {
+      "id": "storium",
+      "name": "STORIUM annotated stories",
+      "tier": "reference",
+      "namespace": "reference",
+      "domain": "fantasy",
+      "license": "research-only",
+      "url": "https://storium.cs.umass.edu",
+      "note": "best annotated character-arc structure; request access"
+    }
+  ],
+  "open_items": [
+    "MANTO Zenodo release license (CC-BY vs CC-BY-NC)",
+    "GEM/FairytaleQA license (card says unknown; tales are PD)",
+    "merve/folk-mythology-tales CC0 provenance (downstream of copyrighted Ashliman) — prefer trilogy",
+    "Per-book PD verification for any PG/IA title surfaced verbatim; default to pre-1930 translations",
+    "Edition-specific PD texts: Hill 1937 (title is a trademark), Yogananda 1946 1st ed., ACIM Criswell/1975, Holmes 1926"
+  ]
+}

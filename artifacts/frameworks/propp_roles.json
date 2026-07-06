@@ -1,0 +1,19 @@
+{
+  "framework": "propp_roles",
+  "title": "Propp — Dramatis Personae (Character Roles / Spheres of Action)",
+  "source": "Vladimir Propp, Morphology of the Folktale (1928)",
+  "license": "system/idea (not copyrightable); descriptions authored for monomyth",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Seven spheres of action. A single character may fill several roles, and one role may be split across several characters.",
+  "count": 7,
+  "items": [
+    { "id": 1, "name": "Villain",           "sphere": "villainy, struggle, pursuit", "description": "Struggles against the hero; causes the harm or lack that drives the tale." },
+    { "id": 2, "name": "Donor",             "sphere": "preparation/transference of the magical agent", "aliases": ["Provider"], "description": "Tests the hero and provides the magical agent or crucial knowledge." },
+    { "id": 3, "name": "Helper",            "sphere": "transference, liquidation, rescue, task, transfiguration", "aliases": ["Magical Helper"], "description": "Aids the hero: guides, rescues, solves tasks, and transfigures." },
+    { "id": 4, "name": "Princess",          "sphere": "assignment of difficult tasks, branding, exposure, recognition, punishment, marriage", "aliases": ["Sought-for Person", "and her Father"], "description": "The sought-for person and their parent; sets tasks, recognizes and rewards the hero." },
+    { "id": 5, "name": "Dispatcher",        "sphere": "mediation", "description": "Sends the hero off on the quest; makes the lack known." },
+    { "id": 6, "name": "Hero",              "sphere": "departure on search, reaction to donor, wedding", "aliases": ["Seeker", "Victim"], "description": "The protagonist who departs, reacts to the donor, and ultimately weds/is rewarded. May be a seeker-hero or a victim-hero." },
+    { "id": 7, "name": "False Hero",        "sphere": "departure on search, reaction to donor, unfounded claims", "description": "Claims the hero's achievements; presents false claims and is ultimately exposed." }
+  ]
+}
