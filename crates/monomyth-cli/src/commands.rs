@@ -12,7 +12,7 @@ use monomyth_core::World;
 use monomyth_gen::{ContentContext, Generator};
 use monomyth_knowledge::{IngestInput, Knowledge, KnowledgeQuery};
 use monomyth_llm::Llm;
-use monomyth_text::{render_intro, render_location};
+use monomyth_text::{render_intro, render_location, render_structure};
 
 /// Generate a world's structure from `seed`.
 ///
@@ -67,7 +67,8 @@ pub(crate) async fn run_gen(
     }
 
     println!("{}\n", render_intro(&world));
-    println!("{}", render_location(&world));
+    println!("{}\n", render_location(&world));
+    println!("{}", render_structure(&world));
 
     let serialized = serde_json::to_string_pretty(&world).context("serializing the world")?;
     match out {

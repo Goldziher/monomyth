@@ -28,8 +28,12 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 
-use monomyth_core::{Content, Direction, EntityId, Event, ItemId, Location, LocationId, World};
+use monomyth_core::{
+    Content, Direction, EdgeKind, EntityId, Event, ItemId, Location, LocationId, NarrativeNodeId,
+    NarrativeStructure, World,
+};
 
 /// Placeholder for a slot whose value and prompt hint are both absent.
 const UNNAMED_PLACEHOLDER: &str = "[unnamed]";
@@ -148,6 +152,73 @@ pub fn render_intro(world: &World) -> String {
     )
 }
 
+/// Render the branching narrative structure: the primary spine of stages, the
+/// player-choice fork points with their options, and the endings.
+///
+/// Structural (stage names, topology) — it needs no filled prose, so it renders a
+/// world straight out of `gen` without `--fill`. A fork point is a stage where the
+/// spine can branch; its options list where each edge leads.
+///
+/// ```
+/// use monomyth_core::doc_support::single_room_world;
+/// use monomyth_text::render_structure;
+///
+/// let world = single_room_world();
+/// // A one-node structure has a spine of one stage and no choices.
+/// assert!(render_structure(&world).starts_with("Narrative structure"));
+/// ```
+#[must_use]
+pub fn render_structure(world: &World) -> String {
+    let structure = &world.story.structure;
+    let mut out = String::new();
+    // Writes target a fresh `String`, so they cannot fail.
+    let _ = writeln!(out, "Narrative structure (plot: {:?})", world.story.plot);
+
+    let _ = writeln!(out, "\nSpine:");
+    for id in structure.spine() {
+        let marker = if structure.is_fork(id) {
+            "  [choice point]"
+        } else {
+            ""
+        };
+        let _ = writeln!(out, "  -> {}{marker}", stage_label(structure, id));
+    }
+
+    let mut forks = structure
+        .nodes
+        .iter()
+        .filter(|&(id, _)| structure.is_fork(id))
+        .peekable();
+    if forks.peek().is_some() {
+        let _ = writeln!(out, "\nChoices:");
+        for (_, node) in forks {
+            let _ = writeln!(out, "  at {:?}:", node.stage);
+            for edge in &node.out {
+                let verb = match edge.kind {
+                    EdgeKind::Choice => "enter",
+                    EdgeKind::Sequence => "continue to",
+                    EdgeKind::Fork => "branch to",
+                };
+                let _ = writeln!(out, "    - {verb} {}", stage_label(structure, edge.target));
+            }
+        }
+    }
+
+    let endings: Vec<String> = structure
+        .endings()
+        .map(|id| stage_label(structure, id))
+        .collect();
+    let _ = write!(out, "\nEndings: {}", endings.join(", "));
+    out
+}
+
+/// The Campbell stage name of a node, or a placeholder if the id does not resolve.
+fn stage_label(structure: &NarrativeStructure, id: NarrativeNodeId) -> String {
+    structure
+        .node(id)
+        .map_or_else(|| String::from("[?]"), |node| format!("{:?}", node.stage))
+}
+
 /// The filled value of a slot, or a bracketed placeholder while it is still empty.
 ///
 /// An empty slot with a prompt hint renders as `[hint]`; an empty slot with a blank
@@ -230,7 +301,7 @@ mod tests {
         LocationId, Provenance, World,
     };
 
-    use super::{render_event, render_events, render_intro, render_location};
+    use super::{render_event, render_events, render_intro, render_location, render_structure};
 
     /// A filled content slot carrying `value`, for building test worlds.
     fn filled(kind: ContentKind, value: &str) -> Content {
@@ -392,5 +463,72 @@ mod tests {
     fn should_render_intro_from_title_and_seed() {
         let world = single_room_world();
         assert_eq!(render_intro(&world), "[an untitled world]\n\nSeed: 0");
+    }
+
+    #[test]
+    fn should_render_structure_with_a_fork() {
+        use std::collections::BTreeSet;
+
+        use monomyth_core::{EdgeKind, NarrativeEdge, NarrativeNode, NarrativeStructure, NodeKind};
+        use monomyth_frameworks::{BookerPlot, MonomythStage};
+
+        fn empty(kind: ContentKind) -> Content {
+            Content::empty(ContentPrompt::new(kind, ""))
+        }
+
+        // A single fork diamond: the spine skips an optional beat (Sequence), while a
+        // Choice edge detours through it and reconverges on the ending.
+        let mut structure = NarrativeStructure::default();
+        let end = structure.nodes.insert(NarrativeNode::new(
+            "FreedomToLive",
+            NodeKind::Ending,
+            MonomythStage::FreedomToLive,
+            empty(ContentKind::Synopsis),
+        ));
+        let mid = structure.nodes.insert(NarrativeNode::new(
+            "RefusalOfTheCall",
+            NodeKind::Beat,
+            MonomythStage::RefusalOfTheCall,
+            empty(ContentKind::Synopsis),
+        ));
+        let mut origin = NarrativeNode::new(
+            "CallToAdventure",
+            NodeKind::Origin,
+            MonomythStage::CallToAdventure,
+            empty(ContentKind::Synopsis),
+        );
+        origin.out.push(NarrativeEdge::new(
+            end,
+            EdgeKind::Sequence,
+            empty(ContentKind::Choice),
+        ));
+        origin.out.push(NarrativeEdge::new(
+            mid,
+            EdgeKind::Choice,
+            empty(ContentKind::Choice),
+        ));
+        let root = structure.nodes.insert(origin);
+        structure.nodes[mid].out.push(NarrativeEdge::new(
+            end,
+            EdgeKind::Sequence,
+            empty(ContentKind::Choice),
+        ));
+        structure.root = root;
+        structure.endings = BTreeSet::from([end]);
+
+        let mut world = single_room_world();
+        world.story.structure = structure;
+        world.story.plot = Some(BookerPlot::RagsToRiches);
+
+        let expected = "Narrative structure (plot: Some(RagsToRiches))\n\
+             \nSpine:\n\
+             \u{20}\u{20}-> CallToAdventure  [choice point]\n\
+             \u{20}\u{20}-> FreedomToLive\n\
+             \nChoices:\n\
+             \u{20}\u{20}at CallToAdventure:\n\
+             \u{20}\u{20}\u{20}\u{20}- continue to FreedomToLive\n\
+             \u{20}\u{20}\u{20}\u{20}- enter RefusalOfTheCall\n\
+             \nEndings: FreedomToLive";
+        assert_eq!(render_structure(&world), expected);
     }
 }
