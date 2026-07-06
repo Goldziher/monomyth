@@ -1,0 +1,581 @@
+//! Ship-gated RAG over `xberg-rag`: the license ledger, ship-gated ingestion, and
+//! ship-filtered retrieval.
+//!
+//! This crate owns the vector store, the embedded license ledger
+//! ([`Ledger`], from `corpus/manifest.json`), and the two operations that must
+//! enforce the hard commercial licensing invariant:
+//!
+//! - **Ingestion is ship-gated.** [`Knowledge::ingest`] admits only sources whose
+//!   ledger [`Namespace`] is [`Namespace::Ship`] into the surfaceable store; any
+//!   `reference` source is refused with [`KnowledgeError::RefusedNonShip`], and an
+//!   unknown source id with [`KnowledgeError::UndeclaredSource`]. Nothing outside
+//!   the `ship` namespace can ever enter the shippable collection.
+//! - **Surfaceable retrieval is ship-filtered.** [`Knowledge::retrieve`] with a
+//!   surfaceable query targets the `ship` collection *and* applies the
+//!   `doc.metadata.namespace = "ship"` filter — defense in depth (collection and
+//!   filter), so a wrongly tagged document still cannot be surfaced.
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use monomyth_knowledge::{IngestInput, Knowledge, KnowledgeQuery};
+//!
+//! # async fn demo() -> Result<(), monomyth_knowledge::KnowledgeError> {
+//! let knowledge = Knowledge::open(Path::new("corpus.db")).await?;
+//! knowledge
+//!     .ingest("polti", IngestInput::new("The Suppliant implores a Power in authority."))
+//!     .await?;
+//! let passages = knowledge
+//!     .retrieve(KnowledgeQuery::surfaceable("a plea to a powerful protector", 5))
+//!     .await?;
+//! assert!(passages.iter().all(|p| p.namespace == monomyth_knowledge::Namespace::Ship));
+//! # Ok(())
+//! # }
+//! ```
+
+#![forbid(unsafe_code)]
+
+mod error;
+mod ledger;
+
+use std::fmt;
+use std::path::Path;
+use std::sync::Arc;
+
+use serde_json::Value;
+use xberg::ChunkingConfig;
+use xberg_rag::backends::sqlite::SqliteVectorStore;
+use xberg_rag::pipeline::{
+    CoreEmbedder, Embedder, IngestRequest, RagPipelineConfig, ingest_document,
+    retrieve as pipeline_retrieve,
+};
+use xberg_rag::{
+    CollectionSpec, DocumentId, Filter, FilterField, RetrieveMode, RetrieveQuery, RetrievedChunk,
+};
+
+pub use crate::error::KnowledgeError;
+pub use crate::ledger::{
+    Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, SourceEntry, Tier,
+};
+
+/// Embedding dimension of the default (`balanced`) `CoreEmbedder` preset.
+///
+/// Collections are created at this dimension; a test embedder must emit vectors
+/// of this width to match.
+pub const EMBEDDING_DIM: u32 = 768;
+
+/// The store name registered for the knowledge vector store.
+const STORE_NAME: &str = "monomyth";
+
+/// Metadata key carrying the declaring source id on each stored document.
+const META_SOURCE_ID: &str = "source_id";
+/// Metadata key carrying the trust-domain namespace on each stored document.
+const META_NAMESPACE: &str = "namespace";
+/// Metadata key carrying the license string on each stored document.
+const META_LICENSE: &str = "license";
+/// Metadata key carrying the license tier on each stored document.
+const META_TIER: &str = "tier";
+/// Metadata key carrying the content domain on each stored document.
+const META_DOMAIN: &str = "domain";
+
+/// Our input type for a single ingest, deliberately narrower than the pipeline's
+/// [`IngestRequest`]: licensing metadata is supplied by the ledger, not the
+/// caller, so it cannot be spoofed at the call site.
+#[derive(Debug, Clone, Default)]
+pub struct IngestInput {
+    /// The full text to chunk, embed, and store.
+    pub full_text: String,
+    /// Optional human-readable title.
+    pub title: Option<String>,
+    /// Optional source URI (path, URL, object key).
+    pub source_uri: Option<String>,
+}
+
+impl IngestInput {
+    /// Construct an input from full text, with no title or URI.
+    #[must_use]
+    pub fn new(full_text: impl Into<String>) -> Self {
+        Self {
+            full_text: full_text.into(),
+            title: None,
+            source_uri: None,
+        }
+    }
+}
+
+/// A retrieval request against the knowledge layer.
+#[derive(Debug, Clone)]
+pub struct KnowledgeQuery {
+    /// The query text.
+    pub text: String,
+    /// Maximum number of passages to return.
+    pub top_k: u32,
+    /// Whether the results may be surfaced verbatim. When `true`, retrieval is
+    /// ship-gated (ship collection + ship filter). When `false`, retrieval draws
+    /// on the reference collection for priors only.
+    pub surfaceable: bool,
+}
+
+impl KnowledgeQuery {
+    /// A ship-gated query whose results may be shown verbatim.
+    #[must_use]
+    pub fn surfaceable(text: impl Into<String>, top_k: u32) -> Self {
+        Self {
+            text: text.into(),
+            top_k,
+            surfaceable: true,
+        }
+    }
+
+    /// A reference-only query whose results inform generation but are never
+    /// shown verbatim.
+    ///
+    /// Note: [`Knowledge::ingest`] is ship-only today, so the reference
+    /// collection is unpopulated and this returns no passages until a
+    /// reference-ingest path is wired up.
+    #[must_use]
+    pub fn reference(text: impl Into<String>, top_k: u32) -> Self {
+        Self {
+            text: text.into(),
+            top_k,
+            surfaceable: false,
+        }
+    }
+}
+
+/// A retrieved passage, carrying the licensing provenance needed to decide
+/// whether it may be surfaced.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Passage {
+    /// The chunk text.
+    pub text: String,
+    /// The declaring source id.
+    pub source_id: String,
+    /// Retrieval relevance score.
+    pub score: f32,
+    /// The source's trust domain.
+    pub namespace: Namespace,
+    /// The source's license string.
+    pub license: String,
+}
+
+/// The ship-gated knowledge layer: vector store + embedder + license ledger.
+pub struct Knowledge {
+    store: Arc<dyn xberg_rag::VectorStore>,
+    embedder: Arc<dyn Embedder>,
+    ledger: Ledger,
+    chunking: ChunkingConfig,
+}
+
+impl fmt::Debug for Knowledge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Knowledge")
+            .field("store", &self.store.name())
+            .field("sources", &self.ledger.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Knowledge {
+    /// Open a file-backed knowledge layer at `db_path`, using the embedded ledger,
+    /// a local ONNX [`CoreEmbedder`], and semantic chunking.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KnowledgeError::Manifest`] if the embedded ledger is malformed,
+    /// or [`KnowledgeError::Store`] if the store cannot be opened or its
+    /// collections created.
+    pub async fn open(db_path: &Path) -> Result<Self, KnowledgeError> {
+        let store = SqliteVectorStore::open(STORE_NAME, db_path.to_string_lossy().into_owned())
+            .await
+            .map_err(|error| KnowledgeError::store("opening sqlite store", error))?;
+        let embedder = CoreEmbedder {
+            config: xberg::EmbeddingConfig::default(),
+        };
+        let knowledge = Self {
+            store: Arc::new(store),
+            embedder: Arc::new(embedder),
+            ledger: Ledger::load_embedded()?,
+            chunking: semantic_chunking(),
+        };
+        knowledge.ensure_collection(SHIP_COLLECTION).await?;
+        knowledge.ensure_collection(REFERENCE_COLLECTION).await?;
+        Ok(knowledge)
+    }
+
+    /// Construct a knowledge layer from injected parts — the test seam.
+    ///
+    /// Uses a plain text [`ChunkingConfig`] so no embedding model is needed for
+    /// chunking; pair it with an in-memory store and a fake embedder in tests.
+    #[must_use]
+    pub fn with(
+        store: Arc<dyn xberg_rag::VectorStore>,
+        embedder: Arc<dyn Embedder>,
+        ledger: Ledger,
+    ) -> Self {
+        Self {
+            store,
+            embedder,
+            ledger,
+            chunking: ChunkingConfig::default(),
+        }
+    }
+
+    /// Ingest `input` under the ledger-declared source `source_id`.
+    ///
+    /// The ship gate rejects any source not declared in the ledger
+    /// ([`KnowledgeError::UndeclaredSource`]) and any source outside the `ship`
+    /// namespace ([`KnowledgeError::RefusedNonShip`]) before any text is stored.
+    ///
+    /// # Errors
+    ///
+    /// Ship-gate errors as above, or [`KnowledgeError::Store`] on a store failure.
+    pub async fn ingest(
+        &self,
+        source_id: &str,
+        input: IngestInput,
+    ) -> Result<DocumentId, KnowledgeError> {
+        let entry = self
+            .ledger
+            .get(source_id)
+            .ok_or_else(|| KnowledgeError::UndeclaredSource {
+                id: source_id.to_owned(),
+            })?;
+
+        // THE GATE: only ship-namespace sources may enter the shippable store.
+        if entry.namespace != Namespace::Ship {
+            return Err(KnowledgeError::RefusedNonShip {
+                id: source_id.to_owned(),
+                namespace: entry.namespace,
+            });
+        }
+
+        let metadata = serde_json::json!({
+            META_SOURCE_ID: source_id,
+            META_NAMESPACE: entry.namespace,
+            META_LICENSE: entry.license,
+            META_TIER: entry.tier,
+            META_DOMAIN: entry.domain,
+        });
+
+        let request = IngestRequest {
+            full_text: input.full_text,
+            title: input.title,
+            source_uri: input.source_uri,
+            metadata,
+            ..IngestRequest::default()
+        };
+
+        self.ensure_collection(SHIP_COLLECTION).await?;
+        let config = RagPipelineConfig {
+            chunking: &self.chunking,
+        };
+        ingest_document(
+            Arc::clone(&self.store),
+            SHIP_COLLECTION,
+            request,
+            &config,
+            self.embedder.as_ref(),
+        )
+        .await
+        .map_err(|error| KnowledgeError::store("ingesting document", error))
+    }
+
+    /// Retrieve passages for `query`.
+    ///
+    /// A surfaceable query is ship-gated: it targets the `ship` collection and
+    /// applies the `doc.metadata.namespace = "ship"` filter (collection *and*
+    /// filter, defense in depth). A reference query draws on the reference
+    /// collection for priors only.
+    ///
+    /// # Errors
+    ///
+    /// [`KnowledgeError::Store`] on a store failure, or
+    /// [`KnowledgeError::MissingMetadata`] if a stored chunk lacks the licensing
+    /// metadata every ingest writes.
+    pub async fn retrieve(&self, query: KnowledgeQuery) -> Result<Vec<Passage>, KnowledgeError> {
+        let (collection, filter) = if query.surfaceable {
+            (SHIP_COLLECTION, Some(ship_filter()))
+        } else {
+            (REFERENCE_COLLECTION, None)
+        };
+
+        self.ensure_collection(collection).await?;
+
+        let retrieve_query = RetrieveQuery {
+            mode: RetrieveMode::Vector,
+            query_text: Some(query.text),
+            filter,
+            include_content: true,
+            // Licensing metadata lives on the parent document, not the chunk, so
+            // the document summary must be pulled to build a `Passage`.
+            include_document: true,
+            ..RetrieveQuery::vector(query.top_k)
+        };
+
+        let chunks = pipeline_retrieve(
+            Arc::clone(&self.store),
+            collection,
+            retrieve_query,
+            Some(self.embedder.as_ref()),
+        )
+        .await
+        .map_err(|error| KnowledgeError::store("retrieving chunks", error))?;
+
+        chunks
+            .into_iter()
+            .map(|chunk| passage_from_chunk(chunk, collection))
+            .collect()
+    }
+
+    /// Ensure `collection` exists at the embedding dimension. Idempotent.
+    async fn ensure_collection(&self, collection: &str) -> Result<(), KnowledgeError> {
+        let spec = CollectionSpec::new(collection, EMBEDDING_DIM);
+        self.store
+            .ensure_collection(&spec)
+            .await
+            .map_err(|error| KnowledgeError::store("ensuring collection", error))
+    }
+}
+
+/// The ship filter: `doc.metadata.namespace = "ship"`.
+///
+/// The filter whitelist admits only `doc.metadata.*` for free-form tags, so the
+/// namespace tag is addressed as `doc.metadata.namespace`. The value is taken
+/// from [`Namespace::as_wire`] — the same source of truth ingest writes — so the
+/// enforcement filter cannot drift from the stored tag.
+fn ship_filter() -> Filter {
+    Filter::Eq {
+        field: FilterField(format!("doc.metadata.{META_NAMESPACE}")),
+        value: Value::String(Namespace::Ship.as_wire().to_owned()),
+    }
+}
+
+/// Semantic chunking paired with the default embedding model, per the corpus
+/// guidance to chunk at topic boundaries.
+fn semantic_chunking() -> ChunkingConfig {
+    ChunkingConfig {
+        chunker_type: xberg::ChunkerType::Semantic,
+        embedding: Some(xberg::EmbeddingConfig::default()),
+        ..ChunkingConfig::default()
+    }
+}
+
+/// Build a [`Passage`] from a retrieved chunk, reading licensing provenance from
+/// the parent document's metadata.
+fn passage_from_chunk(chunk: RetrievedChunk, collection: &str) -> Result<Passage, KnowledgeError> {
+    let metadata = chunk
+        .document
+        .as_ref()
+        .map(|doc| doc.metadata.clone())
+        .ok_or_else(|| KnowledgeError::MissingMetadata {
+            collection: collection.to_owned(),
+            field: "document",
+        })?;
+    build_passage(&metadata, chunk.content, chunk.score, collection)
+}
+
+/// The pure core of passage construction: extract licensing provenance from
+/// document `metadata`, enforce the fail-closed invariants, and pair it with the
+/// chunk text. Split out from [`passage_from_chunk`] so the enforcement can be
+/// unit-tested without constructing xberg store types.
+///
+/// This is the **third** licensing enforcement layer (after the ingest gate and
+/// the retrieval filter): a chunk drawn from the ship collection whose namespace
+/// tag is anything but `ship`, or that carries no content, is refused rather than
+/// surfaced.
+fn build_passage(
+    metadata: &Value,
+    content: Option<String>,
+    score: f32,
+    collection: &str,
+) -> Result<Passage, KnowledgeError> {
+    let missing = |field| KnowledgeError::MissingMetadata {
+        collection: collection.to_owned(),
+        field,
+    };
+
+    let source_id = metadata
+        .get(META_SOURCE_ID)
+        .and_then(Value::as_str)
+        .ok_or_else(|| missing(META_SOURCE_ID))?
+        .to_owned();
+    let namespace_value = metadata
+        .get(META_NAMESPACE)
+        .ok_or_else(|| missing(META_NAMESPACE))?;
+    let namespace: Namespace = serde_json::from_value(namespace_value.clone()).map_err(|_| {
+        KnowledgeError::MalformedMetadata {
+            collection: collection.to_owned(),
+            field: META_NAMESPACE,
+        }
+    })?;
+
+    // Fail closed: never surface a ship-collection chunk that is not tagged ship,
+    // even if it reached the collection out of band (direct write, backend bug).
+    if collection == SHIP_COLLECTION && namespace != Namespace::Ship {
+        return Err(KnowledgeError::NamespaceViolation {
+            collection: collection.to_owned(),
+            found: namespace,
+        });
+    }
+
+    let license = metadata
+        .get(META_LICENSE)
+        .and_then(Value::as_str)
+        .ok_or_else(|| missing(META_LICENSE))?
+        .to_owned();
+    let text = content.ok_or_else(|| KnowledgeError::EmptyContent {
+        collection: collection.to_owned(),
+    })?;
+
+    Ok(Passage {
+        text,
+        source_id,
+        score,
+        namespace,
+        license,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+    use xberg_rag::InMemoryVectorStore;
+    use xberg_rag::RagResult;
+
+    use super::*;
+
+    /// Deterministic fake embedder: a stable, content-derived vector of the
+    /// collection dimension. No ONNX, no network.
+    #[derive(Debug)]
+    struct FakeEmbedder;
+
+    #[async_trait]
+    impl Embedder for FakeEmbedder {
+        async fn embed(&self, texts: Vec<String>) -> RagResult<Vec<Vec<f32>>> {
+            Ok(texts
+                .iter()
+                .map(|text| deterministic_vector(text))
+                .collect())
+        }
+    }
+
+    fn deterministic_vector(text: &str) -> Vec<f32> {
+        let mut vector = vec![0.0f32; EMBEDDING_DIM as usize];
+        for (index, byte) in text.bytes().enumerate() {
+            let slot = index % EMBEDDING_DIM as usize;
+            vector[slot] += f32::from(byte) / 255.0;
+        }
+        vector
+    }
+
+    fn test_knowledge() -> Knowledge {
+        let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(InMemoryVectorStore::new(STORE_NAME));
+        let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
+        let ledger = Ledger::load_embedded().expect("embedded manifest parses");
+        Knowledge::with(store, embedder, ledger)
+    }
+
+    #[tokio::test]
+    async fn ingest_refuses_reference_namespace_source() {
+        let knowledge = test_knowledge();
+        // `perseus` is tier=noncommercial, namespace=reference in the manifest.
+        let error = knowledge
+            .ingest("perseus", IngestInput::new("some reference text"))
+            .await
+            .expect_err("reference-namespace source must be refused");
+        match error {
+            KnowledgeError::RefusedNonShip { id, namespace } => {
+                assert_eq!(id, "perseus");
+                assert_eq!(namespace, Namespace::Reference);
+            }
+            other => panic!("expected RefusedNonShip, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ingest_rejects_undeclared_source() {
+        let knowledge = test_knowledge();
+        let error = knowledge
+            .ingest("not_a_real_source", IngestInput::new("text"))
+            .await
+            .expect_err("undeclared source must be rejected");
+        match error {
+            KnowledgeError::UndeclaredSource { id } => assert_eq!(id, "not_a_real_source"),
+            other => panic!("expected UndeclaredSource, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ingest_then_surfaceable_retrieve_round_trips_ship_source() {
+        let knowledge = test_knowledge();
+        // `polti` is tier=public_domain, namespace=ship in the manifest.
+        knowledge
+            .ingest(
+                "polti",
+                IngestInput::new("The Suppliant implores a Power in authority for mercy and aid."),
+            )
+            .await
+            .expect("ship source ingests");
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::surfaceable(
+                "a plea to a powerful protector",
+                5,
+            ))
+            .await
+            .expect("retrieval succeeds");
+
+        assert!(!passages.is_empty(), "expected at least one passage");
+        let passage = &passages[0];
+        assert_eq!(passage.namespace, Namespace::Ship);
+        assert_eq!(passage.source_id, "polti");
+    }
+
+    fn tagged_metadata(namespace: &str) -> Value {
+        serde_json::json!({
+            META_SOURCE_ID: "somesource",
+            META_NAMESPACE: namespace,
+            META_LICENSE: "some-license",
+            META_DOMAIN: "myth",
+        })
+    }
+
+    #[test]
+    fn build_passage_refuses_non_ship_tag_in_ship_collection() {
+        // The fail-closed third layer: a reference-tagged document that somehow
+        // sits in the ship collection must NOT yield a surfaceable passage.
+        let metadata = tagged_metadata("reference");
+        let error = build_passage(&metadata, Some("text".to_owned()), 1.0, SHIP_COLLECTION)
+            .expect_err("a non-ship tag in the ship collection must be refused");
+        match error {
+            KnowledgeError::NamespaceViolation { found, .. } => {
+                assert_eq!(found, Namespace::Reference);
+            }
+            other => panic!("expected NamespaceViolation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_passage_refuses_empty_content() {
+        let metadata = tagged_metadata("ship");
+        let error = build_passage(&metadata, None, 1.0, SHIP_COLLECTION)
+            .expect_err("missing content must be refused, not defaulted to empty");
+        assert!(matches!(error, KnowledgeError::EmptyContent { .. }));
+    }
+
+    #[test]
+    fn build_passage_accepts_a_well_formed_ship_chunk() {
+        let metadata = tagged_metadata("ship");
+        let passage = build_passage(
+            &metadata,
+            Some("the trial".to_owned()),
+            0.5,
+            SHIP_COLLECTION,
+        )
+        .expect("a well-formed ship chunk builds a passage");
+        assert_eq!(passage.namespace, Namespace::Ship);
+        assert_eq!(passage.source_id, "somesource");
+        assert_eq!(passage.text, "the trial");
+    }
+}
