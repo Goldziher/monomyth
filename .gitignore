@@ -1,0 +1,42 @@
+/target
+
+# Python (corpus pipeline)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Cached raw downloads (re-fetchable; not source of truth)
+/corpus/raw/
+
+# Generated, reproducible text chunks (rebuild via `python -m monomyth_corpus fetch ...`)
+/artifacts/text/
+
+# poly (polylint) cache
+/.polylint/
+
+# OS
+.DS_Store
+
+# BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
+.agents/
+.ai-rulez/.generated-manifest.json
+.claude/
+.cline/
+.clinerules/
+.codex/
+.continue/
+.cursor/
+.gemini/
+.github/agents/
+.github/commands/
+.github/copilot-instructions.md
+.github/skills/
+.junie/
+.mcp.json
+.opencode/
+.windsurf/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+# END ai-rulez

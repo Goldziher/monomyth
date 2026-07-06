@@ -1,0 +1,24 @@
+# cargo-deny config (run via the poly cargo-deny hook).
+# monomyth is a proprietary, unpublished workspace crate, so its own license check is skipped;
+# third-party dependencies must carry one of the permissive licenses allowed below.
+
+[licenses]
+private = { ignore = true }
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[advisories]
+yanked = "deny"
