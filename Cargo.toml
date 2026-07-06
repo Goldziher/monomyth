@@ -17,6 +17,8 @@ authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 # Dependencies are kept alphabetical (cargo-sort). Internal crates are the `monomyth-*` path
 # entries; the rest are shared third-party pinned to the versions used by the xberg-io workspace.
 [workspace.dependencies]
+async-trait = "0.1"
+dotenvy = "0.15"
 monomyth-core = { path = "crates/monomyth-core" }
 monomyth-frameworks = { path = "crates/monomyth-frameworks" }
 monomyth-gen = { path = "crates/monomyth-gen" }
@@ -25,10 +27,16 @@ monomyth-llm = { path = "crates/monomyth-llm" }
 monomyth-text = { path = "crates/monomyth-text" }
 rand = "0.9.2"
 rand_chacha = "0.9.0"
+schemars = "1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 slotmap = { version = "1.0.7", features = ["serde"] }
 thiserror = "2.0.18"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# xberg-io stack — declared at their crates.io versions and redirected to the local checkouts via
+# [patch.crates-io] below for co-development. Drop the patch to build from crates.io.
+xberg = "1.0.0-rc.11"
+xberg-rag = "1.0.0-rc.11"
 
 # Lints are defined once here and inherited by every crate via `[lints] workspace = true`.
 # Priorities: group lints use priority -1 so individual overrides (priority 0/1) win.
@@ -43,3 +51,10 @@ pedantic = { level = "deny", priority = -1 }
 # Deliberate domain convention: the taxonomy enums pair with a `*Info` record
 # (`MonomythStage` / `MonomythStageInfo`), so the repeated stem is intentional.
 module_name_repetitions = { level = "allow", priority = 1 }
+
+# Local co-development redirect for the xberg-io stack. `liter-llm` enters the graph transitively via
+# `xberg`'s `structured` feature. Remove this block to build against the published crates.io versions.
+[patch.crates-io]
+xberg = { path = "../xberg-io/xberg/crates/xberg" }
+xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }
+liter-llm = { path = "../xberg-io/liter-llm/crates/liter-llm" }
