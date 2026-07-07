@@ -106,6 +106,12 @@ pub fn render_event(event: &Event, world: &World) -> String {
         // The engine has already resolved the description to text (see `Event::Examined`).
         Event::Examined { text } => text.clone(),
         Event::Waited => String::from("You wait."),
+        Event::Advanced { to, .. } => {
+            format!(
+                "The story moves on to {}.",
+                stage_label(&world.story.structure, *to)
+            )
+        }
         // `Event` is `#[non_exhaustive]`, so a future variant must degrade gracefully
         // rather than fail to compile a frontend built against an older core.
         _ => String::from("Something happens."),
@@ -212,6 +218,47 @@ pub fn render_structure(world: &World) -> String {
     out
 }
 
+/// Render the choices open at the narrative cursor as a numbered list.
+///
+/// Each line is `  <n>) <verb> <stage>`, where the number is what a player types to
+/// take that branch and the verb reflects the edge kind (a linear continuation
+/// versus a fork). The numbering matches
+/// [`NarrativeStructure::available_choices`](monomyth_core::NarrativeStructure::available_choices),
+/// so a chosen number resolves to the same edge. When the cursor is at an ending
+/// (no open branch), a single closing line is returned instead.
+///
+/// ```
+/// use monomyth_core::doc_support::single_room_world;
+/// use monomyth_text::render_choices;
+///
+/// // The one-node fixture sits at its sole ending: no branches remain.
+/// let world = single_room_world();
+/// assert_eq!(render_choices(&world), "The story has reached an ending.");
+/// ```
+#[must_use]
+pub fn render_choices(world: &World) -> String {
+    let structure = &world.story.structure;
+    let choices = structure.available_choices(world.state.cursor, &world.state.flags);
+    if choices.is_empty() {
+        return String::from("The story has reached an ending.");
+    }
+    let mut out = String::from("What next:");
+    for (index, edge) in choices.iter().enumerate() {
+        let verb = match edge.kind {
+            EdgeKind::Sequence => "continue to",
+            EdgeKind::Choice => "choose",
+            EdgeKind::Fork => "branch to",
+        };
+        let _ = write!(
+            out,
+            "\n  {}) {verb} {}",
+            index + 1,
+            stage_label(structure, edge.target),
+        );
+    }
+    out
+}
+
 /// The Campbell stage name of a node, or a placeholder if the id does not resolve.
 fn stage_label(structure: &NarrativeStructure, id: NarrativeNodeId) -> String {
     structure
@@ -301,7 +348,10 @@ mod tests {
         LocationId, Provenance, World,
     };
 
-    use super::{render_event, render_events, render_intro, render_location, render_structure};
+    use super::{
+        render_choices, render_event, render_events, render_intro, render_location,
+        render_structure,
+    };
 
     /// A filled content slot carrying `value`, for building test worlds.
     fn filled(kind: ContentKind, value: &str) -> Content {
@@ -530,5 +580,80 @@ mod tests {
              \u{20}\u{20}\u{20}\u{20}- enter RefusalOfTheCall\n\
              \nEndings: FreedomToLive";
         assert_eq!(render_structure(&world), expected);
+    }
+
+    #[test]
+    fn should_render_numbered_choices_at_a_fork() {
+        use std::collections::BTreeSet;
+
+        use monomyth_core::{EdgeKind, NarrativeEdge, NarrativeNode, NarrativeStructure, NodeKind};
+        use monomyth_frameworks::MonomythStage;
+
+        fn empty(kind: ContentKind) -> Content {
+            Content::empty(ContentPrompt::new(kind, ""))
+        }
+
+        // root =(Sequence)=> end, root =(Choice)=> mid -> end: the cursor sits at the
+        // fork with two open branches.
+        let mut structure = NarrativeStructure::default();
+        let end = structure.nodes.insert(NarrativeNode::new(
+            "FreedomToLive",
+            NodeKind::Ending,
+            MonomythStage::FreedomToLive,
+            empty(ContentKind::Synopsis),
+        ));
+        let mid = structure.nodes.insert(NarrativeNode::new(
+            "RefusalOfTheCall",
+            NodeKind::Beat,
+            MonomythStage::RefusalOfTheCall,
+            empty(ContentKind::Synopsis),
+        ));
+        let mut origin = NarrativeNode::new(
+            "CallToAdventure",
+            NodeKind::Origin,
+            MonomythStage::CallToAdventure,
+            empty(ContentKind::Synopsis),
+        );
+        origin.out.push(NarrativeEdge::new(
+            end,
+            EdgeKind::Sequence,
+            empty(ContentKind::Choice),
+        ));
+        origin.out.push(NarrativeEdge::new(
+            mid,
+            EdgeKind::Choice,
+            empty(ContentKind::Choice),
+        ));
+        let root = structure.nodes.insert(origin);
+        structure.nodes[mid].out.push(NarrativeEdge::new(
+            end,
+            EdgeKind::Sequence,
+            empty(ContentKind::Choice),
+        ));
+        structure.root = root;
+        structure.endings = BTreeSet::from([end]);
+
+        let mut world = single_room_world();
+        world.story.structure = structure;
+        world.state.cursor = root;
+
+        let expected = "What next:\n\
+             \u{20}\u{20}1) continue to FreedomToLive\n\
+             \u{20}\u{20}2) choose RefusalOfTheCall";
+        assert_eq!(render_choices(&world), expected);
+
+        // Advancing the cursor renders a stage-anchored line.
+        let advanced = Event::Advanced {
+            from: root,
+            to: mid,
+        };
+        assert_eq!(
+            render_event(&advanced, &world),
+            "The story moves on to RefusalOfTheCall."
+        );
+
+        // At an ending, no branch remains.
+        world.state.cursor = end;
+        assert_eq!(render_choices(&world), "The story has reached an ending.");
     }
 }
