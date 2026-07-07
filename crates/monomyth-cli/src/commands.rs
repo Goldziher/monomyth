@@ -119,8 +119,8 @@ pub(crate) fn apply_edit_script(
 pub(crate) fn run_edit(world_path: &Path, script_path: &Path, out: Option<PathBuf>) -> Result<()> {
     let world_json = std::fs::read_to_string(world_path)
         .with_context(|| format!("reading world file {}", world_path.display()))?;
-    let mut world: World = serde_json::from_str(&world_json)
-        .with_context(|| format!("deserializing world from {}", world_path.display()))?;
+    let mut world = World::from_json_checked(&world_json)
+        .with_context(|| format!("loading world from {}", world_path.display()))?;
 
     let script_json = std::fs::read_to_string(script_path)
         .with_context(|| format!("reading edit script {}", script_path.display()))?;
@@ -167,8 +167,8 @@ pub(crate) fn load_play_world(world_path: Option<&Path>, seed: Option<u64>) -> R
         (Some(path), None) => {
             let json = std::fs::read_to_string(path)
                 .with_context(|| format!("reading world file {}", path.display()))?;
-            serde_json::from_str(&json)
-                .with_context(|| format!("deserializing world from {}", path.display()))
+            World::from_json_checked(&json)
+                .with_context(|| format!("loading world from {}", path.display()))
         }
         (None, Some(seed)) => generate_world(seed),
         (Some(_), Some(_)) => bail!("provide exactly one of --world or --seed, not both"),
