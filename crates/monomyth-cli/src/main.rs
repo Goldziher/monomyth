@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
             let world = commands::load_play_world(world.as_deref(), seed)?;
             play::run_play(world)
         }
+        Command::Edit { world, script, out } => commands::run_edit(&world, &script, out),
         Command::Ingest { source, text, file } => {
             let content = commands::resolve_text(text, file.as_deref())?;
             commands::run_ingest(&source, content, &cli.db).await

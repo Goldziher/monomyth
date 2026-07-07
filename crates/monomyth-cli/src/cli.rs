@@ -60,6 +60,21 @@ pub(crate) enum Command {
         seed: Option<u64>,
     },
 
+    /// Apply a JSON edit script to a world's narrative structure and re-validate.
+    Edit {
+        /// Load the world to edit from this path.
+        #[arg(long)]
+        world: PathBuf,
+
+        /// Path to a JSON array of narrative edit operations to apply.
+        #[arg(long)]
+        script: PathBuf,
+
+        /// Write the edited world here instead of to stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+
     /// Ingest a ship-namespace source's text into the knowledge store.
     Ingest {
         /// Declared source id (must exist in the ledger and be ship-namespace).

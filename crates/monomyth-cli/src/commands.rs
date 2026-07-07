@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use monomyth_core::World;
+use monomyth_core::{EditOutcome, NarrativeEdit, World};
 use monomyth_gen::{ContentContext, Generator};
 use monomyth_knowledge::{IngestInput, Knowledge, KnowledgeQuery};
 use monomyth_llm::Llm;
@@ -78,6 +78,79 @@ pub(crate) async fn run_gen(
             println!("\nWorld written to {}", path.display());
         }
         None => println!("\n{serialized}"),
+    }
+    Ok(())
+}
+
+/// Apply a batch of narrative edits to `world`'s structure, transactionally.
+///
+/// Pure and testable: it delegates to the core transactional
+/// [`apply_edits`](monomyth_core::NarrativeStructure::apply_edits), so the whole
+/// batch either lands and re-validates or leaves the structure untouched. Returns
+/// the per-edit outcomes so the caller can report the ids of any created nodes.
+///
+/// # Errors
+///
+/// Fails if any edit's precondition is unmet or the edited structure is invalid;
+/// on failure `world` is unchanged.
+pub(crate) fn apply_edit_script(
+    world: &mut World,
+    edits: &[NarrativeEdit],
+) -> Result<Vec<EditOutcome>> {
+    world
+        .story
+        .structure
+        .apply_edits(edits)
+        .context("applying the narrative edit script")
+}
+
+/// Handle `edit`: load a world, apply a JSON edit script to its narrative
+/// structure, re-validate, and emit the edited world.
+///
+/// The script is a JSON array of [`NarrativeEdit`] operations referencing existing
+/// node ids (copy them from a `gen --out` world file). The edited world is written
+/// to `out` when given, otherwise printed to stdout; a human summary goes to stderr
+/// so stdout stays a clean serialized world.
+///
+/// # Errors
+///
+/// Fails if the world or script cannot be read or parsed, if an edit is rejected
+/// (leaving the world untouched), or if serialization or writing the output fails.
+pub(crate) fn run_edit(world_path: &Path, script_path: &Path, out: Option<PathBuf>) -> Result<()> {
+    let world_json = std::fs::read_to_string(world_path)
+        .with_context(|| format!("reading world file {}", world_path.display()))?;
+    let mut world: World = serde_json::from_str(&world_json)
+        .with_context(|| format!("deserializing world from {}", world_path.display()))?;
+
+    let script_json = std::fs::read_to_string(script_path)
+        .with_context(|| format!("reading edit script {}", script_path.display()))?;
+    let edits: Vec<NarrativeEdit> = serde_json::from_str(&script_json)
+        .with_context(|| format!("parsing edit script {}", script_path.display()))?;
+
+    let before = world.story.structure.nodes.len();
+    let outcomes = apply_edit_script(&mut world, &edits)?;
+    let after = world.story.structure.nodes.len();
+
+    eprintln!(
+        "Applied {} edit(s): {before} -> {after} nodes.",
+        edits.len()
+    );
+    for outcome in &outcomes {
+        if let EditOutcome::NodeAdded(id) = outcome {
+            eprintln!("  added node {id:?}");
+        }
+    }
+    eprintln!("\n{}", render_structure(&world));
+
+    let serialized =
+        serde_json::to_string_pretty(&world).context("serializing the edited world")?;
+    match out {
+        Some(path) => {
+            std::fs::write(&path, &serialized)
+                .with_context(|| format!("writing world to {}", path.display()))?;
+            eprintln!("Edited world written to {}", path.display());
+        }
+        None => println!("{serialized}"),
     }
     Ok(())
 }
@@ -167,7 +240,40 @@ pub(crate) async fn run_retrieve(query: &str, top_k: u32, db: &Path) -> Result<(
 mod tests {
     use std::path::Path;
 
-    use super::{generate_world, load_play_world, resolve_text};
+    use monomyth_core::NarrativeEdit;
+
+    use super::{apply_edit_script, generate_world, load_play_world, resolve_text};
+
+    #[test]
+    fn should_apply_a_valid_edit_script_to_the_structure() {
+        let mut world = generate_world(42).expect("generation succeeds");
+        let root = world.story.structure.root();
+        let outcomes = apply_edit_script(
+            &mut world,
+            &[NarrativeEdit::RelabelNode {
+                node: root,
+                label: "Opening".to_owned(),
+            }],
+        )
+        .expect("a valid script applies");
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            world.story.structure.node(root).expect("root exists").label,
+            "Opening"
+        );
+    }
+
+    #[test]
+    fn should_reject_an_invalid_edit_script_and_leave_the_world_untouched() {
+        let mut world = generate_world(42).expect("generation succeeds");
+        let root = world.story.structure.root();
+        let before = serde_json::to_string(&world).expect("serialization succeeds");
+        // Removing the root as a beat is rejected; the world must be unchanged.
+        let result = apply_edit_script(&mut world, &[NarrativeEdit::RemoveBeat { node: root }]);
+        assert!(result.is_err(), "removing the root must fail");
+        let after = serde_json::to_string(&world).expect("serialization succeeds");
+        assert_eq!(before, after, "a rejected script must not mutate the world");
+    }
 
     #[test]
     fn should_generate_byte_identical_world_for_same_seed() {
