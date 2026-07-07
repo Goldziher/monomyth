@@ -425,6 +425,76 @@ impl NarrativeStructure {
         order
     }
 
+    /// Recompute every node's [`NodeKind`] from the current topology.
+    ///
+    /// After a structural edit the declared kinds may no longer match the graph;
+    /// this rederives them so [`validate`](Self::validate)'s `check_kinds` accepts
+    /// the result for any well-formed topology. The precedence is fixed so a forking
+    /// root stays an [`Origin`](NodeKind::Origin): the [`root`](Self::root) is always
+    /// `Origin`; otherwise out-degree 0 is an [`Ending`](NodeKind::Ending),
+    /// out-degree > 1 a [`Branch`](NodeKind::Branch), in-degree > 1 a
+    /// [`Merge`](NodeKind::Merge), and everything else a [`Beat`](NodeKind::Beat).
+    /// In-degrees are counted by iterating every node's out-edges.
+    ///
+    /// ```
+    /// use std::collections::BTreeSet;
+    ///
+    /// use monomyth_core::{
+    ///     Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode,
+    ///     NarrativeStructure, NodeKind,
+    /// };
+    /// use monomyth_frameworks::MonomythStage;
+    /// use slotmap::SlotMap;
+    ///
+    /// fn synopsis(hint: &str) -> Content {
+    ///     Content::empty(ContentPrompt::new(ContentKind::Synopsis, hint))
+    /// }
+    ///
+    /// let mut nodes = SlotMap::with_key();
+    /// let end = nodes.insert(NarrativeNode::new(
+    ///     "FreedomToLive", NodeKind::Beat, MonomythStage::FreedomToLive, synopsis("return"),
+    /// ));
+    /// let mut origin = NarrativeNode::new(
+    ///     "CallToAdventure", NodeKind::Beat, MonomythStage::CallToAdventure, synopsis("call"),
+    /// );
+    /// let label = Content::empty(ContentPrompt::new(ContentKind::Choice, ""));
+    /// origin.out.push(NarrativeEdge::new(end, EdgeKind::Sequence, label));
+    /// let root = nodes.insert(origin);
+    ///
+    /// let mut structure = NarrativeStructure { nodes, root, endings: BTreeSet::from([end]) };
+    /// structure.recompute_kinds();
+    /// assert_eq!(structure.node(root).unwrap().kind, NodeKind::Origin);
+    /// assert_eq!(structure.node(end).unwrap().kind, NodeKind::Ending);
+    /// ```
+    pub fn recompute_kinds(&mut self) {
+        let mut in_degree: BTreeMap<NarrativeNodeId, usize> =
+            self.nodes.keys().map(|key| (key, 0usize)).collect();
+        for node in self.nodes.values() {
+            for edge in &node.out {
+                if let Some(degree) = in_degree.get_mut(&edge.target) {
+                    *degree += 1;
+                }
+            }
+        }
+
+        let root = self.root;
+        for (key, node) in &mut self.nodes {
+            let out_degree = node.out.len();
+            let incoming = in_degree.get(&key).copied().unwrap_or(0);
+            node.kind = if key == root {
+                NodeKind::Origin
+            } else if out_degree == 0 {
+                NodeKind::Ending
+            } else if out_degree > 1 {
+                NodeKind::Branch
+            } else if incoming > 1 {
+                NodeKind::Merge
+            } else {
+                NodeKind::Beat
+            };
+        }
+    }
+
     /// Node keys in ascending order, for snapshot-stable iteration.
     fn sorted_keys(&self) -> Vec<NarrativeNodeId> {
         let mut keys: Vec<NarrativeNodeId> = self.nodes.keys().collect();

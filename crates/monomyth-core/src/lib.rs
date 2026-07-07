@@ -55,6 +55,7 @@ mod engine;
 mod entity;
 mod ids;
 mod narrative;
+mod narrative_edit;
 mod rng;
 mod story;
 mod world;
@@ -66,6 +67,7 @@ pub use ids::{EntityId, ItemId, LocationId, NarrativeNodeId, QuestId};
 pub use narrative::{
     EdgeKind, NarrativeEdge, NarrativeError, NarrativeNode, NarrativeStructure, NodeKind,
 };
+pub use narrative_edit::{EditError, EditOutcome, NarrativeEdit, NodeSpec};
 pub use rng::RngState;
 pub use story::{Quest, Story};
 pub use world::{Direction, Location, SCHEMA_VERSION, World, WorldMeta, WorldState};
