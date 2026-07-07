@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-06
+date: 2026-07-07
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -32,16 +32,25 @@ Chosen option: "hybrid". Procedural passes are a pure function of a seed and pro
 never invent structure. The two phases are physically separated in the pipeline; the intermediate
 (structure-complete, content-empty) world is serializable and reproducible.
 
+The procedural pipeline is an ordered set of passes — the branching narrative spine and its beats,
+then the map, cast, and items — each drawing from its own ChaCha8 sub-stream. The narrative passes
+build the story graph through the same serializable edit vocabulary that human input and agents use
+(ADR-0003), so structure growth is inspectable and validated. The content phase is a pipeline of
+grounded passes that retrieve ship-safe corpus passages (ADR-0005, ADR-0007) and fill title,
+location, entity, and item prose; it takes no RNG and touches no structure.
+
 ### Consequences
 
 - Good, because structure is reproducible from `(seed)` and content is regenerable independently.
-- Good, because the LLM cannot corrupt structure — enforced by types (it only sees content slots).
+- Good, because the LLM cannot corrupt structure — enforced by types (it only sees content slots)
+  and by the content passes carrying no procedural RNG.
 - Bad, because the model must carry a content-slot type on every content-bearing entity.
 
 ### Confirmation
 
 The procedural phase runs entirely before the content phase; a golden-hash test asserts the same
-seed yields byte-identical structure. LLM non-determinism is quarantined in content provenance.
+seed yields byte-identical structure, and a fingerprint test asserts the content phase leaves
+structure byte-unchanged. LLM non-determinism is quarantined in content provenance.
 
 ## More Information
 

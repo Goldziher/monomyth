@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-06
+date: 2026-07-07
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -27,20 +27,24 @@ source of truth without the graphics work forcing a rewrite of the text work (or
 ## Decision Outcome
 
 Chosen option: "core engine + pluggable frontends". A `monomyth-core` crate owns the domain model
-and a pure `apply(world, action) -> Vec<Event>` state machine; frontends (`monomyth-text`,
-later `monomyth-pixel`) consume the serialized model and semantic events. The model is
-render-agnostic — no colors, glyphs, or coordinates leak in.
+and a pure `apply(world, action) -> Vec<Event>` state machine; frontends (`monomyth-text` today,
+`monomyth-pixel` later) consume the serialized model and semantic events, and a thin `monomyth-cli`
+wires generation, play, and edit together. The model is render-agnostic — no colors, glyphs, or
+coordinates leak in — and the serialized world is a *validated* contract: `World::from_json_checked`
+guards the schema version and whole-world referential integrity at the load boundary.
 
 ### Consequences
 
 - Good, because the pixel-art frontend becomes additive: it depends on `monomyth-core` only.
 - Good, because the core is testable and reproducible without any UI.
+- Good, because a validated load boundary means a frontend can trust any world it is handed.
 - Bad, because it demands upfront discipline: a clean, serializable contract before either UI exists.
 
 ### Confirmation
 
 Frontends and generation depend on `monomyth-core` only, never on each other (enforced by the
-Cargo dependency graph). The engine emits semantic `Event`s, not display strings.
+Cargo dependency graph). The engine emits semantic `Event`s (including narrative `Advanced`, from the
+`Choose` traversal action), not display strings; `World::validate` gates the contract.
 
 ## More Information
 
