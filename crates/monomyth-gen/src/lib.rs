@@ -50,7 +50,9 @@ use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
-pub use content_passes::{EntityContentPass, LocationContentPass, TitleContentPass};
+pub use content_passes::{
+    EntityContentPass, ItemContentPass, LocationContentPass, TitleContentPass,
+};
 pub use error::GenError;
 pub use pass::ProceduralPass;
 pub use passes::{
@@ -106,8 +108,8 @@ impl Generator {
     /// the branching narrative structure independently, the beat pass grows it to a
     /// playable length, then the map lays down the location graph that the cast and
     /// items are placed into. The content order —
-    /// [`TitleContentPass`] → [`LocationContentPass`] → [`EntityContentPass`] —
-    /// fills the prose slots the procedural passes left empty.
+    /// [`TitleContentPass`] → [`LocationContentPass`] → [`EntityContentPass`] →
+    /// [`ItemContentPass`] — fills the prose slots the procedural passes left empty.
     #[must_use]
     pub fn with_default_passes() -> Self {
         Self::with_pipelines(
@@ -122,6 +124,7 @@ impl Generator {
                 Box::new(TitleContentPass::new()),
                 Box::new(LocationContentPass::new()),
                 Box::new(EntityContentPass::new()),
+                Box::new(ItemContentPass::new()),
             ],
         )
     }

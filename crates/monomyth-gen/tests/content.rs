@@ -111,6 +111,10 @@ fn targeted_slots(world: &World) -> Vec<&monomyth_core::Content> {
         slots.push(&entity.name);
         slots.push(&entity.description);
     }
+    for item in world.items.values() {
+        slots.push(&item.name);
+        slots.push(&item.description);
+    }
     slots
 }
 
