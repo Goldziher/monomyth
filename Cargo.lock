@@ -4663,7 +4663,7 @@ dependencies = [
 
 [[package]]
 name = "xberg"
-version = "1.0.0-rc.12"
+version = "1.0.0-rc.14"
 dependencies = [
  "ahash 0.8.12",
  "async-trait",
@@ -4723,7 +4723,7 @@ dependencies = [
 
 [[package]]
 name = "xberg-gliner"
-version = "1.0.0-rc.12"
+version = "1.0.0-rc.14"
 dependencies = [
  "ndarray",
  "ort",
@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "xberg-rag"
-version = "1.0.0-rc.12"
+version = "1.0.0-rc.14"
 dependencies = [
  "async-trait",
  "futures",

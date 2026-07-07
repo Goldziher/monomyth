@@ -37,8 +37,8 @@ thiserror = "2.0.18"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # xberg-io stack — declared at their crates.io versions and redirected to the local checkouts via
 # [patch.crates-io] below for co-development. Drop the patch to build from crates.io.
-xberg = "1.0.0-rc.11"
-xberg-rag = "1.0.0-rc.11"
+xberg = "1.0.0-rc.14"
+xberg-rag = "1.0.0-rc.14"
 
 # Lints are defined once here and inherited by every crate via `[lints] workspace = true`.
 # Priorities: group lints use priority -1 so individual overrides (priority 0/1) win.
