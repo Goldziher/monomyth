@@ -58,6 +58,7 @@ mod narrative;
 mod narrative_edit;
 mod rng;
 mod story;
+mod validate;
 mod world;
 
 pub use content::{Content, ContentKind, ContentPrompt, Provenance, ProvenanceSource};
@@ -70,4 +71,5 @@ pub use narrative::{
 pub use narrative_edit::{EditError, EditOutcome, NarrativeEdit, NodeSpec};
 pub use rng::RngState;
 pub use story::{Quest, Story};
+pub use validate::{LoadError, WorldError};
 pub use world::{Direction, Location, SCHEMA_VERSION, World, WorldMeta, WorldState};
