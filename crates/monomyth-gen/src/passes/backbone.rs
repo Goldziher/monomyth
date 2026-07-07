@@ -23,7 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use monomyth_core::{
-    Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode, NarrativeNodeId,
+    Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode,
     NarrativeStructure, NodeKind, Quest, World,
 };
 use monomyth_frameworks::{BookerPlot, MonomythStage, arc_functions, plot_situations};
@@ -280,42 +280,12 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
         }
     }
 
-    assign_kinds(&mut structure, &ids, last);
-
+    // Set root/endings first so `recompute_kinds` can read them: it reads
+    // `self.root` and each node's out-degree to derive kinds, matching the fixed
+    // precedence (Origin for the root, Ending at out-degree 0, Branch at
+    // out-degree > 1, Merge at in-degree > 1, else Beat).
     structure.root = ids[0];
     structure.endings = BTreeSet::from([ids[last]]);
+    structure.recompute_kinds();
     Ok(structure)
-}
-
-/// Set each node's [`NodeKind`] from its final topology: the first stage is the
-/// [`Origin`](NodeKind::Origin), the last is the [`Ending`](NodeKind::Ending), a
-/// fork anchor (out-degree > 1) is a [`Branch`](NodeKind::Branch), a reconvergence
-/// point (in-degree > 1) is a [`Merge`](NodeKind::Merge), and everything else a
-/// [`Beat`](NodeKind::Beat).
-fn assign_kinds(structure: &mut NarrativeStructure, ids: &[NarrativeNodeId], last: usize) {
-    let mut in_degree: BTreeMap<NarrativeNodeId, usize> =
-        ids.iter().map(|&id| (id, 0usize)).collect();
-    for &id in ids {
-        for edge in &structure.nodes[id].out {
-            if let Some(degree) = in_degree.get_mut(&edge.target) {
-                *degree += 1;
-            }
-        }
-    }
-    for (index, &id) in ids.iter().enumerate() {
-        let out_degree = structure.nodes[id].out.len();
-        let incoming = in_degree.get(&id).copied().unwrap_or(0);
-        let kind = if index == 0 {
-            NodeKind::Origin
-        } else if index == last {
-            NodeKind::Ending
-        } else if out_degree > 1 {
-            NodeKind::Branch
-        } else if incoming > 1 {
-            NodeKind::Merge
-        } else {
-            NodeKind::Beat
-        };
-        structure.nodes[id].kind = kind;
-    }
 }

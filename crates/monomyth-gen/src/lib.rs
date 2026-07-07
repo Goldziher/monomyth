@@ -54,7 +54,8 @@ pub use content_passes::{EntityContentPass, LocationContentPass, TitleContentPas
 pub use error::GenError;
 pub use pass::ProceduralPass;
 pub use passes::{
-    BackbonePass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass, NarrativeConfig, PlotChoice,
+    BackbonePass, BeatConfig, BeatPass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass,
+    NarrativeConfig, PlotChoice,
 };
 
 /// A generator with two ordered pipelines: the deterministic procedural passes
@@ -100,10 +101,11 @@ impl Generator {
 
     /// Build a generator with the standard procedural and content pipelines.
     ///
-    /// The procedural order — [`BackbonePass`] → [`MapPass`] → [`CastPass`] →
-    /// [`ItemsPass`] — is fixed and plan-first: the backbone grounds the branching
-    /// narrative structure independently, then the map lays down the location graph
-    /// that the cast and items are placed into. The content order —
+    /// The procedural order — [`BackbonePass`] → [`BeatPass`] → [`MapPass`] →
+    /// [`CastPass`] → [`ItemsPass`] — is fixed and plan-first: the backbone grounds
+    /// the branching narrative structure independently, the beat pass grows it to a
+    /// playable length, then the map lays down the location graph that the cast and
+    /// items are placed into. The content order —
     /// [`TitleContentPass`] → [`LocationContentPass`] → [`EntityContentPass`] —
     /// fills the prose slots the procedural passes left empty.
     #[must_use]
@@ -111,6 +113,7 @@ impl Generator {
         Self::with_pipelines(
             vec![
                 Box::new(BackbonePass::new()),
+                Box::new(BeatPass::new()),
                 Box::new(MapPass::new()),
                 Box::new(CastPass::new()),
                 Box::new(ItemsPass::new()),
@@ -215,7 +218,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use monomyth_core::{Content, LocationId};
-    use monomyth_frameworks::{MonomythStage, ProppRole};
+    use monomyth_frameworks::{MonomythStage, ProppRole, arc_functions};
 
     use super::{BackbonePass, Generator, MAX_ROOMS, MIN_ROOMS, NarrativeConfig, PlotChoice};
 
@@ -288,8 +291,9 @@ mod tests {
             .map(|&id| structure.node(id).expect("spine node exists").stage)
             .collect();
 
-        // The spine is a strictly increasing subsequence of the canonical stage
-        // order: forked optionals are skipped, but order and uniqueness hold.
+        // The spine is a weakly increasing subsequence of the canonical stage order:
+        // forked optionals are skipped, and beats share their parent's stage, so a
+        // stage can repeat across consecutive spine positions but never regress.
         let canonical = MonomythStage::all();
         let positions: Vec<usize> = spine_stages
             .iter()
@@ -301,8 +305,8 @@ mod tests {
             })
             .collect();
         assert!(
-            positions.windows(2).all(|pair| pair[0] < pair[1]),
-            "spine stages must be in strictly increasing id order, got {positions:?}",
+            positions.windows(2).all(|pair| pair[0] <= pair[1]),
+            "spine stages must be in weakly increasing id order, got {positions:?}",
         );
 
         // Every mandatory stage is on the spine; only forked optionals are skipped.
@@ -426,6 +430,41 @@ mod tests {
             structure.nodes.values().all(|node| node.out.len() <= 1),
             "with no forks no node branches",
         );
+    }
+
+    #[test]
+    fn beat_pass_grows_the_structure_well_past_the_bare_arc() {
+        let world = generated();
+        let structure = &world.story.structure;
+        assert_eq!(
+            structure.validate(),
+            Ok(()),
+            "the grown structure must be valid"
+        );
+        // The bare backbone is 17 stage nodes; the beat pass expands every node with
+        // a spine edge into a short chain, so the grown structure is far larger.
+        assert!(
+            structure.nodes.len() > 25,
+            "the beat pass must grow the structure well past the bare arc, got {}",
+            structure.nodes.len(),
+        );
+    }
+
+    #[test]
+    fn every_beat_is_grounded_in_its_stage_functions() {
+        let world = generated();
+        for node in world.story.structure.nodes.values() {
+            if !node.label.contains("_beat_") {
+                continue;
+            }
+            let allowed: BTreeSet<_> = arc_functions(node.stage).iter().copied().collect();
+            assert!(
+                node.functions.is_subset(&allowed),
+                "beat {:?} carries functions outside its stage's arc: {:?}",
+                node.label,
+                node.functions,
+            );
+        }
     }
 
     #[test]

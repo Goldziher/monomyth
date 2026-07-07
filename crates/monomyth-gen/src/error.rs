@@ -43,6 +43,14 @@ pub enum GenError {
     #[error("generated narrative structure is invalid")]
     Narrative(#[from] monomyth_core::NarrativeError),
 
+    /// A beat pass edit was rejected by the narrative edit surface.
+    ///
+    /// The [`BeatPass`](crate::BeatPass) drives structure growth through
+    /// [`NarrativeStructure::apply_edit`](monomyth_core::NarrativeStructure::apply_edit);
+    /// a rejected edit signals a bug in the pass rather than bad input.
+    #[error("a beat pass edit was rejected")]
+    Edit(#[from] monomyth_core::EditError),
+
     /// An LLM call in the content phase failed (backend error, or model output
     /// that could not be parsed into the requested schema).
     #[error("content generation LLM call failed")]
