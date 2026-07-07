@@ -239,6 +239,20 @@ mod tests {
     }
 
     #[test]
+    fn generated_world_is_internally_valid() {
+        for seed in [1u64, 7, 42, 99, 2024] {
+            let world = Generator::with_default_passes()
+                .generate_structure(seed)
+                .expect("generation succeeds");
+            assert_eq!(
+                world.validate(),
+                Ok(()),
+                "seed {seed} must produce an internally consistent world",
+            );
+        }
+    }
+
+    #[test]
     fn room_count_is_within_bounds() {
         let count = generated().locations.len();
         assert!(
