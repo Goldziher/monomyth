@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EntityId, ItemId, LocationId};
+use crate::ids::{EntityId, ItemId, LocationId, NarrativeNodeId};
 use crate::world::{Direction, World};
 
 /// A command the player issues, to be interpreted by [`apply`].
@@ -25,6 +25,12 @@ pub enum Action {
     Drop(ItemId),
     /// Inspect a target and report its description.
     Examine(ExamineTarget),
+    /// Advance the narrative cursor along an available branch to `target`.
+    ///
+    /// Sequence and choice edges are taken the same way: "continuing" a linear beat
+    /// and "choosing" a fork are one cursor move; a frontend decides how to present
+    /// a single continuation versus a real fork.
+    Choose(NarrativeNodeId),
     /// Pass the turn without acting.
     Wait,
 }
@@ -71,6 +77,13 @@ pub enum Event {
     },
     /// The player waited, passing the turn.
     Waited,
+    /// The narrative cursor advanced from one beat to another.
+    Advanced {
+        /// The beat departed.
+        from: NarrativeNodeId,
+        /// The beat entered (the new cursor).
+        to: NarrativeNodeId,
+    },
 }
 
 /// Why an [`Action`] could not be applied.
@@ -101,6 +114,15 @@ pub enum ActionError {
     /// No location exists for the given id (a corrupt world reference).
     #[error("unknown location {0:?}")]
     UnknownLocation(LocationId),
+    /// No narrative node exists for the given id (a corrupt cursor or target).
+    #[error("unknown narrative node {0:?}")]
+    UnknownNode(NarrativeNodeId),
+    /// No branch leads from the current beat to the requested node.
+    #[error("no choice leads to narrative node {0:?}")]
+    NotAChoice(NarrativeNodeId),
+    /// The branch to the requested node is gated by an unmet guard.
+    #[error("the choice to narrative node {0:?} is not available")]
+    ChoiceBlocked(NarrativeNodeId),
 }
 
 /// Apply `action` to `world`, returning the events it produced.
@@ -132,6 +154,7 @@ pub fn apply(world: &mut World, action: Action) -> Result<Vec<Event>, ActionErro
         Action::Take(item) => take_item(world, item)?,
         Action::Drop(item) => drop_item(world, item)?,
         Action::Examine(target) => examine(world, target)?,
+        Action::Choose(target) => choose(world, target)?,
         Action::Wait => vec![Event::Waited],
     };
     // Only a successful action consumes a turn, so an error is retryable.
@@ -155,6 +178,31 @@ fn move_player(world: &mut World, direction: Direction) -> Result<Vec<Event>, Ac
     }
     world.player.location = to;
     Ok(vec![Event::Moved { from, to }])
+}
+
+/// Advance the narrative cursor along an available edge to `target`.
+///
+/// Valid when the current cursor node has an out-edge to `target` whose guard is
+/// satisfied by [`WorldState::flags`](crate::WorldState). Leaves the world
+/// unchanged (and the turn unspent) on any error, so the caller can re-offer the
+/// choices.
+fn choose(world: &mut World, target: NarrativeNodeId) -> Result<Vec<Event>, ActionError> {
+    let from = world.state.cursor;
+    let structure = &world.story.structure;
+    let node = structure.node(from).ok_or(ActionError::UnknownNode(from))?;
+    let edge = node
+        .out
+        .iter()
+        .find(|edge| edge.target == target)
+        .ok_or(ActionError::NotAChoice(target))?;
+    if !edge.is_available(&world.state.flags) {
+        return Err(ActionError::ChoiceBlocked(target));
+    }
+    if !structure.nodes.contains_key(target) {
+        return Err(ActionError::UnknownNode(target));
+    }
+    world.state.cursor = target;
+    Ok(vec![Event::Advanced { from, to: target }])
 }
 
 /// Take a portable item present in the current location into the inventory.

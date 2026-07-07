@@ -5,10 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use monomyth_core::{
-    Action, ActionError, Content, ContentKind, ContentPrompt, Direction, Entity, EntityId,
-    EntityKind, Event, ExamineTarget, Item, ItemId, Location, LocationId, NarrativeNode,
-    NarrativeStructure, NodeKind, Player, Provenance, Quest, RngState, SCHEMA_VERSION, Story,
-    World, WorldMeta, WorldState, apply,
+    Action, ActionError, Content, ContentKind, ContentPrompt, Direction, EdgeKind, Entity,
+    EntityId, EntityKind, Event, ExamineTarget, Item, ItemId, Location, LocationId, NarrativeEdit,
+    NarrativeNode, NarrativeNodeId, NarrativeStructure, NodeKind, NodeSpec, Player, Provenance,
+    Quest, RngState, SCHEMA_VERSION, Story, World, WorldMeta, WorldState, apply,
 };
 use monomyth_frameworks::{MonomythStage, PoltiSituation, arc_functions};
 use slotmap::SlotMap;
@@ -449,4 +449,101 @@ fn examine_falls_back_to_prompt_hint_for_empty_description() {
         }],
         "an empty slot must surface its prompt hint verbatim"
     );
+}
+
+/// A world whose narrative cursor sits on a fork: `root =(Sequence)=> a` and
+/// `root =(Choice)=> b`, with `a` and `b` distinct endings. Returns the world and
+/// the three node ids.
+fn forked_world() -> (World, NarrativeNodeId, NarrativeNodeId, NarrativeNodeId) {
+    let mut world = fixture(1).world;
+    let structure = &mut world.story.structure;
+    let root = structure.root();
+    let spec_a = NodeSpec::new("A", MonomythStage::TheRoadOfTrials, "branch a");
+    let spec_b = NodeSpec::new("B", MonomythStage::TheRoadOfTrials, "branch b");
+    let Ok(monomyth_core::EditOutcome::NodeAdded(a)) =
+        structure.apply_edit(&NarrativeEdit::AddNode { spec: spec_a })
+    else {
+        panic!("AddNode reports the new id");
+    };
+    let Ok(monomyth_core::EditOutcome::NodeAdded(b)) =
+        structure.apply_edit(&NarrativeEdit::AddNode { spec: spec_b })
+    else {
+        panic!("AddNode reports the new id");
+    };
+    structure
+        .apply_edits(&[
+            NarrativeEdit::Connect {
+                source: root,
+                target: a,
+                kind: EdgeKind::Sequence,
+            },
+            NarrativeEdit::Connect {
+                source: root,
+                target: b,
+                kind: EdgeKind::Choice,
+            },
+            NarrativeEdit::MarkEnding { node: a },
+            NarrativeEdit::MarkEnding { node: b },
+            NarrativeEdit::UnmarkEnding { node: root },
+        ])
+        .expect("the fork is a valid structure");
+    world.state.cursor = root;
+    (world, root, a, b)
+}
+
+#[test]
+fn choose_advances_the_cursor_along_a_branch() {
+    let (mut world, root, _a, b) = forked_world();
+    let events = apply(&mut world, Action::Choose(b)).expect("choosing an open branch succeeds");
+    assert_eq!(events, vec![Event::Advanced { from: root, to: b }]);
+    assert_eq!(world.state.cursor, b, "the cursor moves to the chosen beat");
+    assert_eq!(world.state.turn, 1, "a successful choice spends a turn");
+}
+
+#[test]
+fn choose_rejects_a_node_that_is_not_a_branch() {
+    let (mut world, root, _a, _b) = forked_world();
+    // The root has no self-edge, so choosing it is not a valid branch.
+    let error =
+        apply(&mut world, Action::Choose(root)).expect_err("root is not a branch of itself");
+    assert_eq!(error, ActionError::NotAChoice(root));
+    assert_eq!(
+        world.state.cursor, root,
+        "a failed choice leaves the cursor put"
+    );
+    assert_eq!(world.state.turn, 0, "a failed choice spends no turn");
+}
+
+#[test]
+fn choose_is_blocked_by_an_unmet_guard() {
+    let (mut world, root, _a, b) = forked_world();
+    world
+        .story
+        .structure
+        .apply_edits(&[NarrativeEdit::SetEdgeGuard {
+            source: root,
+            target: b,
+            guard: Some("gate_open".to_owned()),
+        }])
+        .expect("guarding an edge keeps the structure valid");
+
+    let blocked = apply(&mut world, Action::Choose(b)).expect_err("a gated branch is blocked");
+    assert_eq!(blocked, ActionError::ChoiceBlocked(b));
+    assert_eq!(world.state.cursor, root);
+
+    world.state.flags.insert("gate_open".to_owned(), true);
+    let events =
+        apply(&mut world, Action::Choose(b)).expect("the branch opens once the flag is set");
+    assert_eq!(events, vec![Event::Advanced { from: root, to: b }]);
+    assert_eq!(world.state.cursor, b);
+}
+
+#[test]
+fn choose_at_an_ending_has_no_available_branch() {
+    let (mut world, root, a, b) = forked_world();
+    apply(&mut world, Action::Choose(a)).expect("advance to an ending");
+    // `a` is terminal: no branch leads anywhere, not even to its sibling.
+    let error = apply(&mut world, Action::Choose(b)).expect_err("an ending offers no choices");
+    assert_eq!(error, ActionError::NotAChoice(b));
+    let _ = root;
 }

@@ -104,6 +104,34 @@ impl NarrativeEdge {
             guard: None,
         }
     }
+
+    /// Whether this edge can currently be taken, given the world's `flags`.
+    ///
+    /// An unguarded edge is always available; a guarded edge is available only when
+    /// its [`guard`](Self::guard) key is present and `true` in `flags`. This is the
+    /// hook the interactive layer uses to gate a player choice on world state; the
+    /// v1 generator leaves every guard `None`, so every edge is open.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// use monomyth_core::{Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNodeId};
+    ///
+    /// let label = Content::empty(ContentPrompt::new(ContentKind::Choice, ""));
+    /// let mut edge = NarrativeEdge::new(NarrativeNodeId::default(), EdgeKind::Choice, label);
+    /// let mut flags = BTreeMap::new();
+    /// assert!(edge.is_available(&flags), "an unguarded edge is always open");
+    /// edge.guard = Some("torch_lit".to_owned());
+    /// assert!(!edge.is_available(&flags), "a guarded edge is closed until its flag is set");
+    /// flags.insert("torch_lit".to_owned(), true);
+    /// assert!(edge.is_available(&flags));
+    /// ```
+    #[must_use]
+    pub fn is_available(&self, flags: &BTreeMap<String, bool>) -> bool {
+        self.guard
+            .as_ref()
+            .is_none_or(|key| flags.get(key).copied().unwrap_or(false))
+    }
 }
 
 /// A single beat in the narrative graph: its label, topological role, framework
@@ -325,6 +353,29 @@ impl NarrativeStructure {
             .get(id)
             .into_iter()
             .flat_map(|node| node.out.iter().map(|edge| edge.target))
+    }
+
+    /// The out-edges from `cursor` currently available given `flags`, in edge order.
+    ///
+    /// Index 0 is the primary/spine option. This is the single source of choice
+    /// ordering for the interactive layer: a renderer numbering the choices and a
+    /// parser resolving a chosen number both consume it, so the numbers line up.
+    /// Empty when `cursor` is unknown or at an ending (or all its edges are gated).
+    #[must_use]
+    pub fn available_choices(
+        &self,
+        cursor: NarrativeNodeId,
+        flags: &BTreeMap<String, bool>,
+    ) -> Vec<&NarrativeEdge> {
+        self.nodes
+            .get(cursor)
+            .map(|node| {
+                node.out
+                    .iter()
+                    .filter(|edge| edge.is_available(flags))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Whether `id` is a fork (out-degree greater than one).
