@@ -3,20 +3,7 @@ name = "monomyth"
 description = "Adventure generation engine — text-based adventures and dynamically-generated pixel-art games, grounded in comparative mythology. Rust workspace + xberg RAG."
 gitignore = true
 
-presets = [
-    "claude",
-    "cursor",
-    "gemini",
-    "windsurf",
-    "copilot",
-    "continue-dev",
-    "amp",
-    "cline",
-    "codex",
-    "opencode",
-    "junie",
-    "antigravity",
-]
+presets = ["claude", "codex"]
 
 builtins = ["rust", "documentation", "default-commands"]
 

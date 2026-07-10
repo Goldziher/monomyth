@@ -55,7 +55,6 @@ fn linear_chain() -> (NarrativeStructure, [NarrativeNodeId; 4]) {
             NarrativeEdit::UnmarkEnding { node: root },
         ])
         .expect("wire root -> end");
-    // root -> end; splice a, then b between a and end.
     let a = added(
         structure
             .apply_edits(&[NarrativeEdit::InsertBeat {
@@ -161,7 +160,6 @@ fn add_node_returns_a_fresh_id() {
 #[test]
 fn insert_beat_splices_between_source_and_target() {
     let (structure, [root, a, b, end]) = linear_chain();
-    // Spine is exactly root -> a -> b -> end.
     assert_eq!(structure.spine(), vec![root, a, b, end]);
     assert_eq!(edge_kind(&structure, root, a), Some(EdgeKind::Sequence));
     assert_eq!(edge_kind(&structure, a, b), Some(EdgeKind::Sequence));
@@ -171,8 +169,6 @@ fn insert_beat_splices_between_source_and_target() {
 #[test]
 fn insert_beat_on_a_choice_edge_preserves_the_choice_kind() {
     let (mut structure, [root, _a, b, _end]) = diamond();
-    // The root -> b edge is a Choice; splicing a node onto it must keep the entry
-    // edge a Choice and make the new -> b edge a Sequence.
     let mid = added(
         structure
             .apply_edits(&[NarrativeEdit::InsertBeat {
@@ -198,7 +194,6 @@ fn remove_beat_heals_predecessor_to_successor() {
         .expect("remove the beat a");
     assert_eq!(structure.nodes.len(), before - 1);
     assert!(structure.node(a).is_none(), "a is gone");
-    // The gap healed: root now leads straight to b.
     assert_eq!(edge_kind(&structure, root, b), Some(EdgeKind::Sequence));
     assert_eq!(structure.spine(), vec![root, b, end]);
 }
@@ -214,9 +209,7 @@ fn remove_beat_rejects_the_root() {
 
 #[test]
 fn remove_beat_rejects_a_branch_node() {
-    // In the diamond, the root is the only branch — build a non-root branch instead.
     let (mut structure, [_root, a, _b, end]) = linear_chain();
-    // Make `a` a branch: add a side node and a Choice edge a -> side -> end.
     let side = added(
         structure
             .apply_edit(&NarrativeEdit::AddNode { spec: spec("side") })
@@ -244,7 +237,6 @@ fn remove_beat_rejects_a_branch_node() {
 
 #[test]
 fn move_beat_relocates_a_beat_and_heals_the_gap() {
-    // Move `b` out of the spine and re-splice it onto the root -> a edge.
     let (mut structure, [root, a, b, end]) = linear_chain();
     let outcome = structure
         .apply_edits(&[NarrativeEdit::MoveBeat {
@@ -255,7 +247,6 @@ fn move_beat_relocates_a_beat_and_heals_the_gap() {
         .expect("move b onto root -> a")[0];
     let moved = added(outcome);
     assert!(structure.node(b).is_none(), "the original b id is retired");
-    // New spine: root -> moved -> a -> end (b's old slot healed to a -> end).
     assert_eq!(structure.spine(), vec![root, moved, a, end]);
     assert_eq!(structure.node(moved).unwrap().label, "b");
 }
@@ -264,8 +255,6 @@ fn move_beat_relocates_a_beat_and_heals_the_gap() {
 fn connect_and_disconnect_round_trip() {
     let (mut structure, [root, _a, _b, end]) = diamond();
     let before = snapshot(&structure);
-    // A redundant extra edge then its removal must return to the same bytes.
-    // root -> end would create a shortcut; add it, validate, then drop it.
     structure
         .apply_edits(&[NarrativeEdit::Connect {
             source: root,
@@ -309,7 +298,6 @@ fn connect_rejects_a_duplicate_edge() {
 #[test]
 fn retarget_edge_repoints_while_preserving_kind_and_guard() {
     let (mut structure, [_root, a, b, end]) = diamond();
-    // Tag the a -> end edge, then repoint it at b; the tag and kind must survive.
     structure
         .apply_edits(&[
             NarrativeEdit::SetEdgeGuard {
@@ -396,7 +384,6 @@ fn set_edge_kind_changes_only_the_kind() {
 
 #[test]
 fn mark_and_unmark_ending_move_the_terminal_set() {
-    // Give `end` a successor so it is no longer terminal, marking the successor.
     let (mut structure, [_root, _a, _b, end]) = linear_chain();
     let coda = added(
         structure
@@ -423,8 +410,6 @@ fn mark_and_unmark_ending_move_the_terminal_set() {
 fn a_failing_batch_leaves_the_structure_byte_identical() {
     let (mut structure, [root, a, ..]) = linear_chain();
     let before = snapshot(&structure);
-    // Connect a -> root closes a cycle (root -> a -> ... -> root); validation rejects
-    // it, and the whole batch — including the earlier, valid relabel — must roll back.
     let result = structure.apply_edits(&[
         NarrativeEdit::RelabelNode {
             node: a,
@@ -446,8 +431,6 @@ fn a_failing_batch_leaves_the_structure_byte_identical() {
 #[test]
 fn a_local_precondition_failure_rolls_the_whole_batch_back() {
     let (mut structure, [_root, a, ..]) = linear_chain();
-    // Retire a key inside this structure so it is genuinely absent (a fresh slotmap
-    // would reuse the same slot index and collide with a live node).
     let ghost = added(
         structure
             .apply_edit(&NarrativeEdit::AddNode {
@@ -481,7 +464,6 @@ fn a_local_precondition_failure_rolls_the_whole_batch_back() {
 
 #[test]
 fn recompute_keeps_a_forking_root_as_origin() {
-    // The diamond's root has out-degree 2, yet a source is always an Origin.
     let (structure, [root, ..]) = diamond();
     assert!(structure.is_fork(root), "the root branches");
     assert_eq!(structure.node(root).unwrap().kind, NodeKind::Origin);

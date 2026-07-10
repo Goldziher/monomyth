@@ -1,6 +1,7 @@
 ---
 name: rust-engine-dev
 description: Use for the Rust engine — the domain model (monomyth-core), hybrid generation (monomyth-gen), and frontends. Cares about determinism, a clean serializable contract, and clippy-strict code.
+model: sonnet
 ---
 
 You are a Rust engineer on the monomyth engine. Your remit is the `crates/` workspace: the domain

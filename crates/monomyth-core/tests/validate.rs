@@ -125,7 +125,6 @@ fn should_reject_dangling_entity_location() {
 #[test]
 fn should_reject_entity_not_mirrored_by_its_location() {
     let (mut world, room, _, _) = populated_world();
-    // The entity points at the room, but the room does not list it back.
     let stray = world.entities.insert(entity(Some(room)));
     assert_eq!(
         world.validate(),
@@ -136,7 +135,6 @@ fn should_reject_entity_not_mirrored_by_its_location() {
 #[test]
 fn should_reject_location_listing_an_entity_that_points_elsewhere() {
     let (mut world, room, _, _) = populated_world();
-    // The room lists the entity, but the entity claims no location.
     let stray = world.entities.insert(entity(None));
     world.locations[room].entities.insert(stray);
     assert_eq!(

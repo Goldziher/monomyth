@@ -89,7 +89,6 @@ fn fixture(seed: u64) -> Fixture {
         entity.location = Some(start);
     }
 
-    // A minimal single-node structure whose sole node is both root and ending.
     let mut nodes = SlotMap::with_key();
     let root = nodes.insert(NarrativeNode::new(
         "CallToAdventure",
@@ -256,7 +255,6 @@ fn take_returns_not_portable_for_fixed_item() {
 #[test]
 fn take_returns_item_not_here_for_item_in_other_room() {
     let mut fixture = fixture(1);
-    // Move the torch out of the starting room so it is no longer present.
     fixture.world.locations[fixture.start]
         .items
         .remove(&fixture.torch);
@@ -376,7 +374,6 @@ fn move_returns_unknown_location_for_stale_player_location() {
     let Fixture {
         mut world, start, ..
     } = fixture(1);
-    // The player stands in a location that is then removed from the world.
     world.locations.remove(start);
     let error = apply(&mut world, Action::Move(Direction::North))
         .expect_err("stale player location must fail");
@@ -388,7 +385,6 @@ fn move_returns_unknown_location_for_exit_to_missing_destination() {
     let Fixture {
         mut world, hall, ..
     } = fixture(1);
-    // The north exit still points at `hall`, but `hall` is removed from the world.
     world.locations.remove(hall);
     let error = apply(&mut world, Action::Move(Direction::North))
         .expect_err("exit to missing destination must fail");
@@ -403,7 +399,6 @@ fn take_returns_unknown_item_for_id_absent_from_world_items() {
         torch,
         ..
     } = fixture(1);
-    // The room still lists the torch, but the item itself is gone from the world.
     world.items.remove(torch);
     assert!(world.locations[start].items.contains(&torch));
     let error = apply(&mut world, Action::Take(torch)).expect_err("unknown item id must fail");
@@ -503,7 +498,6 @@ fn choose_advances_the_cursor_along_a_branch() {
 #[test]
 fn choose_rejects_a_node_that_is_not_a_branch() {
     let (mut world, root, _a, _b) = forked_world();
-    // The root has no self-edge, so choosing it is not a valid branch.
     let error =
         apply(&mut world, Action::Choose(root)).expect_err("root is not a branch of itself");
     assert_eq!(error, ActionError::NotAChoice(root));
@@ -542,7 +536,6 @@ fn choose_is_blocked_by_an_unmet_guard() {
 fn choose_at_an_ending_has_no_available_branch() {
     let (mut world, root, a, b) = forked_world();
     apply(&mut world, Action::Choose(a)).expect("advance to an ending");
-    // `a` is terminal: no branch leads anywhere, not even to its sibling.
     let error = apply(&mut world, Action::Choose(b)).expect_err("an ending offers no choices");
     assert_eq!(error, ActionError::NotAChoice(b));
     let _ = root;

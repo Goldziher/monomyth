@@ -119,7 +119,6 @@ pub(crate) async fn ground(
 /// block — the model still has the instruction and hint.
 pub(crate) fn build_prompt(instruction: &str, hint: &str, passages: &[Passage]) -> String {
     let mut prompt = String::new();
-    // The individual writes target a fresh `String`, so they cannot fail.
     let _ = writeln!(
         prompt,
         "You are writing grounded prose for a mythic text adventure."

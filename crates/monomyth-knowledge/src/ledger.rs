@@ -69,8 +69,6 @@ pub enum Tier {
     /// CC-BY / MIT / Apache-2.0 — ship-safe with attribution.
     Permissive,
     /// CC-BY-SA — ship-safe but isolated so copyleft cannot contaminate PD/CC0.
-    // The manifest spells this `sharealike` (no underscore); snake_case would emit
-    // `share_alike`, so the wire token is pinned explicitly.
     #[serde(rename = "sharealike")]
     ShareAlike,
     /// CC-BY-NC* — reference-only (this is a commercial product).
@@ -170,7 +168,20 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+
+    #[derive(Debug, Deserialize)]
+    struct ManifestPolicy {
+        commercial: bool,
+        domains: BTreeSet<String>,
+        sources: Vec<SourceEntry>,
+    }
+
+    fn manifest_policy() -> ManifestPolicy {
+        serde_json::from_str(MANIFEST_JSON).expect("embedded manifest parses")
+    }
 
     #[test]
     fn should_load_embedded_ledger_with_sources() {
@@ -190,8 +201,6 @@ mod tests {
 
     #[test]
     fn wire_token_matches_serde() {
-        // The ship filter is built from `as_wire`; ingest writes the serde form.
-        // If these ever drift, ship-gated retrieval would filter on a stale token.
         for namespace in [Namespace::Ship, Namespace::Reference] {
             let serialized = serde_json::to_value(namespace).expect("namespace serializes");
             assert_eq!(
@@ -211,11 +220,113 @@ mod tests {
     }
 
     #[test]
+    fn embedded_manifest_declares_commercial_use() {
+        let manifest = manifest_policy();
+        assert!(
+            manifest.commercial,
+            "corpus manifest must declare commercial=true",
+        );
+    }
+
+    #[test]
+    fn source_ids_are_unique() {
+        let manifest = manifest_policy();
+        let mut seen = BTreeSet::new();
+        for entry in manifest.sources {
+            assert!(
+                seen.insert(entry.id.clone()),
+                "source id '{}' is declared more than once",
+                entry.id,
+            );
+        }
+    }
+
+    #[test]
+    fn every_source_domain_is_declared() {
+        let manifest = manifest_policy();
+        for entry in &manifest.sources {
+            assert!(
+                manifest.domains.contains(&entry.domain),
+                "source '{}' uses undeclared domain '{}'",
+                entry.id,
+                entry.domain,
+            );
+        }
+    }
+
+    #[test]
+    fn dangerous_tiers_are_reference_only() {
+        let ledger = Ledger::load_embedded().expect("embedded manifest parses");
+        for entry in ledger.entries() {
+            let dangerous_tier = matches!(
+                entry.tier,
+                Tier::Noncommercial | Tier::Copyright | Tier::Reference
+            );
+            if dangerous_tier {
+                assert_eq!(
+                    entry.namespace,
+                    Namespace::Reference,
+                    "source '{}' has dangerous tier {:?} outside reference namespace",
+                    entry.id,
+                    entry.tier,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_system_ship_sources_declare_a_url() {
+        let ledger = Ledger::load_embedded().expect("embedded manifest parses");
+        for entry in ledger.entries() {
+            if entry.namespace == Namespace::Ship && entry.tier != Tier::System {
+                assert!(
+                    entry
+                        .url
+                        .as_deref()
+                        .is_some_and(|url| !url.trim().is_empty()),
+                    "non-system ship source '{}' must declare a URL",
+                    entry.id,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn system_ship_sources_explain_ship_safe_handling() {
+        let ledger = Ledger::load_embedded().expect("embedded manifest parses");
+        for entry in ledger.entries() {
+            if entry.namespace == Namespace::Ship && entry.tier == Tier::System {
+                let note = entry
+                    .note
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase();
+                let explains_handling = [
+                    "analysis",
+                    "authored",
+                    "category",
+                    "groupings",
+                    "idea",
+                    "labels",
+                    "mappings",
+                    "prose",
+                    "roots",
+                    "taxonomy",
+                ]
+                .iter()
+                .any(|token| note.contains(token));
+                assert!(
+                    explains_handling,
+                    "system ship source '{}' must explain idea/taxonomy/prose handling",
+                    entry.id,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_ship_namespace_source_has_a_ship_safe_tier() {
-        // The CI invariant, stated deny-by-default: a source in the ship namespace
-        // may bear ONLY an explicitly ship-safe tier. Written this way, adding a
-        // new dangerous `Tier` variant without classifying it here fails the test,
-        // rather than silently slipping into the ship namespace.
         let ledger = Ledger::load_embedded().expect("embedded manifest parses");
         for entry in ledger.entries() {
             let ship_safe = matches!(

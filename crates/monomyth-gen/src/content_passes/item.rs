@@ -33,8 +33,6 @@ impl ContentPass for ItemContentPass {
     }
 
     async fn apply(&self, world: &mut World, context: &ContentContext<'_>) -> Result<(), GenError> {
-        // Collect keys up front so the world can be mutated inside the loop without
-        // holding an iterator borrow across the `await` points.
         let ids: Vec<ItemId> = world.items.keys().collect();
         for id in ids {
             let item = &world.items[id];

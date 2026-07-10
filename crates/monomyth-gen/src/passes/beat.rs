@@ -80,15 +80,10 @@ impl ProceduralPass for BeatPass {
     }
 
     fn apply(&self, world: &mut World, rng: &mut ChaCha8Rng) -> Result<(), GenError> {
-        // Snapshot the ids to expand *before* inserting, so freshly spliced beats are
-        // never themselves re-expanded. Sort for a deterministic expansion order
-        // independent of slotmap iteration.
         let mut original_ids: Vec<NarrativeNodeId> = world.story.structure.nodes.keys().collect();
         original_ids.sort_unstable();
 
         for source in original_ids {
-            // The primary spine edge is the first `Sequence` out-edge; a node without
-            // one is an ending and has nothing to expand.
             let Some((stage, target)) = spine_edge(world, source) else {
                 continue;
             };
@@ -100,9 +95,6 @@ impl ProceduralPass for BeatPass {
             );
             let functions = arc_functions(stage);
 
-            // Repeatedly splice onto the edge running into `target`: the first insert
-            // splices between `source` and `target`, each subsequent insert between
-            // the last beat and `target`, appending beats in order.
             let mut previous = source;
             for beat_index in 0..beat_count {
                 let ordinal = beat_index + 1;

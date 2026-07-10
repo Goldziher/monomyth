@@ -128,7 +128,6 @@ fn should_reject_missing_root() {
     ));
     structure.nodes.remove(ghost);
     structure.root = ghost;
-    // Keep endings well-formed so MissingRoot is the reported failure.
     let _ = ending;
     assert_eq!(
         structure.validate(),
@@ -141,7 +140,6 @@ fn should_reject_dangling_edge() {
     let (mut structure, [origin, beat, ending]) = linear_trunk();
     structure.nodes.remove(ending);
     structure.endings = BTreeSet::from([beat]);
-    // `beat` still points at the removed `ending`.
     assert_eq!(
         structure.validate(),
         Err(NarrativeError::DanglingEdge {
@@ -155,7 +153,6 @@ fn should_reject_dangling_edge() {
 #[test]
 fn should_reject_duplicate_edge() {
     let (mut structure, [origin, beat, _]) = linear_trunk();
-    // A second, identical edge from origin to beat.
     structure.nodes[origin]
         .out
         .push(NarrativeEdge::new(beat, EdgeKind::Sequence, label()));
@@ -171,7 +168,6 @@ fn should_reject_duplicate_edge() {
 #[test]
 fn should_reject_orphan_source() {
     let (mut structure, _) = linear_trunk();
-    // A second in-degree-0 node with a path to an ending.
     let ending = *structure.endings.iter().next().expect("one ending");
     let orphan = structure.nodes.insert(NarrativeNode::new(
         "orphan",
@@ -191,8 +187,6 @@ fn should_reject_orphan_source() {
 #[test]
 fn should_reject_a_cycle() {
     let (mut structure, [origin, _, ending]) = linear_trunk();
-    // A back-edge from the ending to the origin closes a cycle (and makes the
-    // former ending non-terminal, but the cycle is detected first).
     structure.endings = BTreeSet::new();
     structure.nodes[ending]
         .out
@@ -203,7 +197,6 @@ fn should_reject_a_cycle() {
 #[test]
 fn should_reject_unregistered_ending() {
     let (mut structure, [_, beat, _]) = linear_trunk();
-    // Add a terminal node reachable from `beat` but not registered as an ending.
     let extra = structure.nodes.insert(NarrativeNode::new(
         "extra",
         NodeKind::Ending,
@@ -222,7 +215,6 @@ fn should_reject_unregistered_ending() {
 #[test]
 fn should_reject_non_terminal_ending() {
     let (mut structure, [origin, beat, ending]) = linear_trunk();
-    // Register the interior `beat` (which has an out-edge) as an ending.
     structure.endings = BTreeSet::from([beat, ending]);
     let _ = origin;
     assert_eq!(
@@ -241,7 +233,6 @@ fn should_reject_empty_endings() {
 #[test]
 fn should_reject_kind_mismatch() {
     let (mut structure, [origin, _, _]) = linear_trunk();
-    // The origin has out-degree 1, so declaring it a Branch (out-degree > 1) lies.
     structure.nodes[origin].kind = NodeKind::Branch;
     assert_eq!(
         structure.validate(),
@@ -258,7 +249,6 @@ fn spine_follows_the_primary_sequence_edge() {
 #[test]
 fn spine_of_a_diamond_takes_the_first_edge() {
     let (structure, [origin, left, _, merge]) = diamond();
-    // Both branch edges are Choice, so the spine follows edge index 0 (`left`).
     assert_eq!(structure.spine(), vec![origin, left, merge]);
 }
 

@@ -51,7 +51,8 @@
       "tier": "system",
       "namespace": "ship",
       "domain": "framework",
-      "license": "system/idea"
+      "license": "system/idea",
+      "note": "actant labels and role taxonomy only; source prose not reproduced"
     },
     {
       "id": "archetypes",
@@ -95,7 +96,8 @@
       "tier": "system",
       "namespace": "ship",
       "domain": "framework",
-      "license": "system/idea"
+      "license": "system/idea",
+      "note": "motifeme pattern taxonomy only; analysis prose not reproduced"
     },
     {
       "id": "crosswalks",

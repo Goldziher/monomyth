@@ -211,7 +211,6 @@ impl<T> Content<T> {
     /// Overwrites any existing value; the retained prompt makes the fill
     /// idempotent for re-runs of the content pass.
     pub fn fill(&mut self, value: T, provenance: Provenance) {
-        // Take the prompt out of the current state without cloning `T`.
         let prompt = match std::mem::replace(self, Self::placeholder()) {
             Self::Empty { prompt } | Self::Filled { prompt, .. } => prompt,
         };

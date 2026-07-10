@@ -156,12 +156,10 @@ fn character_crosswalk_ids_resolve() {
 
 #[test]
 fn arc_crosswalk_resolves_to_typed_functions() {
-    // Call to Adventure → Villainy/Lack + Mediation.
     assert_eq!(
         arc_functions(MonomythStage::CallToAdventure),
         &[ProppFunction::VillainyOrLack, ProppFunction::Mediation],
     );
-    // Refusal of the Call is psychological: no direct Propp function.
     assert!(arc_functions(MonomythStage::RefusalOfTheCall).is_empty());
 }
 
@@ -181,7 +179,6 @@ fn plot_crosswalk_resolves_to_typed_situations() {
 fn character_crosswalk_resolves_role_facets() {
     assert_eq!(role_actants(ProppRole::Villain), &[GreimasActant::Opponent],);
     assert_eq!(role_archetypes(ProppRole::Villain), &[Archetype::Shadow]);
-    // The Gatekeeper alignment has no Propp role, so no role maps to it.
     assert_eq!(
         ProppRole::all()
             .iter()

@@ -46,7 +46,6 @@ pub(crate) fn parse_command(line: &str, world: &World) -> Result<PlayCommand, St
     if trimmed.is_empty() {
         return Err("Say something, or type `quit` to leave.".to_owned());
     }
-    // A bare number selects a narrative choice by its listed position.
     if let Ok(index) = trimmed.parse::<usize>() {
         return resolve_choice_index(index, world);
     }
@@ -101,7 +100,7 @@ pub(crate) fn run_play(mut world: World) -> Result<()> {
         line.clear();
         let read = stdin.read_line(&mut line).context("reading player input")?;
         if read == 0 {
-            break; // end of input
+            break;
         }
 
         match parse_command(&line, &world) {
@@ -524,7 +523,6 @@ mod tests {
     #[test]
     fn should_route_a_bare_number_to_the_matching_choice() {
         let (world, a, b) = forked_world();
-        // Choice 1 is the primary (Sequence) branch; choice 2 the Choice branch.
         assert_eq!(
             parse_command("1", &world),
             Ok(PlayCommand::Act(Action::Choose(a)))
@@ -555,7 +553,6 @@ mod tests {
 
     #[test]
     fn should_advance_to_the_sole_choice() {
-        // single_room_world's root leads nowhere; give it exactly one continuation.
         let mut world = single_room_world();
         let root = world.story.structure.root();
         let next = add_node(&mut world, "Next");
@@ -581,7 +578,6 @@ mod tests {
 
     #[test]
     fn should_reject_a_choice_at_an_ending() {
-        // The one-node fixture sits at its sole ending: nothing to choose.
         let world = single_room_world();
         assert_eq!(
             parse_command("1", &world),

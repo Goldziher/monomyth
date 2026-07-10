@@ -1,7 +1,4 @@
-# monomyth — virtual workspace. All crates live under `crates/`.
 # xberg / xberg-rag / liter-llm are declared at their crates.io versions in the crates that use them
-# and redirected to the local checkouts via [patch.crates-io] for co-development; drop the patch to
-# build from crates.io.
 [workspace]
 resolver = "3"
 members = ["crates/*"]
@@ -14,8 +11,6 @@ license = "LicenseRef-Proprietary"
 publish = false
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
-# Dependencies are kept alphabetical (cargo-sort). Internal crates are the `monomyth-*` path
-# entries; the rest are shared third-party pinned to the versions used by the xberg-io workspace.
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
@@ -35,13 +30,9 @@ serde_json = "1.0.150"
 slotmap = { version = "1.0.7", features = ["serde"] }
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-# xberg-io stack — declared at their crates.io versions and redirected to the local checkouts via
-# [patch.crates-io] below for co-development. Drop the patch to build from crates.io.
 xberg = "1.0.0-rc.14"
 xberg-rag = "1.0.0-rc.14"
 
-# Lints are defined once here and inherited by every crate via `[lints] workspace = true`.
-# Priorities: group lints use priority -1 so individual overrides (priority 0/1) win.
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
@@ -50,12 +41,8 @@ unreachable_pub = "warn"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
-# Deliberate domain convention: the taxonomy enums pair with a `*Info` record
-# (`MonomythStage` / `MonomythStageInfo`), so the repeated stem is intentional.
 module_name_repetitions = { level = "allow", priority = 1 }
 
-# Local co-development redirect for the xberg-io stack. `liter-llm` enters the graph transitively via
-# `xberg`'s `structured` feature. Remove this block to build against the published crates.io versions.
 [patch.crates-io]
 xberg = { path = "../xberg-io/xberg/crates/xberg" }
 xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }

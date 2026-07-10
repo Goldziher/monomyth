@@ -63,8 +63,6 @@ struct PlotItem {
     polti_situation_ids: Vec<u16>,
 }
 
-// Field names mirror the JSON keys in character_crosswalk.json, so the shared
-// `_ids` suffix is fixed by the artifact, not a naming smell.
 #[allow(clippy::struct_field_names)]
 #[derive(Debug, Deserialize)]
 struct CharacterItem {
@@ -125,8 +123,6 @@ static CHARACTER_MAP: LazyLock<BTreeMap<ProppRole, CharacterAlignment>> = LazyLo
             actants: resolve(&item.greimas_actant_ids, GreimasActant::from_id),
             archetypes: resolve(&item.archetype_ids, Archetype::from_id),
         };
-        // A crosswalk row keyed on 0..1 Propp roles (Gatekeeper has none, so it
-        // contributes no role mapping). Each role appears in exactly one row.
         for role in resolve(&item.propp_role_ids, ProppRole::from_id) {
             map.insert(role, alignment.clone());
         }

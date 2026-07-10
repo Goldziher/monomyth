@@ -103,7 +103,6 @@ pub fn render_event(event: &Event, world: &World) -> String {
         Event::Moved { to, .. } => format!("You travel to the {}.", location_name(world, *to)),
         Event::Took(item) => format!("You take the {}.", item_name(world, *item)),
         Event::Dropped(item) => format!("You drop the {}.", item_name(world, *item)),
-        // The engine has already resolved the description to text (see `Event::Examined`).
         Event::Examined { text } => text.clone(),
         Event::Waited => String::from("You wait."),
         Event::Advanced { to, .. } => {
@@ -113,7 +112,6 @@ pub fn render_event(event: &Event, world: &World) -> String {
             )
         }
         // `Event` is `#[non_exhaustive]`, so a future variant must degrade gracefully
-        // rather than fail to compile a frontend built against an older core.
         _ => String::from("Something happens."),
     }
 }
@@ -177,7 +175,6 @@ pub fn render_intro(world: &World) -> String {
 pub fn render_structure(world: &World) -> String {
     let structure = &world.story.structure;
     let mut out = String::new();
-    // Writes target a fresh `String`, so they cannot fail.
     let _ = writeln!(out, "Narrative structure (plot: {:?})", world.story.plot);
 
     let _ = writeln!(out, "\nSpine:");
@@ -526,8 +523,6 @@ mod tests {
             Content::empty(ContentPrompt::new(kind, ""))
         }
 
-        // A single fork diamond: the spine skips an optional beat (Sequence), while a
-        // Choice edge detours through it and reconverges on the ending.
         let mut structure = NarrativeStructure::default();
         let end = structure.nodes.insert(NarrativeNode::new(
             "FreedomToLive",
@@ -593,8 +588,6 @@ mod tests {
             Content::empty(ContentPrompt::new(kind, ""))
         }
 
-        // root =(Sequence)=> end, root =(Choice)=> mid -> end: the cursor sits at the
-        // fork with two open branches.
         let mut structure = NarrativeStructure::default();
         let end = structure.nodes.insert(NarrativeNode::new(
             "FreedomToLive",
@@ -642,7 +635,6 @@ mod tests {
              \u{20}\u{20}2) choose RefusalOfTheCall";
         assert_eq!(render_choices(&world), expected);
 
-        // Advancing the cursor renders a stage-anchored line.
         let advanced = Event::Advanced {
             from: root,
             to: mid,
@@ -652,7 +644,6 @@ mod tests {
             "The story moves on to RefusalOfTheCall."
         );
 
-        // At an ending, no branch remains.
         world.state.cursor = end;
         assert_eq!(render_choices(&world), "The story has reached an ending.");
     }

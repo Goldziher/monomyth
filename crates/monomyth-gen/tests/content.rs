@@ -153,7 +153,6 @@ async fn fill_content_fills_every_targeted_slot_with_llm_provenance() {
         }
     }
 
-    // A filled value equals the canned prose exactly.
     assert_eq!(
         world.meta.title.value().map(String::as_str),
         Some(CANNED_TITLE)
@@ -190,10 +189,6 @@ struct StructuralFingerprint {
     location_entities: BTreeMap<u64, BTreeSet<EntityId>>,
     location_items: BTreeMap<u64, BTreeSet<ItemId>>,
     entities: BTreeMap<u64, EntityStructure>,
-    // Items are compared by their actual keys (in insertion order) rather than by
-    // ordinal: the before/after snapshots are the same world mutated in place, so
-    // the keys are stable, and comparing them catches any key churn a content pass
-    // might introduce.
     items: Vec<ItemId>,
     spine: Vec<MonomythStage>,
     cursor_stage: Option<MonomythStage>,

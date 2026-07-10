@@ -157,7 +157,6 @@ pub fn apply(world: &mut World, action: Action) -> Result<Vec<Event>, ActionErro
         Action::Choose(target) => choose(world, target)?,
         Action::Wait => vec![Event::Waited],
     };
-    // Only a successful action consumes a turn, so an error is retryable.
     world.state.turn += 1;
     Ok(events)
 }

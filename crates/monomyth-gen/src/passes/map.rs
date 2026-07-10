@@ -81,13 +81,9 @@ impl ProceduralPass for MapPass {
             ids.push(world.locations.insert(location));
         }
 
-        // Wire a random spanning tree: each new room attaches to one earlier room,
-        // guaranteeing a single connected component with no cycles or orphans.
         for child in 1..count {
             let mut parent = draw_range_inclusive(rng, 0, child - 1);
             if free_direction(&world.locations[ids[parent]].exits).is_none() {
-                // The seed-chosen parent is saturated; fall back to the first
-                // earlier room that still has a free exit (deterministic scan).
                 parent = (0..child)
                     .find(|&candidate| {
                         free_direction(&world.locations[ids[candidate]].exits).is_some()

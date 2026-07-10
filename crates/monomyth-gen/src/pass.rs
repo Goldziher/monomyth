@@ -43,11 +43,8 @@ pub trait ProceduralPass: std::fmt::Debug + Send + Sync {
 /// on `rand`'s range-sampling internals, which the golden-hash test would pin).
 pub(crate) fn draw_range_inclusive(rng: &mut ChaCha8Rng, low: usize, high: usize) -> usize {
     debug_assert!(low <= high, "draw range must be non-empty and ordered");
-    // `high - low + 1` is the count of values in the inclusive range; it is at
-    // least 1, so the modulo is well defined.
     let span = high - low + 1;
     let span = u64::try_from(span).expect("usize span fits in u64 on supported platforms");
-    // The modulo result is `< span <= usize::MAX`, so it always fits back in usize.
     let offset = usize::try_from(rng.next_u64() % span).expect("modulo result fits in usize");
     low + offset
 }

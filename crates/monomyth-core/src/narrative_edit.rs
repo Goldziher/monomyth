@@ -677,9 +677,7 @@ impl NarrativeStructure {
             .out_edge_index(source, target)
             .ok_or(EditError::EdgeNotFound { source, target })?;
         let new_id = self.nodes.insert(node_from_spec(spec));
-        // Redirect the existing edge to the new node, preserving its kind/label/guard.
         self.nodes[source].out[index].target = new_id;
-        // Run a fresh Sequence edge from the new node to the original target.
         self.nodes[new_id].out.push(NarrativeEdge::new(
             target,
             EdgeKind::Sequence,
@@ -708,7 +706,6 @@ impl NarrativeStructure {
                 successor,
             });
         }
-        // Repoint the predecessor's edge at the successor, preserving kind/label/guard.
         self.nodes[predecessor].out[predecessor_index].target = successor;
         self.nodes.remove(node);
         self.endings.remove(&node);
@@ -793,7 +790,6 @@ mod tests {
         let node_count_before = structure.nodes.len();
         let root_before = structure.root();
 
-        // An unconnected AddNode leaves a second source, so validation must reject it.
         let result = structure.apply_edits(&[NarrativeEdit::AddNode {
             spec: NodeSpec::new("Orphan", MonomythStage::FreedomToLive, "an orphan beat"),
         }]);

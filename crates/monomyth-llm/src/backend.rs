@@ -145,8 +145,6 @@ impl StructuredBackend for XbergBackend {
             USAGE_SOURCE,
         )
         .await
-        // Stringify xberg's error to keep its concrete type out of our public
-        // surface; downstream sees only the opaque `BackendError` message.
         .map_err(|error| BackendError::new(error.to_string()))?;
         Ok((value, usage.as_ref().map(Usage::from_xberg)))
     }
@@ -155,7 +153,6 @@ impl StructuredBackend for XbergBackend {
         let (text, usage) =
             xberg::llm::text_completion::complete_text(&self.config, prompt, USAGE_SOURCE)
                 .await
-                // Stringified for the same isolation reason as `complete_json`.
                 .map_err(|error| BackendError::new(error.to_string()))?;
         Ok((text, usage.as_ref().map(Usage::from_xberg)))
     }

@@ -146,8 +146,6 @@ impl Generator {
 
         let mut world = bootstrap_world(seed);
 
-        // The root stream deterministically derives one child seed per pass, in
-        // order, isolating each pass's draws from the others.
         let mut root = ChaCha8Rng::seed_from_u64(seed);
         for pass in &self.passes {
             let child_seed = root.next_u64();
@@ -308,9 +306,6 @@ mod tests {
             .map(|&id| structure.node(id).expect("spine node exists").stage)
             .collect();
 
-        // The spine is a weakly increasing subsequence of the canonical stage order:
-        // forked optionals are skipped, and beats share their parent's stage, so a
-        // stage can repeat across consecutive spine positions but never regress.
         let canonical = MonomythStage::all();
         let positions: Vec<usize> = spine_stages
             .iter()
@@ -326,7 +321,6 @@ mod tests {
             "spine stages must be in weakly increasing id order, got {positions:?}",
         );
 
-        // Every mandatory stage is on the spine; only forked optionals are skipped.
         for stage in canonical {
             if !stage.info().optional {
                 assert!(
@@ -336,7 +330,6 @@ mod tests {
             }
         }
 
-        // The cursor starts at the root, which is the first (mandatory) stage.
         let root = structure.root();
         assert_eq!(world.state.cursor, root);
         assert_eq!(
@@ -347,9 +340,6 @@ mod tests {
 
     #[test]
     fn all_forks_skip_every_optional_stage_and_reconverge() {
-        // With the fork chance pinned to certainty, every optional-stage run forks:
-        // the spine is exactly the mandatory stages, and each optional is reachable
-        // only via a Choice branch that reconverges on a Merge.
         let generator =
             Generator::new(vec![Box::new(BackbonePass::with_config(NarrativeConfig {
                 plot: PlotChoice::Seeded,
@@ -376,14 +366,12 @@ mod tests {
             "an all-forks spine must be exactly the mandatory stages",
         );
 
-        // Node count is unchanged by forking — forks add edges, not nodes.
         assert_eq!(
             structure.nodes.len(),
             MonomythStage::all().len(),
             "forking must not add or remove nodes",
         );
 
-        // Every optional stage node is off the spine (reachable only via a branch).
         let on_spine: BTreeSet<MonomythStage> = spine_stages.iter().copied().collect();
         let optional_off_spine = structure
             .nodes
@@ -402,9 +390,6 @@ mod tests {
             "all six optional stages must fork off"
         );
 
-        // The three optional-stage runs ({RefusalOfTheCall}, {Meeting, Temptress},
-        // {RefusalOfReturn, MagicFlight, RescueFromWithout}) each open one diamond:
-        // one fork anchor and one reconvergence merge apiece.
         let forks = structure
             .nodes
             .keys()
@@ -458,8 +443,6 @@ mod tests {
             Ok(()),
             "the grown structure must be valid"
         );
-        // The bare backbone is 17 stage nodes; the beat pass expands every node with
-        // a spine edge into a short chain, so the grown structure is far larger.
         assert!(
             structure.nodes.len() > 25,
             "the beat pass must grow the structure well past the bare arc, got {}",
@@ -506,7 +489,6 @@ mod tests {
     #[test]
     fn entity_location_relation_is_in_sync() {
         let world = generated();
-        // Every placed entity appears in its room's entity set.
         for (entity_id, entity) in &world.entities {
             let location = entity.location.expect("cast entities are placed");
             assert!(
@@ -514,7 +496,6 @@ mod tests {
                 "location must list the entity placed there",
             );
         }
-        // Every entity a room lists points back at that room.
         for (location_id, location) in &world.locations {
             for entity_id in &location.entities {
                 assert_eq!(

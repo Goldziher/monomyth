@@ -58,9 +58,6 @@ macro_rules! framework_enum {
             /// framework-specific fields).
             #[must_use]
             pub fn info(self) -> &'static $info {
-                // Variants are declared in `id` order, so the discriminant equals
-                // the record's position in the `id`-ordered artifact. Total and
-                // panic-free while the counts agree, which the parity test enforces.
                 &$loader.as_slice()[self as usize]
             }
         }

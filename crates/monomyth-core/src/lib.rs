@@ -43,8 +43,6 @@
 //! # Ok::<(), monomyth_core::ActionError>(())
 //! ```
 
-// The workspace lints already deny unsafe; this per-crate attribute is the
-// documentation the project rules require of the pure model crate.
 #![forbid(unsafe_code)]
 
 #[doc(hidden)]

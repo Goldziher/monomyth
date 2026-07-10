@@ -145,12 +145,10 @@ impl World {
         // 1. The narrative DAG (converts via `#[from]`).
         self.story.structure.validate()?;
 
-        // 2. The play cursor must be a real node.
         if !self.story.structure.nodes.contains_key(self.state.cursor) {
             return Err(WorldError::CursorNotInStructure(self.state.cursor));
         }
 
-        // 3. The player's location and every carried item must exist.
         if !self.locations.contains_key(self.player.location) {
             return Err(WorldError::DanglingPlayerLocation(self.player.location));
         }
@@ -160,7 +158,6 @@ impl World {
             }
         }
 
-        // 4. Every id a location lists must exist.
         for location in Self::sorted_keys(&self.locations) {
             let cell = &self.locations[location];
             for &entity in &cell.entities {
@@ -175,7 +172,6 @@ impl World {
             }
         }
 
-        // 5. Each placed entity's location must exist and mirror it back.
         for entity in Self::sorted_keys(&self.entities) {
             let Some(location) = self.entities[entity].location else {
                 continue;
@@ -188,7 +184,6 @@ impl World {
             }
         }
 
-        // 6. Each entity a location lists must point back at that location.
         for location in Self::sorted_keys(&self.locations) {
             for &entity in &self.locations[location].entities {
                 if self.entities[entity].location != Some(location) {

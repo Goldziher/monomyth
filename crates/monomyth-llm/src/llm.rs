@@ -410,7 +410,6 @@ mod tests {
             completion_tokens: Some(3),
             total_tokens: Some(8),
         };
-        // First response is malformed (triggers one retry), second recovers.
         let backend = FakeBackend::with_json(
             vec![
                 json!({ "name": "Enkidu" }),
@@ -437,7 +436,6 @@ mod tests {
 
     #[tokio::test]
     async fn should_wrap_backend_error_with_operation_context() {
-        // An empty response script makes `complete_json` return a `BackendError`.
         let backend = FakeBackend::with_json(Vec::new(), None);
 
         let error = llm_with(backend)

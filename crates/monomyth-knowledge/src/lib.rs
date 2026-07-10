@@ -255,7 +255,6 @@ impl Knowledge {
                 id: source_id.to_owned(),
             })?;
 
-        // THE GATE: only ship-namespace sources may enter the shippable store.
         if entry.namespace != Namespace::Ship {
             return Err(KnowledgeError::RefusedNonShip {
                 id: source_id.to_owned(),
@@ -279,8 +278,6 @@ impl Knowledge {
             ..IngestRequest::default()
         };
 
-        // Required for the `with()` test path, which builds a store directly and
-        // never calls `open()`; idempotent, so harmless after `open()` too.
         self.ensure_collection(SHIP_COLLECTION).await?;
         let config = RagPipelineConfig {
             chunking: &self.chunking,
@@ -317,17 +314,12 @@ impl Knowledge {
             (REFERENCE_COLLECTION, None)
         };
 
-        // Required for the `with()` test path, which builds a store directly and
-        // never calls `open()`; idempotent, so harmless after `open()` too.
         self.ensure_collection(collection).await?;
 
         let retrieve_query = RetrieveQuery {
-            // `mode` is set to `Vector` by `RetrieveQuery::vector` below.
             query_text: Some(query.text),
             filter,
             include_content: true,
-            // Licensing metadata lives on the parent document, not the chunk, so
-            // the document summary must be pulled to build a `Passage`.
             include_document: true,
             ..RetrieveQuery::vector(query.top_k)
         };
@@ -429,10 +421,6 @@ fn build_passage(
         }
     })?;
 
-    // Fail closed on either collection/namespace mismatch, even if a chunk reached
-    // the collection out of band (direct write, backend bug): a ship collection
-    // must yield only ship-tagged chunks, and a reference collection only
-    // reference-tagged ones. Surfacing or mislabeling either way is refused.
     let expected = match collection {
         SHIP_COLLECTION => Some(Namespace::Ship),
         REFERENCE_COLLECTION => Some(Namespace::Reference),
@@ -507,7 +495,6 @@ mod tests {
     #[tokio::test]
     async fn ingest_refuses_reference_namespace_source() {
         let knowledge = test_knowledge();
-        // `perseus` is tier=noncommercial, namespace=reference in the manifest.
         let error = knowledge
             .ingest("perseus", IngestInput::new("some reference text"))
             .await
@@ -537,7 +524,6 @@ mod tests {
     #[tokio::test]
     async fn ingest_then_surfaceable_retrieve_round_trips_ship_source() {
         let knowledge = test_knowledge();
-        // `polti` is tier=public_domain, namespace=ship in the manifest.
         knowledge
             .ingest(
                 "polti",
@@ -562,13 +548,6 @@ mod tests {
 
     #[tokio::test]
     async fn surfaceable_retrieve_never_returns_a_reference_tagged_doc_from_the_ship_collection() {
-        // Exercise layer 2 (the retrieval filter) independently of the ingest
-        // gate: write a reference-tagged document *directly* into the ship
-        // collection, bypassing `Knowledge::ingest`, then run a surfaceable query.
-        // The `doc.metadata.namespace = "ship"` filter must exclude it (result has
-        // no reference passage); if a store ever ignored the filter, layer 3
-        // (`build_passage`) would instead reject it as a `NamespaceViolation`.
-        // Either outcome proves a reference doc can never be surfaced.
         let knowledge = test_knowledge();
         knowledge
             .ensure_collection(SHIP_COLLECTION)
@@ -621,6 +600,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn ship_filter_targets_document_namespace_metadata() {
+        let filter = ship_filter();
+        match filter {
+            Filter::Eq { field, value } => {
+                assert_eq!(field.0, "doc.metadata.namespace");
+                assert_eq!(value, Value::String("ship".to_owned()));
+            }
+            other => panic!("expected namespace equality filter, got {other:?}"),
+        }
+    }
+
     fn tagged_metadata(namespace: &str) -> Value {
         serde_json::json!({
             META_SOURCE_ID: "somesource",
@@ -632,8 +623,6 @@ mod tests {
 
     #[test]
     fn build_passage_refuses_non_ship_tag_in_ship_collection() {
-        // The fail-closed third layer: a reference-tagged document that somehow
-        // sits in the ship collection must NOT yield a surfaceable passage.
         let metadata = tagged_metadata("reference");
         let error = build_passage(&metadata, Some("text".to_owned()), 1.0, SHIP_COLLECTION)
             .expect_err("a non-ship tag in the ship collection must be refused");
@@ -647,9 +636,6 @@ mod tests {
 
     #[test]
     fn build_passage_refuses_ship_tag_in_reference_collection() {
-        // The symmetric fail-closed guard: a ship-tagged document sitting in the
-        // reference collection is inconsistent data and must be refused, not
-        // silently returned mislabeled.
         let metadata = tagged_metadata("ship");
         let error = build_passage(
             &metadata,

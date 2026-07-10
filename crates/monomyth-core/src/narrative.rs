@@ -574,7 +574,6 @@ impl NarrativeStructure {
         let keys = self.sorted_keys();
         let in_edges = self.build_in_edges(&keys)?;
 
-        // Single source: only the root may have in-degree 0.
         for &key in &keys {
             let in_degree = in_edges.get(&key).map_or(0, Vec::len);
             if in_degree == 0 && key != self.root {
@@ -717,7 +716,6 @@ impl NarrativeStructure {
                 return Err(NarrativeError::NonTerminalEnding(key));
             }
         }
-        // A registered ending that is not even a node (so absent from `keys`).
         for &ending in &self.endings {
             if !self.nodes.contains_key(ending) {
                 return Err(NarrativeError::NonTerminalEnding(ending));

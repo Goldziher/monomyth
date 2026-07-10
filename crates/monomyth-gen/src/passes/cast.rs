@@ -84,8 +84,6 @@ impl ProceduralPass for CastPass {
                 location: Some(room),
             };
 
-            // Keep both sides of the entity/location relation in sync: the engine
-            // does not maintain it automatically.
             let entity_id = world.entities.insert(entity);
             world.locations[room].entities.insert(entity_id);
         }

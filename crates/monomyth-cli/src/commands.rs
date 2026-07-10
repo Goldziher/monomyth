@@ -268,7 +268,6 @@ mod tests {
         let mut world = generate_world(42).expect("generation succeeds");
         let root = world.story.structure.root();
         let before = serde_json::to_string(&world).expect("serialization succeeds");
-        // Removing the root as a beat is rejected; the world must be unchanged.
         let result = apply_edit_script(&mut world, &[NarrativeEdit::RemoveBeat { node: root }]);
         assert!(result.is_err(), "removing the root must fail");
         let after = serde_json::to_string(&world).expect("serialization succeeds");

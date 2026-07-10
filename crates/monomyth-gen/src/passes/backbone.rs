@@ -108,8 +108,6 @@ impl ProceduralPass for BackbonePass {
     }
 
     fn apply(&self, world: &mut World, rng: &mut ChaCha8Rng) -> Result<(), GenError> {
-        // Choose the macro plot first; the fork rolls follow in a fixed order, so
-        // the stream position is independent of the resulting graph shape.
         let plot = match self.config.plot {
             PlotChoice::Fixed(plot) => plot,
             PlotChoice::Seeded => {
@@ -124,7 +122,6 @@ impl ProceduralPass for BackbonePass {
             }
         };
 
-        // One fork decision per optional-stage run, in id order (deterministic).
         let runs = optional_runs()?;
         let decisions: Vec<bool> = runs
             .iter()
@@ -135,7 +132,6 @@ impl ProceduralPass for BackbonePass {
         structure.validate()?;
         let root = structure.root();
 
-        // Ground a small number of quests in the chosen plot's Polti situations.
         let situations = plot_situations(plot);
         let quest_count = draw_range_inclusive(rng, MIN_QUESTS, MAX_QUESTS);
         for quest_index in 0..quest_count {
@@ -211,8 +207,6 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
         .checked_sub(1)
         .ok_or(GenError::Invariant("the monomyth arc has no stages"))?;
 
-    // Build via a default structure so the pass need not name the `slotmap` crate
-    // directly (it is a transitive dependency through the model).
     let mut structure = NarrativeStructure::default();
     let mut ids = Vec::with_capacity(stages.len());
     for (index, &stage) in stages.iter().enumerate() {
@@ -231,20 +225,15 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
         ids.push(structure.nodes.insert(node));
     }
 
-    // The anchors of forked runs, mapping each anchor's stage index to the index of
-    // the mandatory stage the detour reconverges on.
     let forked: BTreeMap<usize, usize> = runs
         .iter()
         .zip(decisions)
         .filter_map(|(run, &take)| take.then_some((run.first - 1, run.last + 1)))
         .collect();
 
-    // Wire each node's out-edges: a forked anchor gets a primary Sequence "skip"
-    // edge to the reconvergence point plus a Choice edge into the optional run; every
-    // other node advances linearly.
     for index in 0..stages.len() {
         if index == last {
-            continue; // the final stage is the sole ending: no out-edge
+            continue;
         }
         let from = ids[index];
         if let Some(&after) = forked.get(&index) {
@@ -280,10 +269,6 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
         }
     }
 
-    // Set root/endings first so `recompute_kinds` can read them: it reads
-    // `self.root` and each node's out-degree to derive kinds, matching the fixed
-    // precedence (Origin for the root, Ending at out-degree 0, Branch at
-    // out-degree > 1, Merge at in-degree > 1, else Beat).
     structure.root = ids[0];
     structure.endings = BTreeSet::from([ids[last]]);
     structure.recompute_kinds();

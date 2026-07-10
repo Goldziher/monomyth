@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout monomyth
+        uses: actions/checkout@v4
+        with:
+          path: monomyth
+
+      - name: Checkout xberg
+        uses: actions/checkout@v4
+        with:
+          repository: xberg-io/xberg
+          ref: v1.0.0-rc.14
+          path: xberg-io/xberg
+
+      - name: Checkout liter-llm
+        uses: actions/checkout@v4
+        with:
+          repository: xberg-io/liter-llm
+          ref: v1.9.3
+          path: xberg-io/liter-llm
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.91 --profile minimal --component rustfmt --component clippy
+          rustup default 1.91
+          rustc --version
+          cargo --version
+
+      - name: Install cargo policy tools
+        run: |
+          cargo install cargo-deny --version 0.19.6 --locked
+          cargo install cargo-audit --version 0.22.1 --locked
+
+      - name: Install poly
+        run: |
+          curl -LsSf -o poly.tar.gz \
+            https://github.com/Goldziher/poly/releases/download/v0.11.0/poly-0.11.0-x86_64-unknown-linux-gnu.tar.gz
+          echo "97e20117dd907fd0e4ef065cfd7824ba0da96e444cee596cc3bbd05dcf53eeee  poly.tar.gz" | sha256sum -c -
+          tar -xzf poly.tar.gz
+          sudo install -m 0755 poly /usr/local/bin/poly
+          poly --version
+
+      - name: Cargo metadata
+        working-directory: monomyth
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Format
+        working-directory: monomyth
+        run: |
+          cargo fmt --check
+          poly fmt .
+
+      - name: Clippy
+        working-directory: monomyth
+        run: cargo clippy --workspace --all-targets --tests --locked -- -D warnings
+
+      - name: Test
+        working-directory: monomyth
+        run: cargo test --workspace --locked
+
+      - name: Dependency policy
+        working-directory: monomyth
+        run: |
+          cargo deny check
+          cargo audit
+
+      - name: Poly lint
+        working-directory: monomyth
+        run: poly lint .
