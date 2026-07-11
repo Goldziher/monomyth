@@ -181,6 +181,16 @@
       "note": "pre-1930 translations only"
     },
     {
+      "id": "gutenberg_odyssey_butler",
+      "name": "The Odyssey (Samuel Butler translation, 1900)",
+      "tier": "public_domain",
+      "namespace": "ship",
+      "domain": "myth",
+      "license": "PD (Samuel Butler prose translation, 1900; pre-1930 translation, translator died 1902)",
+      "url": "https://www.gutenberg.org/ebooks/1727",
+      "note": "ADR-0023 Odyssey Campbell-macro benchmark fixture's source_id; the fixture (artifacts/benchmarks/greek/odyssey.json) references this source but does NOT embed or ingest its text — structural labels only"
+    },
+    {
       "id": "fairytaleqa",
       "name": "GEM/FairytaleQA",
       "tier": "reference",

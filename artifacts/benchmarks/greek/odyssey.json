@@ -1,0 +1,645 @@
+{
+  "meta": {
+    "seed": 0,
+    "schema_version": 4,
+    "title": {
+      "Empty": {
+        "prompt": {
+          "kind": "Title",
+          "hint": "The Odyssey — Campbell macro-axis benchmark"
+        }
+      }
+    }
+  },
+  "locations": [
+    {
+      "value": null,
+      "version": 0
+    },
+    {
+      "value": {
+        "name": {
+          "Empty": {
+            "prompt": {
+              "kind": "Name",
+              "hint": "Ithaca"
+            }
+          }
+        },
+        "description": {
+          "Empty": {
+            "prompt": {
+              "kind": "Description",
+              "hint": "the hero's home, held for him through his absence"
+            }
+          }
+        },
+        "exits": {},
+        "entities": [
+          {
+            "idx": 1,
+            "version": 1
+          }
+        ],
+        "items": []
+      },
+      "version": 1
+    }
+  ],
+  "entities": [
+    {
+      "value": null,
+      "version": 0
+    },
+    {
+      "value": {
+        "name": {
+          "Empty": {
+            "prompt": {
+              "kind": "Name",
+              "hint": "Odysseus"
+            }
+          }
+        },
+        "description": {
+          "Empty": {
+            "prompt": {
+              "kind": "Description",
+              "hint": "king of Ithaca, the poem's protagonist"
+            }
+          }
+        },
+        "kind": "Npc",
+        "role": {
+          "primary": "Hero",
+          "alternatives": {}
+        },
+        "archetype": null,
+        "location": {
+          "idx": 1,
+          "version": 1
+        }
+      },
+      "version": 1
+    }
+  ],
+  "items": [
+    {
+      "value": null,
+      "version": 0
+    }
+  ],
+  "player": {
+    "location": {
+      "idx": 1,
+      "version": 1
+    },
+    "inventory": [],
+    "health": 100,
+    "max_health": 100
+  },
+  "story": {
+    "structure": {
+      "nodes": [
+        {
+          "value": null,
+          "version": 0
+        },
+        {
+          "value": {
+            "label": "CallToAdventure",
+            "kind": "Origin",
+            "stage": {
+              "primary": "CallToAdventure",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "Telemachus, spurred by Athena, sets out to learn his father's fate"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 2,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "SupernaturalAid",
+            "kind": "Beat",
+            "stage": {
+              "primary": "SupernaturalAid",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "Athena's patronage and counsel across the journey"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 3,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "CrossingTheFirstThreshold",
+            "kind": "Beat",
+            "stage": {
+              "primary": "CrossingTheFirstThreshold",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "departure from the known world toward the Cyclopes' island"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 4,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "BellyOfTheWhale",
+            "kind": "Beat",
+            "stage": {
+              "primary": "BellyOfTheWhale",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "the Cyclops's cave: enclosure, the Nobody trick, escape under the ram"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 5,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "TheRoadOfTrials",
+            "kind": "Beat",
+            "stage": {
+              "primary": "TheRoadOfTrials",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "the serial ordeals: Aeolus's winds, the Laestrygonians, Scylla and Charybdis"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 6,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "GoddessAndTemptress",
+            "kind": "Beat",
+            "stage": {
+              "primary": "TheMeetingWithTheGoddess",
+              "alternatives": {
+                "WomanAsTemptress": 350
+              }
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "Circe's aid and transformation of the crew, and Calypso's offer of immortality"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 7,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "TheUltimateBoon",
+            "kind": "Beat",
+            "stage": {
+              "primary": "TheUltimateBoon",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "Tiresias's prophecy in the underworld: the knowledge needed to reach home"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 8,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "RefusalOfTheReturn",
+            "kind": "Beat",
+            "stage": {
+              "primary": "RefusalOfTheReturn",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "years lingering with Calypso, then with Circe, before departure"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 9,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "TheMagicFlight",
+            "kind": "Beat",
+            "stage": {
+              "primary": "TheMagicFlight",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "the Phaeacians' enchanted ship carries the sleeping hero home"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 10,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "RescueFromWithout",
+            "kind": "Beat",
+            "stage": {
+              "primary": "RescueFromWithout",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "the Phaeacians and Athena deliver the helpless hero to Ithaca"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 11,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "TheCrossingOfTheReturnThreshold",
+            "kind": "Beat",
+            "stage": {
+              "primary": "TheCrossingOfTheReturnThreshold",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "landing on Ithaca disguised as a beggar"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 12,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "MasterOfTheTwoWorlds",
+            "kind": "Beat",
+            "stage": {
+              "primary": "MasterOfTheTwoWorlds",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "the slaughter of the suitors and Athena-sanctioned reclamation of the kingship"
+                }
+              }
+            },
+            "out": [
+              {
+                "target": {
+                  "idx": 13,
+                  "version": 1
+                },
+                "kind": "Sequence",
+                "label": {
+                  "Empty": {
+                    "prompt": {
+                      "kind": "Choice",
+                      "hint": ""
+                    }
+                  }
+                },
+                "guard": null
+              }
+            ]
+          },
+          "version": 1
+        },
+        {
+          "value": {
+            "label": "FreedomToLive",
+            "kind": "Ending",
+            "stage": {
+              "primary": "FreedomToLive",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "recognition by Penelope and Laertes; Athena brokers peace with the suitors' kin"
+                }
+              }
+            },
+            "out": []
+          },
+          "version": 1
+        }
+      ],
+      "root": {
+        "idx": 1,
+        "version": 1
+      },
+      "endings": [
+        {
+          "idx": 13,
+          "version": 1
+        }
+      ]
+    },
+    "plot": null,
+    "quests": [
+      {
+        "value": null,
+        "version": 0
+      }
+    ]
+  },
+  "state": {
+    "turn": 0,
+    "flags": {},
+    "cursor": {
+      "idx": 1,
+      "version": 1
+    }
+  },
+  "rng": {
+    "seed": 0,
+    "word_pos": 0
+  }
+}

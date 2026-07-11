@@ -1,0 +1,356 @@
+[
+  {
+    "AddNode": {
+      "spec": {
+        "label": "SupernaturalAid",
+        "stage": {
+          "primary": "SupernaturalAid",
+          "alternatives": {}
+        },
+        "synopsis_hint": "Athena's patronage and counsel across the journey",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 1,
+        "version": 1
+      },
+      "target": {
+        "idx": 2,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "CrossingTheFirstThreshold",
+        "stage": {
+          "primary": "CrossingTheFirstThreshold",
+          "alternatives": {}
+        },
+        "synopsis_hint": "departure from the known world toward the Cyclopes' island",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 2,
+        "version": 1
+      },
+      "target": {
+        "idx": 3,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "BellyOfTheWhale",
+        "stage": {
+          "primary": "BellyOfTheWhale",
+          "alternatives": {}
+        },
+        "synopsis_hint": "the Cyclops's cave: enclosure, the Nobody trick, escape under the ram",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 3,
+        "version": 1
+      },
+      "target": {
+        "idx": 4,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "TheRoadOfTrials",
+        "stage": {
+          "primary": "TheRoadOfTrials",
+          "alternatives": {}
+        },
+        "synopsis_hint": "the serial ordeals: Aeolus's winds, the Laestrygonians, Scylla and Charybdis",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 4,
+        "version": 1
+      },
+      "target": {
+        "idx": 5,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "GoddessAndTemptress",
+        "stage": {
+          "primary": "TheMeetingWithTheGoddess",
+          "alternatives": {
+            "WomanAsTemptress": 350
+          }
+        },
+        "synopsis_hint": "Circe's aid and transformation of the crew, and Calypso's offer of immortality",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 5,
+        "version": 1
+      },
+      "target": {
+        "idx": 6,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "TheUltimateBoon",
+        "stage": {
+          "primary": "TheUltimateBoon",
+          "alternatives": {}
+        },
+        "synopsis_hint": "Tiresias's prophecy in the underworld: the knowledge needed to reach home",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 6,
+        "version": 1
+      },
+      "target": {
+        "idx": 7,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "RefusalOfTheReturn",
+        "stage": {
+          "primary": "RefusalOfTheReturn",
+          "alternatives": {}
+        },
+        "synopsis_hint": "years lingering with Calypso, then with Circe, before departure",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 7,
+        "version": 1
+      },
+      "target": {
+        "idx": 8,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "TheMagicFlight",
+        "stage": {
+          "primary": "TheMagicFlight",
+          "alternatives": {}
+        },
+        "synopsis_hint": "the Phaeacians' enchanted ship carries the sleeping hero home",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 8,
+        "version": 1
+      },
+      "target": {
+        "idx": 9,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "RescueFromWithout",
+        "stage": {
+          "primary": "RescueFromWithout",
+          "alternatives": {}
+        },
+        "synopsis_hint": "the Phaeacians and Athena deliver the helpless hero to Ithaca",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 9,
+        "version": 1
+      },
+      "target": {
+        "idx": 10,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "TheCrossingOfTheReturnThreshold",
+        "stage": {
+          "primary": "TheCrossingOfTheReturnThreshold",
+          "alternatives": {}
+        },
+        "synopsis_hint": "landing on Ithaca disguised as a beggar",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 10,
+        "version": 1
+      },
+      "target": {
+        "idx": 11,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "MasterOfTheTwoWorlds",
+        "stage": {
+          "primary": "MasterOfTheTwoWorlds",
+          "alternatives": {}
+        },
+        "synopsis_hint": "the slaughter of the suitors and Athena-sanctioned reclamation of the kingship",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 11,
+        "version": 1
+      },
+      "target": {
+        "idx": 12,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "AddNode": {
+      "spec": {
+        "label": "FreedomToLive",
+        "stage": {
+          "primary": "FreedomToLive",
+          "alternatives": {}
+        },
+        "synopsis_hint": "recognition by Penelope and Laertes; Athena brokers peace with the suitors' kin",
+        "situation": null,
+        "functions": {},
+        "motifs": {}
+      }
+    }
+  },
+  {
+    "Connect": {
+      "source": {
+        "idx": 12,
+        "version": 1
+      },
+      "target": {
+        "idx": 13,
+        "version": 1
+      },
+      "kind": "Sequence"
+    }
+  },
+  {
+    "UnmarkEnding": {
+      "node": {
+        "idx": 1,
+        "version": 1
+      }
+    }
+  },
+  {
+    "MarkEnding": {
+      "node": {
+        "idx": 13,
+        "version": 1
+      }
+    }
+  }
+]

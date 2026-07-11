@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "description": "Registry of ADR-0023 ground-truth benchmark fixtures. Every fixture's source_id must resolve to a public_domain / cc0 / permissive ledger entry in corpus/manifest.json — the PD-gate registry test enforces this and fails the build otherwise.",
+  "fixtures": [
+    {
+      "id": "odyssey_campbell_macro",
+      "path": "greek/odyssey.json",
+      "edit_script_path": "greek/odyssey.edits.json",
+      "source_id": "gutenberg_odyssey_butler",
+      "axis": "campbell_macro",
+      "content_hash": "0x60d092bed27740f9",
+      "note": "Homer's Odyssey (Samuel Butler 1900 translation, Project Gutenberg #1727), 13-node fabula-order Campbell-macro spine. Content slots are all Content::Empty; no prose is embedded."
+    }
+  ]
+}
