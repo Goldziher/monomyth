@@ -1,5 +1,16 @@
 /target
 
+# corpus acquisition raw-fetch cache (data, not source — regenerable).
+# Split on disk by trust: raw/ship/ is verified ship-safe material; raw/reference/
+# is downloaded-for-inspection only and must never be shipped. Both are gitignored.
+/corpus/raw/
+
+# vector-store artifacts (regenerable; never commit — may contain ingested corpus)
+/*.db
+/*.db-shm
+/*.db-wal
+/monomyth.db*
+
 # poly (polylint) cache
 /.polylint/
 
