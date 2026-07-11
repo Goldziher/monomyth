@@ -1,8 +1,12 @@
 ---
-status: accepted
-date: 2026-07-06
+status: superseded by ADR-0011
+date: 2026-07-11
 decision-makers: Na'aman Hirschfeld
 ---
+
+> **Superseded by [ADR-0011](./0011-vectorstore-backends-sqlite-and-pgvector.md)** (2026-07-11):
+> the embedded default stays SQLite-vec, but LanceDB is dropped and pgvector is the committed server
+> backend. The reasoning below is retained for the historical record.
 
 # VectorStore backend: SQLite-vec now, LanceDB later, pgvector deferred
 
