@@ -2302,6 +2302,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-extract"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "monomyth-contracts",
+ "monomyth-core",
+ "monomyth-eval",
+ "monomyth-frameworks",
+ "tokio",
+]
+
+[[package]]
 name = "monomyth-frameworks"
 version = "0.1.0"
 dependencies = [

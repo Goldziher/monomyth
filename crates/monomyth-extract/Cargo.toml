@@ -1,0 +1,22 @@
+[package]
+name = "monomyth-extract"
+description = "Hermetic, LLM-free RAG-softmax extraction proof-of-concept (ADR-0018/ADR-0023 Phase B4b)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+monomyth-contracts = { workspace = true }
+monomyth-core = { workspace = true }
+monomyth-frameworks = { workspace = true }
+
+[dev-dependencies]
+monomyth-eval = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

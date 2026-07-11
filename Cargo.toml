@@ -18,6 +18,8 @@ clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 monomyth-contracts = { path = "crates/monomyth-contracts" }
 monomyth-core = { path = "crates/monomyth-core" }
+monomyth-eval = { path = "crates/monomyth-eval" }
+monomyth-extract = { path = "crates/monomyth-extract" }
 monomyth-frameworks = { path = "crates/monomyth-frameworks" }
 monomyth-gen = { path = "crates/monomyth-gen" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
