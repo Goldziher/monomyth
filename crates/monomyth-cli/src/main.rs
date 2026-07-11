@@ -6,7 +6,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, CorpusCommand};
 
 mod cli;
 mod commands;
@@ -31,5 +31,11 @@ async fn main() -> Result<()> {
             commands::run_ingest(&source, content, &cli.db).await
         }
         Command::Retrieve { query, top_k } => commands::run_retrieve(&query, top_k, &cli.db).await,
+        Command::Corpus { command } => match command {
+            CorpusCommand::Build { source, limit } => {
+                commands::run_corpus_build(source, limit, &cli.db).await
+            }
+            CorpusCommand::Audit {} => commands::run_corpus_audit(&cli.db).await,
+        },
     }
 }

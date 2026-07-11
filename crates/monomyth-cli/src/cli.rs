@@ -98,4 +98,29 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = DEFAULT_TOP_K)]
         top_k: u32,
     },
+
+    /// Manage the ship-safe corpus: fetch, normalize, and ingest declared sources.
+    Corpus {
+        #[command(subcommand)]
+        command: CorpusCommand,
+    },
+}
+
+/// Corpus acquisition subcommands.
+#[derive(Debug, Subcommand)]
+pub(crate) enum CorpusCommand {
+    /// Fetch, normalize, and ingest ship-safe sources declared in the ledger.
+    Build {
+        /// Restrict to a single declared source id.
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Cap the number of works fetched and ingested per source.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+
+    /// Audit stored document metadata against the license ledger (ADR-0005's
+    /// third enforcement point, after ingest and retrieval).
+    Audit {},
 }

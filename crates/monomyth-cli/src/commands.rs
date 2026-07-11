@@ -10,9 +10,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
 use monomyth_gen::{ContentContext, Generator};
-use monomyth_knowledge::{IngestInput, Knowledge, KnowledgeQuery};
+use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
 use monomyth_llm::Llm;
 use monomyth_text::{render_intro, render_location, render_structure};
+use time::OffsetDateTime;
+use time::macros::format_description;
 
 /// Generate a world's structure from `seed`.
 ///
@@ -234,6 +236,82 @@ pub(crate) async fn run_retrieve(query: &str, top_k: u32, db: &Path) -> Result<(
         );
     }
     Ok(())
+}
+
+/// Handle `corpus build`: fetch, normalize, and ingest ship-safe ledger sources.
+///
+/// `monomyth-cli` always enables the `monomyth-knowledge` `acquire` feature
+/// (see its `Cargo.toml`), so `build_corpus` is unconditionally available
+/// here with no feature gate on this function.
+///
+/// The retrieval date is read from the system clock exactly once, at this
+/// call site — the only place a live clock call belongs (ADR-0010); the
+/// pipeline itself is a pure function of the date it is handed.
+///
+/// # Errors
+///
+/// Fails if the store cannot be opened, the retrieval date cannot be
+/// formatted, or the acquisition pipeline itself fails to start (per-source
+/// fetch/ingest failures are reported in the summary rather than propagated).
+pub(crate) async fn run_corpus_build(
+    source: Option<String>,
+    limit: Option<usize>,
+    db: &Path,
+) -> Result<()> {
+    let knowledge = Knowledge::open(db)
+        .await
+        .context("opening the knowledge store")?;
+
+    let date_format = format_description!("[year]-[month]-[day]");
+    let retrieved = OffsetDateTime::now_utc()
+        .format(&date_format)
+        .context("formatting the retrieval date")?;
+
+    let report =
+        monomyth_knowledge::build_corpus(&knowledge, BuildOptions { source, limit }, &retrieved)
+            .await
+            .context("running the corpus acquisition pipeline")?;
+
+    println!("Ingested {} work(s) total.", report.total_ingested());
+    for source_report in &report.sources {
+        let summary = match &source_report.outcome {
+            SourceOutcome::Ingested { count } => format!("ingested {count} work(s)"),
+            SourceOutcome::FilteredOut { reason } => format!("filtered out ({reason})"),
+            SourceOutcome::NoFetcher { reason } => format!("no fetcher ({reason})"),
+            SourceOutcome::Failed { error } => format!("failed ({error})"),
+        };
+        println!("  {}: {summary}", source_report.source_id);
+    }
+    Ok(())
+}
+
+/// Handle `corpus audit`: verify stored document metadata against the license
+/// ledger — ADR-0005's third enforcement point (ingest and retrieval are the
+/// other two).
+///
+/// Prints a clear pass/fail summary and returns `Err` (non-zero exit) on the
+/// first violation found, so this is safe to wire directly into CI.
+///
+/// # Errors
+///
+/// Fails if the store cannot be opened, or if
+/// [`monomyth_knowledge::Knowledge::audit_stored_metadata`] finds a stored
+/// document whose metadata disagrees with its ledger entry.
+pub(crate) async fn run_corpus_audit(db: &Path) -> Result<()> {
+    let knowledge = Knowledge::open(db)
+        .await
+        .context("opening the knowledge store")?;
+
+    match knowledge.audit_stored_metadata().await {
+        Ok(()) => {
+            println!("Audit passed: all stored documents agree with the license ledger.");
+            Ok(())
+        }
+        Err(error) => {
+            println!("Audit FAILED: {error}");
+            Err(error).context("stored metadata disagrees with the license ledger")
+        }
+    }
 }
 
 #[cfg(test)]
