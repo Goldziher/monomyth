@@ -115,14 +115,4 @@ mod tests {
             BenchmarkError::Load(LoadError::Deserialize(_))
         ));
     }
-
-    /// B2 supplies the real `artifacts/benchmarks/` fixture and its pinned hash
-    /// from a manifest; until then, loading from a real file path is out of
-    /// scope for this crate's B1 skeleton. This test documents the intended
-    /// shape without depending on a fixture that does not exist yet.
-    #[test]
-    #[ignore = "B2 supplies the artifacts/benchmarks/ fixture and its pinned manifest hash"]
-    fn load_should_read_a_real_benchmark_fixture_from_the_artifacts_directory() {
-        unimplemented!("see artifacts/benchmarks/ once B2 lands");
-    }
 }

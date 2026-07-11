@@ -1,14 +1,14 @@
 //! [`Scorer`], [`Report`], and the FNV-golden fingerprint over a quantized report.
 //!
-//! This module defines the scoring seam ADR-0023 calls for, without implementing
-//! node alignment yet (that is Phase B3 — matching extracted narrative nodes to
-//! gold nodes before per-node metrics are meaningful). What *is* here is the
-//! shape a future scorer fills in: an aggregate [`Report`] of per-axis
-//! [`DistScore`]s, plus a place for the eventual node [`Alignment`], and a
-//! reproducible [`report_fingerprint`] so a `Report` can be pinned the same way
-//! generator output and fixtures are.
+//! This module defines the scoring seam ADR-0023 calls for.
+//! [`crate::alignment::AlignmentScorer`] is the Phase B3 implementation: it
+//! matches extracted narrative nodes to gold nodes and fills in [`Alignment`] and
+//! [`Report`]'s structural precision/recall/F1 and per-axis [`DistScore`]s. What
+//! lives here is the shape a scorer fills in — the aggregate [`Report`], the
+//! node [`Alignment`], and a reproducible [`report_fingerprint`] so a `Report`
+//! can be pinned the same way generator output and fixtures are.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -16,18 +16,26 @@ use crate::metrics::DistScore;
 use crate::util::fnv1a;
 use monomyth_core::{NarrativeNodeId, World};
 
-/// A gold-to-predicted narrative node correspondence.
+/// A gold-to-predicted narrative node correspondence, produced by a
+/// node-alignment [`Scorer`] (Phase B3's [`crate::alignment::AlignmentScorer`]).
 ///
-/// Empty today — no scorer produces one yet. This is the seam Phase B3's
-/// node-alignment scorer fills in: it must be unit-tested against hand-crafted
-/// near-miss DAGs before any aggregate score built on top of it is trusted (per
-/// ADR-0023's Decision Outcome), which is why the type exists now but stays
-/// unpopulated until that work lands.
+/// `matches` pairs every gold node the aligner was able to match to a predicted
+/// node, regardless of how good the match's substitution score was — the
+/// alignment itself is robust to a bad label; only a true gap (no counterpart on
+/// the other side) lands in `unmatched_gold`/`unmatched_predicted`. This is the
+/// sharpest-risk piece of the eval harness — a wrong alignment silently corrupts
+/// every downstream metric — so it is unit-tested against hand-crafted near-miss
+/// DAGs before any aggregate score built on top of it is trusted (ADR-0023's
+/// Decision Outcome).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Alignment {
-    /// Gold node id -> matched predicted node id, for every node the (future)
-    /// alignment scorer was able to match.
+    /// Gold node id -> matched predicted node id, for every node the alignment
+    /// scorer was able to match.
     pub matches: BTreeMap<NarrativeNodeId, NarrativeNodeId>,
+    /// Gold nodes with no predicted counterpart (a deletion in the alignment).
+    pub unmatched_gold: BTreeSet<NarrativeNodeId>,
+    /// Predicted nodes with no gold counterpart (an insertion in the alignment).
+    pub unmatched_predicted: BTreeSet<NarrativeNodeId>,
 }
 
 /// The aggregate result of scoring a predicted [`World`] against a gold one.
@@ -36,23 +44,39 @@ pub struct Alignment {
 /// `"functions"`) rather than a fixed field per framework system, so a
 /// [`Scorer`] implementation can score whichever axes it covers without this
 /// type growing a field per framework enum. `BTreeMap`-keyed for canonical,
-/// snapshot-stable iteration order, matching the project-wide convention.
+/// snapshot-stable iteration order, matching the project-wide convention. Only
+/// axes with at least one eligible matched pair are present (see
+/// [`crate::alignment::AlignmentScorer::score`]'s per-axis eligibility rules —
+/// in particular, `situation` is only eligible when both sides of a matched
+/// pair scored one).
+///
+/// Prose (the `Content` slots) is deliberately not scored anywhere in this
+/// type: every fixture's `Content` is `Content::Empty` (ADR-0023), so there is
+/// nothing to compare a predicted prose value against yet. A future prose-scoring
+/// axis is out of scope until fixtures carry real content.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Report {
-    /// Per-axis distribution scores, keyed by axis name.
+    /// Per-axis distribution scores, keyed by axis name, averaged over every
+    /// matched `(gold, predicted)` node pair for which the axis applies.
     pub axes: BTreeMap<String, DistScore>,
-    /// The gold-to-predicted node correspondence, once a node-alignment scorer
-    /// exists (Phase B3). Always [`Alignment::default`] (empty) until then.
+    /// The gold-to-predicted node correspondence.
     pub alignment: Alignment,
+    /// `matched_count / predicted_node_count`; `0.0` (not `NaN`) when there are
+    /// no predicted nodes to claim credit for.
+    pub structural_precision: f64,
+    /// `matched_count / gold_node_count`; `0.0` (not `NaN`) when there are no
+    /// gold nodes to have matched (unreachable for a validated fixture, but
+    /// handled defensively rather than panicking).
+    pub structural_recall: f64,
+    /// The harmonic mean of [`structural_precision`](Self::structural_precision)
+    /// and [`structural_recall`](Self::structural_recall); `0.0` (not `NaN`)
+    /// when both are `0.0`.
+    pub structural_f1: f64,
 }
 
 /// Scores a predicted [`World`] against a gold [`World`], producing a [`Report`].
 ///
-/// Deliberately narrow for Phase B1: the trait and [`Report`] shape are defined
-/// so downstream code (a CLI `eval` subcommand, later scorers) can be written
-/// against a stable seam, but no implementation exists yet — node alignment
-/// (Phase B3) is the prerequisite for any per-node metric, and no axis scorer is
-/// wired up until a fixture exists (Phase B2).
+/// [`crate::alignment::AlignmentScorer`] is the Phase B3 implementation.
 pub trait Scorer {
     /// Compare `predicted` against `gold` and produce a [`Report`].
     fn score(&self, gold: &World, predicted: &World) -> Report;
@@ -101,7 +125,39 @@ fn quantize(value: f64) -> i64 {
 #[derive(Serialize)]
 struct QuantizedReport {
     axes: BTreeMap<String, QuantizedDistScore>,
-    alignment: Alignment,
+    alignment: QuantizedAlignment,
+    structural_precision: i64,
+    structural_recall: i64,
+    structural_f1: i64,
+}
+
+/// [`Alignment`] reshaped for [`serde_json`]: `serde_json` requires object keys
+/// to be strings, and [`NarrativeNodeId`] (a `slotmap` generational key)
+/// serializes as a structured value, not a string — so `Alignment::matches`
+/// (a `BTreeMap<NarrativeNodeId, NarrativeNodeId>`) cannot serialize directly
+/// via `serde_json::to_vec`. `Vec<(NarrativeNodeId, NarrativeNodeId)>` and
+/// `Vec<NarrativeNodeId>` serialize as plain JSON arrays instead, and iterating
+/// the source `BTreeMap`/`BTreeSet`s preserves the same canonical, snapshot-
+/// stable order this crate uses everywhere else.
+#[derive(Serialize)]
+struct QuantizedAlignment {
+    matches: Vec<(NarrativeNodeId, NarrativeNodeId)>,
+    unmatched_gold: Vec<NarrativeNodeId>,
+    unmatched_predicted: Vec<NarrativeNodeId>,
+}
+
+impl From<&Alignment> for QuantizedAlignment {
+    fn from(alignment: &Alignment) -> Self {
+        Self {
+            matches: alignment
+                .matches
+                .iter()
+                .map(|(&gold, &predicted)| (gold, predicted))
+                .collect(),
+            unmatched_gold: alignment.unmatched_gold.iter().copied().collect(),
+            unmatched_predicted: alignment.unmatched_predicted.iter().copied().collect(),
+        }
+    }
 }
 
 /// [`DistScore`] with every `f64` field replaced by its quantized `i64`.
@@ -136,7 +192,7 @@ impl From<&DistScore> for QuantizedDistScore {
 /// # Panics
 ///
 /// Never in practice: [`QuantizedReport`] is built entirely from `String`-keyed
-/// `BTreeMap`s and plain integer/struct fields, none of which
+/// `BTreeMap`s and plain integer/struct/array fields, none of which
 /// [`serde_json::to_vec`] can fail to serialize. The `.expect` documents that
 /// assumption rather than threading a `Result` through a function whose only
 /// fallible step is unreachable for this type.
@@ -148,7 +204,10 @@ pub fn report_fingerprint(report: &Report) -> u64 {
             .iter()
             .map(|(axis, score)| (axis.clone(), QuantizedDistScore::from(score)))
             .collect(),
-        alignment: report.alignment.clone(),
+        alignment: QuantizedAlignment::from(&report.alignment),
+        structural_precision: quantize(report.structural_precision),
+        structural_recall: quantize(report.structural_recall),
+        structural_f1: quantize(report.structural_f1),
     };
     let bytes = serde_json::to_vec(&quantized)
         .expect("QuantizedReport contains no non-serializable types (no floats, no maps with non-string keys at the top level)");

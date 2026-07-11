@@ -13,24 +13,26 @@
 //! golden the same way `monomyth-gen`'s generator output is
 //! (`monomyth-gen/tests/determinism.rs`).
 //!
-//! # Phase B1 scope
+//! # Phase B3 scope
 //!
-//! This is the scaffold: [`Dist`], the four metrics ([`histogram_intersection`],
-//! [`cross_entropy`], [`top1_accuracy`], [`kendall_tau`]) and [`DistScore`], the
-//! [`Benchmark`] fixture loader, and the [`Scorer`] trait / [`Report`] skeleton.
-//! Node alignment (matching extracted narrative nodes to gold nodes) is Phase
-//! B3; the first real fixture under `artifacts/benchmarks/` is Phase B2. Neither
-//! exists yet — [`Report::alignment`] is always empty, and [`Benchmark::load`]
-//! has no real fixture to load from.
+//! [`Dist`], the four metrics ([`histogram_intersection`], [`cross_entropy`],
+//! [`top1_accuracy`], [`kendall_tau`]) and [`DistScore`], the [`Benchmark`]
+//! fixture loader, the [`Scorer`] trait / [`Report`] shape, and a concrete
+//! node-alignment scorer, [`AlignmentScorer`], that matches an extracted
+//! [`World`](monomyth_core::World)'s narrative spine against a gold fixture's via
+//! Needleman-Wunsch global alignment (see [`AlignmentScorer`]'s doc for the
+//! algorithm and its scope limitation).
 
 #![forbid(unsafe_code)]
 
+mod alignment;
 mod benchmark;
 mod dist;
 mod metrics;
 mod report;
 pub mod util;
 
+pub use alignment::AlignmentScorer;
 pub use benchmark::{Benchmark, BenchmarkError};
 pub use dist::Dist;
 pub use metrics::{DistScore, cross_entropy, histogram_intersection, kendall_tau, top1_accuracy};
