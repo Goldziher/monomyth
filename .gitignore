@@ -28,3 +28,6 @@
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
+
+# basemind index cache (regenerable; the committed basemind.toml is the source of truth)
+.basemind/

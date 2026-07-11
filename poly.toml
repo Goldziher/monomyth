@@ -132,6 +132,9 @@ enabled = true
 enabled = true
 
 [per-file-ignores]
+# basemind.toml is a tool-generated config whose inline comments document each
+# option; the uncomment rule must not treat that documentation as removable.
+"basemind.toml" = ["comment", "doc-comment"]
 "e2e/**" = ["comment", "doc-comment"]
 "**/e2e/**" = ["comment", "doc-comment"]
 "test_apps/**" = ["comment", "doc-comment"]
