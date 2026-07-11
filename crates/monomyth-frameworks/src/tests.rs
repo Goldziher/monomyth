@@ -134,31 +134,23 @@ fn assert_scalar_id_resolves<T>(json: &str, field: &str, from_id: impl Fn(u16) -
 const ARC_JSON: &str = include_str!("../../../artifacts/frameworks/arc_crosswalk.json");
 const PLOT_JSON: &str = include_str!("../../../artifacts/frameworks/plot_crosswalk.json");
 const CHARACTER_JSON: &str = include_str!("../../../artifacts/frameworks/character_crosswalk.json");
+const MOTIF_JSON: &str = include_str!("../../../artifacts/frameworks/motif_crosswalk.json");
 
-#[test]
-fn arc_crosswalk_ids_resolve() {
-    assert_scalar_id_resolves(ARC_JSON, "campbell_stage_id", MonomythStage::from_id);
-    assert_ids_resolve(ARC_JSON, "propp_function_ids", ProppFunction::from_id);
-}
-
-/// ADR-0022 Phase S1: `propp_function_weights` must be parallel to
-/// `propp_function_ids` (same length) and every weight must be a valid permille
-/// value in `0..=1000`.
-#[test]
-fn arc_crosswalk_weights_are_well_formed() {
-    let value: serde_json::Value = serde_json::from_str(ARC_JSON).expect("crosswalk is valid JSON");
+/// Assert that `weights_field` is parallel to `ids_field` (same length) and every
+/// weight is a valid permille value in `0..=1000`, mirroring
+/// `arc_crosswalk_weights_are_well_formed`'s pattern for a new weighted crosswalk.
+fn assert_weights_are_well_formed(json: &str, ids_field: &str, weights_field: &str) {
+    let value: serde_json::Value = serde_json::from_str(json).expect("crosswalk is valid JSON");
     let items = value["items"].as_array().expect("items array");
     for item in items {
-        let ids = item["propp_function_ids"]
+        let ids = item[ids_field].as_array().expect("ids field is an array");
+        let weights = item[weights_field]
             .as_array()
-            .expect("propp_function_ids is an array");
-        let weights = item["propp_function_weights"]
-            .as_array()
-            .expect("propp_function_weights is an array");
+            .expect("weights field is an array");
         assert_eq!(
             ids.len(),
             weights.len(),
-            "propp_function_weights must be parallel to propp_function_ids for item {}",
+            "{weights_field} must be parallel to {ids_field} for item {}",
             item["id"],
         );
         for weight in weights {
@@ -173,6 +165,45 @@ fn arc_crosswalk_weights_are_well_formed() {
 }
 
 #[test]
+fn arc_crosswalk_ids_resolve() {
+    assert_scalar_id_resolves(ARC_JSON, "campbell_stage_id", MonomythStage::from_id);
+    assert_ids_resolve(ARC_JSON, "propp_function_ids", ProppFunction::from_id);
+}
+
+/// ADR-0022 Phase S1: `propp_function_weights` must be parallel to
+/// `propp_function_ids` (same length) and every weight must be a valid permille
+/// value in `0..=1000`.
+#[test]
+fn arc_crosswalk_weights_are_well_formed() {
+    assert_weights_are_well_formed(ARC_JSON, "propp_function_ids", "propp_function_weights");
+}
+
+/// ADR-0022 Phase S2: `polti_situation_weights` must be parallel to
+/// `polti_situation_ids` and every weight must be a valid permille value in
+/// `0..=1000`.
+#[test]
+fn plot_crosswalk_weights_are_well_formed() {
+    assert_weights_are_well_formed(PLOT_JSON, "polti_situation_ids", "polti_situation_weights");
+}
+
+/// ADR-0022 Phase S2: `archetype_weights` must be parallel to `archetype_ids` and
+/// every weight must be a valid permille value in `0..=1000`. Parity must hold
+/// even for a role like "Gatekeeper" whose `archetype_ids` is a single-element
+/// (non-empty) list, and there is no role with a fully empty `archetype_ids` in
+/// the current artifact, but the check itself makes no such assumption.
+#[test]
+fn character_crosswalk_weights_are_well_formed() {
+    assert_weights_are_well_formed(CHARACTER_JSON, "archetype_ids", "archetype_weights");
+}
+
+/// ADR-0022 Phase S2: `motif_class_weights` must be parallel to `motif_class_ids`
+/// and every weight must be a valid permille value in `0..=1000`.
+#[test]
+fn motif_crosswalk_weights_are_well_formed() {
+    assert_weights_are_well_formed(MOTIF_JSON, "motif_class_ids", "motif_class_weights");
+}
+
+#[test]
 fn plot_crosswalk_ids_resolve() {
     assert_scalar_id_resolves(PLOT_JSON, "booker_plot_id", BookerPlot::from_id);
     assert_ids_resolve(PLOT_JSON, "polti_situation_ids", PoltiSituation::from_id);
@@ -183,6 +214,12 @@ fn character_crosswalk_ids_resolve() {
     assert_ids_resolve(CHARACTER_JSON, "propp_role_ids", ProppRole::from_id);
     assert_ids_resolve(CHARACTER_JSON, "greimas_actant_ids", GreimasActant::from_id);
     assert_ids_resolve(CHARACTER_JSON, "archetype_ids", Archetype::from_id);
+}
+
+#[test]
+fn motif_crosswalk_ids_resolve() {
+    assert_scalar_id_resolves(MOTIF_JSON, "campbell_stage_id", MonomythStage::from_id);
+    assert_ids_resolve(MOTIF_JSON, "motif_class_ids", MotifClass::from_id);
 }
 
 #[test]

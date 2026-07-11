@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use monomyth_core::{Direction, EntityId, ItemId, LocationId, ProvenanceSource, World};
+use monomyth_core::{Direction, EntityId, ItemId, LocationId, ProvenanceSource, ScoredOne, World};
 use monomyth_frameworks::{Archetype, MonomythStage, ProppRole};
 use monomyth_gen::{ContentContext, Generator};
 use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, Ledger};
@@ -175,8 +175,8 @@ async fn fill_content_fills_every_targeted_slot_with_llm_provenance() {
 /// The structural facts the content phase must never touch.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct EntityStructure {
-    role: Option<ProppRole>,
-    archetype: Option<Archetype>,
+    role: Option<ScoredOne<ProppRole>>,
+    archetype: Option<ScoredOne<Archetype>>,
     location: Option<LocationId>,
 }
 
@@ -221,8 +221,8 @@ fn fingerprint(world: &World) -> StructuralFingerprint {
             (
                 ordinal(index),
                 EntityStructure {
-                    role: entity.role,
-                    archetype: entity.archetype,
+                    role: entity.role.clone(),
+                    archetype: entity.archetype.clone(),
                     location: entity.location,
                 },
             )
@@ -239,9 +239,11 @@ fn fingerprint(world: &World) -> StructuralFingerprint {
         spine: structure
             .spine()
             .into_iter()
-            .filter_map(|id| structure.node(id).map(|node| node.stage))
+            .filter_map(|id| structure.node(id).map(|node| *node.stage.primary()))
             .collect(),
-        cursor_stage: structure.node(world.state.cursor).map(|node| node.stage),
+        cursor_stage: structure
+            .node(world.state.cursor)
+            .map(|node| *node.stage.primary()),
         player_location: world.player.location,
     }
 }

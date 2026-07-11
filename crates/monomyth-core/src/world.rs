@@ -39,7 +39,19 @@ use crate::story::Story;
 /// distribution over candidates. No migration path is provided: a v2 world is
 /// intentionally rejected by [`from_json_checked`](crate::World::from_json_checked)
 /// rather than silently reinterpreted.
-pub const SCHEMA_VERSION: u32 = 3;
+///
+/// Bumped 3 → 4 per ADR-0022, Phase S2: the remaining five framework-typed fields
+/// move to the scored shape. [`NarrativeNode::motifs`](crate::NarrativeNode) and
+/// [`NarrativeNode::situation`](crate::NarrativeNode) become
+/// [`ScoredSet<MotifClass>`](crate::ScoredSet) and
+/// `Option<`[`ScoredOne<PoltiSituation>`](crate::ScoredOne)`>` respectively;
+/// [`NarrativeNode::stage`](crate::NarrativeNode) becomes the mandatory
+/// [`ScoredOne<MonomythStage>`](crate::ScoredOne); [`Story::plot`](crate::Story),
+/// [`Quest::situation`](crate::Quest), [`Entity::role`](crate::Entity), and
+/// [`Entity::archetype`](crate::Entity) all become `Option<ScoredOne<_>>`. As with
+/// the S1 bump, no migration path is provided: a v3 world is rejected by
+/// [`from_json_checked`](crate::World::from_json_checked), not reinterpreted.
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// A compass or vertical direction connecting two locations.
 ///

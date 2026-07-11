@@ -345,11 +345,11 @@ fn relabel_and_attribute_setters_take_effect() {
             },
             NarrativeEdit::SetNodeStage {
                 node: a,
-                stage: MonomythStage::BellyOfTheWhale,
+                stage: MonomythStage::BellyOfTheWhale.into(),
             },
             NarrativeEdit::SetNodeSituation {
                 node: a,
-                situation: Some(situation),
+                situation: Some(situation.into()),
             },
             NarrativeEdit::SetNodeFunctions {
                 node: a,
@@ -357,14 +357,17 @@ fn relabel_and_attribute_setters_take_effect() {
             },
             NarrativeEdit::SetNodeMotifs {
                 node: a,
-                motifs: [motif].into_iter().collect(),
+                motifs: [(motif, Weight::FULL)].into_iter().collect(),
             },
         ])
         .expect("apply the attribute edits");
     let node = structure.node(a).expect("a exists");
     assert_eq!(node.label, "renamed");
-    assert_eq!(node.stage, MonomythStage::BellyOfTheWhale);
-    assert_eq!(node.situation, Some(situation));
+    assert_eq!(*node.stage.primary(), MonomythStage::BellyOfTheWhale);
+    assert_eq!(
+        node.situation.as_ref().map(|s| *s.primary()),
+        Some(situation)
+    );
     assert!(node.functions.contains(&function));
     assert!(node.motifs.contains(&motif));
 }

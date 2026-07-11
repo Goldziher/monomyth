@@ -15,19 +15,22 @@
 //! beat inherits its parent's Campbell [`stage`](monomyth_frameworks::MonomythStage)
 //! and is grounded in the scholarship, not invention:
 //!
-//! - a subset of [`arc_functions`](monomyth_frameworks::arc_functions) (Propp),
-//! - one [`plot_situations`](monomyth_frameworks::plot_situations) draw (Polti),
+//! - a weighted subset of [`arc_functions_weighted`](monomyth_frameworks::arc_functions_weighted) (Propp),
+//! - one weighted [`plot_situations_weighted`](monomyth_frameworks::plot_situations_weighted) draw (Polti),
 //!   when the story records a [`BookerPlot`](monomyth_frameworks::BookerPlot),
-//! - a small subset of [`stage_motif_candidates`] (Thompson's motif classes).
+//! - a small weighted subset of [`stage_motifs_weighted`](monomyth_frameworks::stage_motifs_weighted)
+//!   (Thompson's motif classes).
 //!
 //! Prose slots (node synopsis) stay empty for the later content layer.
 
-use std::collections::BTreeSet;
-
 use monomyth_core::{
-    EdgeKind, EditOutcome, NarrativeEdit, NarrativeNodeId, NodeSpec, ScoredSet, Weight, World,
+    EdgeKind, EditOutcome, NarrativeEdit, NarrativeNodeId, NodeSpec, ScoredOne, ScoredSet, Weight,
+    World,
 };
-use monomyth_frameworks::{MonomythStage, MotifClass, arc_functions_weighted, plot_situations};
+use monomyth_frameworks::{
+    MonomythStage, MotifClass, arc_functions_weighted, plot_situations_weighted,
+    stage_motifs_weighted,
+};
 use rand_chacha::ChaCha8Rng;
 
 use crate::error::GenError;
@@ -94,7 +97,12 @@ impl ProceduralPass for BeatPass {
     fn apply(&self, world: &mut World, rng: &mut ChaCha8Rng) -> Result<(), GenError> {
         let mut original_ids: Vec<NarrativeNodeId> = world.story.structure.nodes.keys().collect();
         original_ids.sort_unstable();
-        let situations = world.story.plot.map(plot_situations).unwrap_or_default();
+        let situations = world
+            .story
+            .plot
+            .as_ref()
+            .map(|plot| plot_situations_weighted(*plot.primary()))
+            .unwrap_or_default();
 
         for source in original_ids {
             let Some((stage, target)) = spine_edge(world, source) else {
@@ -106,7 +114,7 @@ impl ProceduralPass for BeatPass {
                 self.config.beats_per_stage_min,
                 self.config.beats_per_stage_max,
             );
-            let motif_candidates = stage_motif_candidates(stage);
+            let motif_candidates = stage_motifs_weighted(stage);
 
             let mut previous = source;
             for beat_index in 0..beat_count {
@@ -136,33 +144,6 @@ impl ProceduralPass for BeatPass {
         world.story.structure.validate()?;
         Ok(())
     }
-}
-
-/// Draw a distinct, deterministic subset of `candidates` of size `[min, max]`
-/// (clamped to `candidates.len()`).
-///
-/// Repeatedly draws a random index into the shrinking pool of not-yet-chosen
-/// candidate indices and removes it (a partial Fisher-Yates), so the draws
-/// consume randomness only for the elements actually picked. `ProppFunction` and
-/// `MotifClass` both derive `Ord` from [`framework_enum!`](monomyth_frameworks),
-/// whose variant declaration order matches the artifact's canonical numeric `id`
-/// order; collecting the chosen elements into a `BTreeSet` therefore recovers
-/// canonical order by construction; the *selection* need not preserve order.
-fn draw_indexed_subset(rng: &mut ChaCha8Rng, len: usize, min: usize, max: usize) -> Vec<usize> {
-    if len == 0 {
-        return Vec::new();
-    }
-    let max = max.min(len);
-    let min = min.min(max);
-    let count = draw_range_inclusive(rng, min, max);
-
-    let mut pool: Vec<usize> = (0..len).collect();
-    let mut chosen = Vec::with_capacity(count);
-    for _ in 0..count {
-        let pick = draw_range_inclusive(rng, 0, pool.len() - 1);
-        chosen.push(pool.swap_remove(pick));
-    }
-    chosen
 }
 
 /// Draw a non-empty, canonically-ordered, weighted subset of `stage`'s crosswalk
@@ -203,33 +184,63 @@ fn draw_function_subset(
     chosen
 }
 
-/// Draw at most one Polti situation from `situations` (empty when the story has no
-/// recorded plot or the plot has no crosswalk entries).
+/// Draw at most one weighted Polti situation from `situations` (empty when the
+/// story has no recorded plot or the plot has no crosswalk entries), wrapped as a
+/// [`ScoredOne`] with no alternatives.
 fn draw_situation(
     rng: &mut ChaCha8Rng,
-    situations: &'static [monomyth_frameworks::PoltiSituation],
-) -> Option<monomyth_frameworks::PoltiSituation> {
+    situations: &'static [(monomyth_frameworks::PoltiSituation, u16)],
+) -> Option<ScoredOne<monomyth_frameworks::PoltiSituation>> {
     if situations.is_empty() {
         return None;
     }
-    situations
-        .get(draw_range_inclusive(rng, 0, situations.len() - 1))
-        .copied()
+    let weights: Vec<Weight> = situations
+        .iter()
+        .map(|&(_, permille)| Weight::new(permille))
+        .collect();
+    let index = draw_weighted_index(rng, &weights)?;
+    Some(ScoredOne::new(situations[index].0))
 }
 
-/// Draw a `0..=2`-sized, canonically-ordered subset of `candidates` (see
+/// Draw a `0..=2`-sized, canonically-ordered, weighted subset of `candidates` (see
 /// [`MOTIFS_PER_BEAT_MIN`]/[`MOTIFS_PER_BEAT_MAX`]).
+///
+/// Selection is weighted-without-replacement, mirroring
+/// [`draw_function_subset`]'s pool-and-`swap_remove` pattern, but preserves this
+/// field's own `0..=2` count semantics (unlike `draw_function_subset`'s
+/// always-at-least-one count): the count is drawn from
+/// `MOTIFS_PER_BEAT_MIN..=MOTIFS_PER_BEAT_MAX`, clamped to `candidates.len()`
+/// exactly as the former uniform `draw_indexed_subset` clamped it.
 fn draw_motif_subset(
     rng: &mut ChaCha8Rng,
-    candidates: &'static [MotifClass],
-) -> BTreeSet<MotifClass> {
-    let indices = draw_indexed_subset(
-        rng,
-        candidates.len(),
-        MOTIFS_PER_BEAT_MIN,
-        MOTIFS_PER_BEAT_MAX,
-    );
-    indices.into_iter().map(|index| candidates[index]).collect()
+    candidates: &'static [(MotifClass, u16)],
+) -> ScoredSet<MotifClass> {
+    if candidates.is_empty() {
+        return ScoredSet::new();
+    }
+
+    let max = MOTIFS_PER_BEAT_MAX.min(candidates.len());
+    // MOTIFS_PER_BEAT_MIN is 0, which is never greater than `max`, so no clamp is
+    // needed here (unlike the general min/max clamp `draw_indexed_subset` used to
+    // do for its caller-supplied bounds); clippy's `unnecessary_min_or_max` lint
+    // catches this statically.
+    let count = draw_range_inclusive(rng, MOTIFS_PER_BEAT_MIN, max);
+
+    let mut pool: Vec<(MotifClass, Weight)> = candidates
+        .iter()
+        .map(|&(motif, permille)| (motif, Weight::new(permille)))
+        .collect();
+
+    let mut chosen = ScoredSet::new();
+    for _ in 0..count {
+        let weights: Vec<Weight> = pool.iter().map(|&(_, weight)| weight).collect();
+        let Some(index) = draw_weighted_index(rng, &weights) else {
+            break;
+        };
+        let (motif, weight) = pool.swap_remove(index);
+        chosen.insert(motif, weight);
+    }
+    chosen
 }
 
 /// The Campbell stage of `source` and the target of its primary spine edge (the first
@@ -240,64 +251,7 @@ fn spine_edge(world: &World, source: NarrativeNodeId) -> Option<(MonomythStage, 
         .out
         .iter()
         .find(|edge| edge.kind == EdgeKind::Sequence)?;
-    Some((node.stage, edge.target))
-}
-
-/// The Thompson motif classes a beat on `stage` may plausibly realize.
-///
-/// No crosswalk artifact binds Campbell stages to Thompson motif classes (the
-/// framework corpus stops at Propp/Polti for the meso tier), so this mapping is a
-/// hand-authored, deterministic pairing grounded in Thompson's own class glosses
-/// (see `artifacts/frameworks/thompson_motif_classes.json`) rather than an
-/// invented taxonomy. Every one of the seventeen [`MonomythStage`] variants maps
-/// to at least one candidate; a beat may still realize zero motifs if the seeded
-/// subset draw comes up empty.
-///
-/// | Stage | Candidates | Why |
-/// |---|---|---|
-/// | [`CallToAdventure`](MonomythStage::CallToAdventure) | [`OrdainingTheFuture`](MotifClass::OrdainingTheFuture), [`ChanceAndFate`](MotifClass::ChanceAndFate) | the disrupting summons reads as a prophecy/fate-class motif |
-/// | [`RefusalOfTheCall`](MonomythStage::RefusalOfTheCall) | [`TraitsOfCharacter`](MotifClass::TraitsOfCharacter) | hesitation out of fear or duty is a personality-trait beat |
-/// | [`SupernaturalAid`](MonomythStage::SupernaturalAid) | [`Magic`](MotifClass::Magic) | the mentor's talisman/spell is Thompson's own "magic objects" class |
-/// | [`CrossingTheFirstThreshold`](MonomythStage::CrossingTheFirstThreshold) | [`Marvels`](MotifClass::Marvels) | passage into the unknown is an otherworld-journey motif |
-/// | [`BellyOfTheWhale`](MonomythStage::BellyOfTheWhale) | [`TheDead`](MotifClass::TheDead) | symbolic death/passage matches "resuscitation... and the soul" |
-/// | [`TheRoadOfTrials`](MonomythStage::TheRoadOfTrials) | [`Tests`](MotifClass::Tests) | a direct match: "tests of identity, cleverness, and prowess; quests" |
-/// | [`TheMeetingWithTheGoddess`](MonomythStage::TheMeetingWithTheGoddess) | [`Sex`](MotifClass::Sex) | unconditional love matches "love, marriage, courtship" |
-/// | [`WomanAsTemptress`](MonomythStage::WomanAsTemptress) | [`Deceptions`](MotifClass::Deceptions) | temptation leading the hero astray is "deceits... disguises, and illusions" |
-/// | [`AtonementWithTheFather`](MonomythStage::AtonementWithTheFather) | [`Society`](MotifClass::Society) | the ultimate authority figure matches "kings, courts... institutions" |
-/// | [`Apotheosis`](MonomythStage::Apotheosis) | [`Religion`](MotifClass::Religion) | divine knowledge/transcendence is a direct match |
-/// | [`TheUltimateBoon`](MonomythStage::TheUltimateBoon) | [`RewardsAndPunishments`](MotifClass::RewardsAndPunishments) | winning the sought prize is a reward motif |
-/// | [`RefusalOfTheReturn`](MonomythStage::RefusalOfTheReturn) | [`ChanceAndFate`](MotifClass::ChanceAndFate) | resisting the pull back to the ordinary world is a fate/fortune motif |
-/// | [`TheMagicFlight`](MonomythStage::TheMagicFlight) | [`CaptivesAndFugitives`](MotifClass::CaptivesAndFugitives) | a direct match: "escape, pursuit, and rescue" |
-/// | [`RescueFromWithout`](MonomythStage::RescueFromWithout) | [`CaptivesAndFugitives`](MotifClass::CaptivesAndFugitives) | the same class's "rescue" half |
-/// | [`TheCrossingOfTheReturnThreshold`](MonomythStage::TheCrossingOfTheReturnThreshold) | [`ReversalOfFortune`](MotifClass::ReversalOfFortune) | re-entry into ordinary life is a fortune-state change |
-/// | [`MasterOfTheTwoWorlds`](MonomythStage::MasterOfTheTwoWorlds) | [`TheWiseAndTheFoolish`](MotifClass::TheWiseAndTheFoolish) | balance/mastery matches the "wisdom, cleverness" class |
-/// | [`FreedomToLive`](MonomythStage::FreedomToLive) | [`TheNatureOfLife`](MotifClass::TheNatureOfLife) | a direct match: "reflective observations on the way of the world" |
-#[must_use]
-fn stage_motif_candidates(stage: MonomythStage) -> &'static [MotifClass] {
-    use MotifClass::{
-        CaptivesAndFugitives, ChanceAndFate, Deceptions, Magic, Marvels, OrdainingTheFuture,
-        Religion, ReversalOfFortune, RewardsAndPunishments, Sex, Society, Tests, TheDead,
-        TheNatureOfLife, TheWiseAndTheFoolish, TraitsOfCharacter,
-    };
-
-    match stage {
-        MonomythStage::CallToAdventure => &[OrdainingTheFuture, ChanceAndFate],
-        MonomythStage::RefusalOfTheCall => &[TraitsOfCharacter],
-        MonomythStage::SupernaturalAid => &[Magic],
-        MonomythStage::CrossingTheFirstThreshold => &[Marvels],
-        MonomythStage::BellyOfTheWhale => &[TheDead],
-        MonomythStage::TheRoadOfTrials => &[Tests],
-        MonomythStage::TheMeetingWithTheGoddess => &[Sex],
-        MonomythStage::WomanAsTemptress => &[Deceptions],
-        MonomythStage::AtonementWithTheFather => &[Society],
-        MonomythStage::Apotheosis => &[Religion],
-        MonomythStage::TheUltimateBoon => &[RewardsAndPunishments],
-        MonomythStage::RefusalOfTheReturn => &[ChanceAndFate],
-        MonomythStage::TheMagicFlight | MonomythStage::RescueFromWithout => &[CaptivesAndFugitives],
-        MonomythStage::TheCrossingOfTheReturnThreshold => &[ReversalOfFortune],
-        MonomythStage::MasterOfTheTwoWorlds => &[TheWiseAndTheFoolish],
-        MonomythStage::FreedomToLive => &[TheNatureOfLife],
-    }
+    Some((*node.stage.primary(), edge.target))
 }
 
 #[cfg(test)]
@@ -305,6 +259,7 @@ mod tests {
     use monomyth_core::doc_support::single_room_world;
     use monomyth_frameworks::{MonomythStage, arc_functions, plot_situations};
     use rand::SeedableRng;
+    use std::collections::BTreeSet;
 
     use super::*;
     use crate::passes::backbone::BackbonePass;
@@ -340,7 +295,7 @@ mod tests {
 
         let mut saw_nonempty = false;
         for beat in beats(&world) {
-            let allowed = arc_functions(beat.stage);
+            let allowed = arc_functions(*beat.stage.primary());
             if allowed.is_empty() {
                 continue;
             }
@@ -348,7 +303,7 @@ mod tests {
                 !beat.functions.is_empty(),
                 "beat {:?} on stage {:?} with non-empty arc_functions must realize at least one",
                 beat.label,
-                beat.stage,
+                beat.stage.primary(),
             );
             saw_nonempty = true;
 
@@ -382,7 +337,12 @@ mod tests {
     #[test]
     fn should_set_situation_when_plot_is_recorded_and_has_situations() {
         let mut world = world_with_backbone(42);
-        let plot = world.story.plot.expect("backbone pass records a plot");
+        let plot = *world
+            .story
+            .plot
+            .as_ref()
+            .expect("backbone pass records a plot")
+            .primary();
         let mut rng = ChaCha8Rng::seed_from_u64(7);
         BeatPass::new()
             .apply(&mut world, &mut rng)
@@ -395,7 +355,8 @@ mod tests {
         assert!(
             beats(&world).iter().any(|beat| beat
                 .situation
-                .is_some_and(|situation| allowed.contains(&situation))),
+                .as_ref()
+                .is_some_and(|situation| allowed.contains(situation.primary()))),
             "at least one beat must realize a situation drawn from the plot's Polti situations",
         );
     }
@@ -419,7 +380,7 @@ mod tests {
     fn should_map_every_monomyth_stage_to_at_least_one_motif_candidate() {
         for &stage in MonomythStage::all() {
             assert!(
-                !stage_motif_candidates(stage).is_empty(),
+                !stage_motifs_weighted(stage).is_empty(),
                 "stage {stage:?} must map to at least one MotifClass candidate",
             );
         }
@@ -434,10 +395,12 @@ mod tests {
             .expect("beat pass succeeds");
 
         for beat in beats(&world) {
-            let candidates: BTreeSet<_> =
-                stage_motif_candidates(beat.stage).iter().copied().collect();
+            let candidates: BTreeSet<_> = stage_motifs_weighted(*beat.stage.primary())
+                .iter()
+                .map(|&(motif, _)| motif)
+                .collect();
             assert!(
-                beat.motifs.iter().all(|motif| candidates.contains(motif)),
+                beat.motifs.keys().all(|motif| candidates.contains(motif)),
                 "beat {:?} carries a motif outside its stage's candidate list",
                 beat.label,
             );

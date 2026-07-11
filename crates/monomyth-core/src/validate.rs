@@ -14,7 +14,7 @@
 //! checks iterate slotmap keys in sorted order so the smallest offending id is
 //! reported first, keeping failures snapshot-stable.
 
-use crate::ids::{EntityId, ItemId, LocationId, NarrativeNodeId};
+use crate::ids::{EntityId, ItemId, LocationId, NarrativeNodeId, QuestId};
 use crate::narrative::NarrativeError;
 use crate::world::{SCHEMA_VERSION, World};
 use thiserror::Error;
@@ -78,6 +78,31 @@ pub enum WorldError {
     /// The narrative DAG itself is malformed (see [`NarrativeError`]).
     #[error(transparent)]
     Narrative(#[from] NarrativeError),
+    /// A node's [`stage`](crate::NarrativeNode::stage) has its primary label
+    /// duplicated in its own alternatives (see
+    /// [`ScoredOne::primary_duplicated_in_alternatives`](crate::ScoredOne::primary_duplicated_in_alternatives)).
+    #[error("node {0:?} has its stage primary duplicated in its alternatives")]
+    NodeStagePrimaryDuplicated(NarrativeNodeId),
+    /// A node's [`situation`](crate::NarrativeNode::situation) has its primary
+    /// label duplicated in its own alternatives.
+    #[error("node {0:?} has its situation primary duplicated in its alternatives")]
+    NodeSituationPrimaryDuplicated(NarrativeNodeId),
+    /// An entity's [`role`](crate::Entity::role) has its primary label duplicated
+    /// in its own alternatives.
+    #[error("entity {0:?} has its role primary duplicated in its alternatives")]
+    EntityRolePrimaryDuplicated(EntityId),
+    /// An entity's [`archetype`](crate::Entity::archetype) has its primary label
+    /// duplicated in its own alternatives.
+    #[error("entity {0:?} has its archetype primary duplicated in its alternatives")]
+    EntityArchetypePrimaryDuplicated(EntityId),
+    /// [`Story::plot`](crate::Story::plot) has its primary label duplicated in its
+    /// own alternatives.
+    #[error("the story plot has its primary duplicated in its alternatives")]
+    StoryPlotPrimaryDuplicated,
+    /// A quest's [`situation`](crate::Quest::situation) has its primary label
+    /// duplicated in its own alternatives.
+    #[error("quest {0:?} has its situation primary duplicated in its alternatives")]
+    QuestSituationPrimaryDuplicated(QuestId),
 }
 
 /// Why loading a serialized [`World`] failed.
@@ -192,6 +217,88 @@ impl World {
             }
         }
 
+        self.check_scored_invariants()?;
+
+        Ok(())
+    }
+
+    /// Check every [`ScoredOne`](crate::ScoredOne)-typed field's
+    /// primary-not-in-alternatives invariant.
+    ///
+    /// A derived [`Deserialize`](serde::Deserialize) does not route through
+    /// [`ScoredOne::insert_alternative`](crate::ScoredOne::insert_alternative), so
+    /// a hand-authored or externally produced world can smuggle in a duplicated
+    /// key; this is the load-time gate that catches it. Node, entity, and quest
+    /// keys are iterated in sorted order, matching every other check in this
+    /// module, so the smallest offending id is reported first.
+    fn check_scored_invariants(&self) -> Result<(), WorldError> {
+        self.check_node_scored_invariants()?;
+        self.check_entity_scored_invariants()?;
+        self.check_story_scored_invariants()?;
+        Ok(())
+    }
+
+    /// Check the `stage` and `situation` invariant on every narrative node.
+    fn check_node_scored_invariants(&self) -> Result<(), WorldError> {
+        let mut keys: Vec<NarrativeNodeId> = self.story.structure.nodes.keys().collect();
+        keys.sort_unstable();
+        for node_id in keys {
+            let node = &self.story.structure.nodes[node_id];
+            if node.stage.primary_duplicated_in_alternatives() {
+                return Err(WorldError::NodeStagePrimaryDuplicated(node_id));
+            }
+            let situation_duplicated = node
+                .situation
+                .as_ref()
+                .is_some_and(crate::scored::ScoredOne::primary_duplicated_in_alternatives);
+            if situation_duplicated {
+                return Err(WorldError::NodeSituationPrimaryDuplicated(node_id));
+            }
+        }
+        Ok(())
+    }
+
+    /// Check the `role` and `archetype` invariant on every entity.
+    fn check_entity_scored_invariants(&self) -> Result<(), WorldError> {
+        for entity_id in Self::sorted_keys(&self.entities) {
+            let entity = &self.entities[entity_id];
+            let role_duplicated = entity
+                .role
+                .as_ref()
+                .is_some_and(crate::scored::ScoredOne::primary_duplicated_in_alternatives);
+            if role_duplicated {
+                return Err(WorldError::EntityRolePrimaryDuplicated(entity_id));
+            }
+            let archetype_duplicated = entity
+                .archetype
+                .as_ref()
+                .is_some_and(crate::scored::ScoredOne::primary_duplicated_in_alternatives);
+            if archetype_duplicated {
+                return Err(WorldError::EntityArchetypePrimaryDuplicated(entity_id));
+            }
+        }
+        Ok(())
+    }
+
+    /// Check the story's `plot` invariant and every quest's `situation` invariant.
+    fn check_story_scored_invariants(&self) -> Result<(), WorldError> {
+        let plot_duplicated = self
+            .story
+            .plot
+            .as_ref()
+            .is_some_and(crate::scored::ScoredOne::primary_duplicated_in_alternatives);
+        if plot_duplicated {
+            return Err(WorldError::StoryPlotPrimaryDuplicated);
+        }
+        for quest_id in Self::sorted_keys(&self.story.quests) {
+            let quest_duplicated = self.story.quests[quest_id]
+                .situation
+                .as_ref()
+                .is_some_and(crate::scored::ScoredOne::primary_duplicated_in_alternatives);
+            if quest_duplicated {
+                return Err(WorldError::QuestSituationPrimaryDuplicated(quest_id));
+            }
+        }
         Ok(())
     }
 
@@ -227,5 +334,97 @@ impl World {
         }
         world.validate()?;
         Ok(world)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use monomyth_frameworks::ProppRole;
+
+    use super::*;
+    use crate::doc_support::single_room_world;
+    use crate::entity::{Entity, EntityKind};
+    use crate::scored::ScoredOne;
+    use crate::weight::Weight;
+    use crate::{Content, ContentKind, ContentPrompt};
+
+    /// A derived `Deserialize` does not route through
+    /// [`ScoredOne::insert_alternative`], so a hand-edited world with the
+    /// mandatory `NarrativeNode.stage` primary duplicated into its own
+    /// alternatives must still be rejected — proving the construction-time
+    /// invariant has a real deserialization-time gap that `World::validate`
+    /// closes.
+    #[test]
+    fn should_reject_a_node_stage_with_primary_duplicated_in_alternatives() {
+        let world = single_room_world();
+        let mut json: serde_json::Value =
+            serde_json::to_value(&world).expect("world serializes to a JSON value");
+
+        // `SlotMap` serializes as a plain array of `{value, version}` slots
+        // indexed by slot position, not a keyed object; the fixture's sole node
+        // is the only live (non-null-`value`) slot.
+        let nodes = json["story"]["structure"]["nodes"]
+            .as_array_mut()
+            .expect("nodes serializes to an array");
+        let slot = nodes
+            .iter_mut()
+            .find(|slot| !slot["value"].is_null())
+            .expect("the fixture has exactly one live node");
+        let node = &mut slot["value"];
+        let primary = node["stage"]["primary"].clone();
+        node["stage"]["alternatives"] = serde_json::json!({});
+        node["stage"]["alternatives"][primary.as_str().expect("primary is a string label")] =
+            serde_json::json!(500);
+
+        let root = world.story.structure.root();
+        let corrupted = serde_json::to_string(&json).expect("value serializes back to a string");
+        let error = World::from_json_checked(&corrupted).expect_err(
+            "a node stage with its primary duplicated in alternatives must be rejected",
+        );
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(WorldError::NodeStagePrimaryDuplicated(id)) if id == root
+            ),
+            "expected NodeStagePrimaryDuplicated({root:?}), got {error:?}",
+        );
+    }
+
+    /// The same gap, exercised on an `Option<ScoredOne<_>>` field
+    /// (`Entity.role`) rather than the mandatory `NarrativeNode.stage`, via
+    /// `World::validate` directly rather than through JSON text (the invalid
+    /// value is built by bypassing `insert_alternative`, the same way a derived
+    /// `Deserialize` would).
+    #[test]
+    fn should_reject_an_entity_role_with_primary_duplicated_in_alternatives() {
+        let mut world = single_room_world();
+        let room = world.player.location;
+
+        let role = ScoredOne::new(ProppRole::Hero);
+        // insert_alternative refuses a key equal to primary, so the invariant
+        // violation is forced through a JSON round trip, mirroring what a
+        // derived Deserialize over hand-authored JSON could smuggle in.
+        let mut role_json = serde_json::to_value(&role).expect("role serializes");
+        let primary = role_json["primary"].clone();
+        role_json["alternatives"][primary.as_str().expect("primary is a string label")] =
+            serde_json::json!(Weight::new(300).permille());
+        let broken_role: ScoredOne<ProppRole> =
+            serde_json::from_value(role_json).expect("role deserializes");
+
+        let entity = Entity {
+            name: Content::empty(ContentPrompt::new(ContentKind::Name, "a hero")),
+            description: Content::empty(ContentPrompt::new(ContentKind::Description, "")),
+            kind: EntityKind::Npc,
+            role: Some(broken_role),
+            archetype: None,
+            location: Some(room),
+        };
+        let entity_id = world.entities.insert(entity);
+        world.locations[room].entities.insert(entity_id);
+
+        let error = world.validate().expect_err(
+            "an entity role with its primary duplicated in alternatives must be rejected",
+        );
+        assert_eq!(error, WorldError::EntityRolePrimaryDuplicated(entity_id));
     }
 }

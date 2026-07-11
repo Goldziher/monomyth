@@ -28,7 +28,7 @@ use thiserror::Error;
 
 use crate::content::Content;
 use crate::ids::NarrativeNodeId;
-use crate::scored::ScoredSet;
+use crate::scored::{ScoredOne, ScoredSet};
 
 /// The validated authorial role of a [`NarrativeNode`] within the graph topology.
 ///
@@ -149,15 +149,19 @@ pub struct NarrativeNode {
     pub label: String,
     /// The validated authorial role of this node (see [`NodeKind`]).
     pub kind: NodeKind,
-    /// The macro anchor: which Campbell stage this beat covers.
-    pub stage: MonomythStage,
+    /// The macro anchor: which Campbell stage this beat covers, scored against
+    /// weaker competing readings (ADR-0022; mandatory, so the primary label is
+    /// always set even when no alternatives are scored).
+    pub stage: ScoredOne<MonomythStage>,
     /// The realized subset of Propp functions, each scored by strength (meso; set
     /// later, empty in v1).
     pub functions: ScoredSet<ProppFunction>,
-    /// The Polti dramatic situation this beat instantiates, if any (meso; set later).
-    pub situation: Option<PoltiSituation>,
-    /// The realized Thompson motif classes (micro; set later, empty in v1).
-    pub motifs: BTreeSet<MotifClass>,
+    /// The Polti dramatic situation this beat instantiates, if any, scored against
+    /// weaker competing readings (meso; set later).
+    pub situation: Option<ScoredOne<PoltiSituation>>,
+    /// The realized Thompson motif classes, each scored by strength (micro; set
+    /// later, empty in v1).
+    pub motifs: ScoredSet<MotifClass>,
     /// The empty prose slot a future content layer fills.
     pub synopsis: Content,
     /// The outgoing branches; index 0 is the primary/spine edge.
@@ -186,10 +190,10 @@ impl NarrativeNode {
         Self {
             label: label.into(),
             kind,
-            stage,
+            stage: ScoredOne::new(stage),
             functions: ScoredSet::new(),
             situation: None,
-            motifs: BTreeSet::new(),
+            motifs: ScoredSet::new(),
             synopsis,
             out: Vec::new(),
         }
@@ -214,7 +218,7 @@ impl NarrativeNode {
     /// ```
     #[must_use]
     pub fn arc_functions(&self) -> &'static [ProppFunction] {
-        arc_functions(self.stage)
+        arc_functions(*self.stage.primary())
     }
 }
 

@@ -1,0 +1,34 @@
+{
+  "framework": "motif_crosswalk",
+  "title": "Motif Binding — Campbell Stage → Thompson Motif Classes (macro x micro)",
+  "source": "authored synthesis for monomyth (Campbell 1949 x Thompson motif-index classes)",
+  "license": "authored synthesis; ship-safe",
+  "namespace": "ship",
+  "domain": "framework",
+  "tier_note": "Binds the macro arc directly to the micro tier: no crosswalk artifact previously bound Campbell stages to Thompson motif classes (the framework corpus otherwise stops at Propp/Polti for the meso tier), so this hand-authored pairing is grounded in Thompson's own class glosses rather than an invented taxonomy. Each stage maps to the Thompson motif-class candidates a beat on that stage may plausibly realize (priors, not laws); a beat may still realize zero motifs if the seeded subset draw comes up empty. ADR-0022 Phase S2 adds a `motif_class_weights` array (permille, `0..=1000`) parallel to `motif_class_ids`; all entries are currently `1000` (all-FULL), so weighted selection is behaviorally uniform until real scholarship weights are authored. This artifact replaces the previously hardcoded `stage_motif_candidates` Rust table in `monomyth-gen`.",
+  "reference_map": {
+    "campbell_stage_id": "campbell_monomyth",
+    "motif_class_ids": "thompson_motif_classes",
+    "motif_class_weights": "thompson_motif_classes (parallel weight, permille)"
+  },
+  "count": 17,
+  "items": [
+    { "id": 1,  "name": "Call to Adventure → Ordaining the Future + Chance and Fate", "campbell_stage_id": 1,  "motif_class_ids": [12, 13], "motif_class_weights": [1000, 1000], "description": "The disrupting summons reads as a prophecy/fate-class motif." },
+    { "id": 2,  "name": "Refusal of the Call → Traits of Character",                 "campbell_stage_id": 2,  "motif_class_ids": [21],     "motif_class_weights": [1000],       "description": "Hesitation out of fear or duty is a personality-trait beat." },
+    { "id": 3,  "name": "Supernatural Aid → Magic",                                  "campbell_stage_id": 3,  "motif_class_ids": [4],      "motif_class_weights": [1000],       "description": "The mentor's talisman or spell is Thompson's own magic-objects class." },
+    { "id": 4,  "name": "Crossing the First Threshold → Marvels",                    "campbell_stage_id": 4,  "motif_class_ids": [6],      "motif_class_weights": [1000],       "description": "Passage into the unknown is an otherworld-journey motif." },
+    { "id": 5,  "name": "Belly of the Whale → The Dead",                            "campbell_stage_id": 5,  "motif_class_ids": [5],      "motif_class_weights": [1000],       "description": "Symbolic death and passage matches resuscitation, ghosts, and the soul." },
+    { "id": 6,  "name": "The Road of Trials → Tests",                               "campbell_stage_id": 6,  "motif_class_ids": [8],      "motif_class_weights": [1000],       "description": "A direct match: tests of identity, cleverness, and prowess, and quests." },
+    { "id": 7,  "name": "The Meeting with the Goddess → Sex",                       "campbell_stage_id": 7,  "motif_class_ids": [18],     "motif_class_weights": [1000],       "description": "Unconditional love matches love, marriage, and courtship." },
+    { "id": 8,  "name": "Woman as Temptress → Deceptions",                          "campbell_stage_id": 8,  "motif_class_ids": [10],     "motif_class_weights": [1000],       "description": "Temptation leading the hero astray is deceits, disguises, and illusions." },
+    { "id": 9,  "name": "Atonement with the Father → Society",                      "campbell_stage_id": 9,  "motif_class_ids": [14],     "motif_class_weights": [1000],       "description": "The ultimate authority figure matches kings, courts, and institutions." },
+    { "id": 10, "name": "Apotheosis → Religion",                                    "campbell_stage_id": 10, "motif_class_ids": [20],     "motif_class_weights": [1000],       "description": "Divine knowledge and transcendence is a direct match." },
+    { "id": 11, "name": "The Ultimate Boon → Rewards and Punishments",              "campbell_stage_id": 11, "motif_class_ids": [15],     "motif_class_weights": [1000],       "description": "Winning the sought prize is a reward motif." },
+    { "id": 12, "name": "Refusal of the Return → Chance and Fate",                  "campbell_stage_id": 12, "motif_class_ids": [13],     "motif_class_weights": [1000],       "description": "Resisting the pull back to the ordinary world is a fate/fortune motif." },
+    { "id": 13, "name": "The Magic Flight → Captives and Fugitives",                "campbell_stage_id": 13, "motif_class_ids": [16],     "motif_class_weights": [1000],       "description": "A direct match: escape, pursuit, and rescue." },
+    { "id": 14, "name": "Rescue from Without → Captives and Fugitives",             "campbell_stage_id": 14, "motif_class_ids": [16],     "motif_class_weights": [1000],       "description": "The same class's rescue half." },
+    { "id": 15, "name": "The Crossing of the Return Threshold → Reversal of Fortune", "campbell_stage_id": 15, "motif_class_ids": [11],   "motif_class_weights": [1000],       "description": "Re-entry into ordinary life is a fortune-state change." },
+    { "id": 16, "name": "Master of the Two Worlds → The Wise and the Foolish",      "campbell_stage_id": 16, "motif_class_ids": [9],      "motif_class_weights": [1000],       "description": "Balance and mastery matches the wisdom-and-cleverness class." },
+    { "id": 17, "name": "Freedom to Live → The Nature of Life",                     "campbell_stage_id": 17, "motif_class_ids": [19],     "motif_class_weights": [1000],       "description": "A direct match: reflective observations on the way of the world." }
+  ]
+}

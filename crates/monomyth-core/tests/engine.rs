@@ -64,8 +64,8 @@ fn fixture(seed: u64) -> Fixture {
         name: named("sphinx"),
         description: described("a riddling sphinx with folded wings"),
         kind: EntityKind::Creature,
-        role: Some(monomyth_frameworks::ProppRole::Villain),
-        archetype: Some(monomyth_frameworks::Archetype::ThresholdGuardian),
+        role: Some(monomyth_frameworks::ProppRole::Villain.into()),
+        archetype: Some(monomyth_frameworks::Archetype::ThresholdGuardian.into()),
         location: None,
     });
 
@@ -108,7 +108,7 @@ fn fixture(seed: u64) -> Fixture {
             let mut quests = SlotMap::with_key();
             quests.insert(Quest {
                 title: named("Answer the Sphinx"),
-                situation: Some(PoltiSituation::TheEnigma),
+                situation: Some(PoltiSituation::TheEnigma.into()),
                 complete: false,
             });
             quests

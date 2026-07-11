@@ -271,12 +271,13 @@ mod tests {
     /// Add a fresh node to `world`'s structure via the edit surface, returning its id.
     /// It borrows the root's stage so the test needs no framework import.
     fn add_node(world: &mut World, label: &str) -> NarrativeNodeId {
-        let stage = world
+        let stage = *world
             .story
             .structure
             .node(world.story.structure.root())
             .expect("root exists")
-            .stage;
+            .stage
+            .primary();
         match world
             .story
             .structure

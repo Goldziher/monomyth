@@ -5,21 +5,22 @@
   "license": "authored synthesis; ship-safe",
   "namespace": "ship",
   "domain": "framework",
-  "tier_note": "The cross-cutting character model: each dramatic role is a typical alignment across three orthogonal facets. These are PRIORS, not laws — archetypes float (a Shapeshifter can take the Helper or Opponent actant). A generated character selects one alignment as its spine, then may bend facets for twists.",
+  "tier_note": "The cross-cutting character model: each dramatic role is a typical alignment across three orthogonal facets. These are PRIORS, not laws — archetypes float (a Shapeshifter can take the Helper or Opponent actant). A generated character selects one alignment as its spine, then may bend facets for twists. ADR-0022 Phase S2 adds a parallel `archetype_weights` array (permille, `0..=1000`); all entries are currently `1000` (all-FULL), so weighted selection is behaviorally uniform until real scholarship weights are authored.",
   "reference_map": {
     "propp_role_ids": "propp_roles",
     "greimas_actant_ids": "greimas_actants",
-    "archetype_ids": "archetypes"
+    "archetype_ids": "archetypes",
+    "archetype_weights": "archetypes (parallel weight, permille)"
   },
   "count": 8,
   "items": [
-    { "id": 1, "name": "Protagonist",   "propp_role_ids": [6], "greimas_actant_ids": [1, 4], "archetype_ids": [1],    "description": "The seeker/victim hero who desires the object and benefits from winning it." },
-    { "id": 2, "name": "Antagonist",    "propp_role_ids": [1], "greimas_actant_ids": [6],    "archetype_ids": [6],    "description": "The villain who opposes the subject; embodies the shadow to be defeated or integrated." },
-    { "id": 3, "name": "Guide",         "propp_role_ids": [2], "greimas_actant_ids": [5, 3], "archetype_ids": [2],    "description": "The donor who tests the hero and bestows the crucial agent or knowledge." },
-    { "id": 4, "name": "Companion",     "propp_role_ids": [3], "greimas_actant_ids": [5],    "archetype_ids": [7, 8], "description": "The helper who accompanies and aids; may carry the trickster's disruptive edge." },
-    { "id": 5, "name": "Prize",         "propp_role_ids": [4], "greimas_actant_ids": [2, 4], "archetype_ids": [5],    "description": "The sought-for person/object; often ambiguous in loyalty, hence a shapeshifter." },
-    { "id": 6, "name": "Quest-Giver",   "propp_role_ids": [5], "greimas_actant_ids": [3],    "archetype_ids": [4],    "description": "The dispatcher who makes the lack known and sends the hero off — the herald of change." },
-    { "id": 7, "name": "Pretender",     "propp_role_ids": [7], "greimas_actant_ids": [6],    "archetype_ids": [6, 8], "description": "The false hero who claims the hero's deeds; a secondary shadow/trickster, later exposed." },
-    { "id": 8, "name": "Gatekeeper",    "propp_role_ids": [],  "greimas_actant_ids": [6],    "archetype_ids": [3],    "description": "The threshold guardian — no dedicated Propp role; surfaces as the donor's test or a minor opponent barring passage between worlds." }
+    { "id": 1, "name": "Protagonist",   "propp_role_ids": [6], "greimas_actant_ids": [1, 4], "archetype_ids": [1],    "archetype_weights": [1000],       "description": "The seeker/victim hero who desires the object and benefits from winning it." },
+    { "id": 2, "name": "Antagonist",    "propp_role_ids": [1], "greimas_actant_ids": [6],    "archetype_ids": [6],    "archetype_weights": [1000],       "description": "The villain who opposes the subject; embodies the shadow to be defeated or integrated." },
+    { "id": 3, "name": "Guide",         "propp_role_ids": [2], "greimas_actant_ids": [5, 3], "archetype_ids": [2],    "archetype_weights": [1000],       "description": "The donor who tests the hero and bestows the crucial agent or knowledge." },
+    { "id": 4, "name": "Companion",     "propp_role_ids": [3], "greimas_actant_ids": [5],    "archetype_ids": [7, 8], "archetype_weights": [1000, 1000], "description": "The helper who accompanies and aids; may carry the trickster's disruptive edge." },
+    { "id": 5, "name": "Prize",         "propp_role_ids": [4], "greimas_actant_ids": [2, 4], "archetype_ids": [5],    "archetype_weights": [1000],       "description": "The sought-for person/object; often ambiguous in loyalty, hence a shapeshifter." },
+    { "id": 6, "name": "Quest-Giver",   "propp_role_ids": [5], "greimas_actant_ids": [3],    "archetype_ids": [4],    "archetype_weights": [1000],       "description": "The dispatcher who makes the lack known and sends the hero off — the herald of change." },
+    { "id": 7, "name": "Pretender",     "propp_role_ids": [7], "greimas_actant_ids": [6],    "archetype_ids": [6, 8], "archetype_weights": [1000, 1000], "description": "The false hero who claims the hero's deeds; a secondary shadow/trickster, later exposed." },
+    { "id": 8, "name": "Gatekeeper",    "propp_role_ids": [],  "greimas_actant_ids": [6],    "archetype_ids": [3],    "archetype_weights": [1000],       "description": "The threshold guardian — no dedicated Propp role; surfaces as the donor's test or a minor opponent barring passage between worlds." }
   ]
 }

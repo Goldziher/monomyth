@@ -15,14 +15,18 @@ use slotmap::SlotMap;
 use crate::content::Content;
 use crate::ids::QuestId;
 use crate::narrative::NarrativeStructure;
+use crate::scored::ScoredOne;
 
 /// A goal the player pursues, optionally grounded in a Polti dramatic situation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Quest {
     /// The quest's title slot.
     pub title: Content,
-    /// The dramatic situation the quest instantiates, if any.
-    pub situation: Option<PoltiSituation>,
+    /// The dramatic situation the quest instantiates, if any, scored against
+    /// weaker competing readings (ADR-0022). The generator assigns this directly
+    /// (not from a weighted candidate draw), so alternatives are always empty
+    /// today.
+    pub situation: Option<ScoredOne<PoltiSituation>>,
     /// Whether the quest has been completed.
     pub complete: bool,
 }
@@ -37,8 +41,11 @@ pub struct Quest {
 pub struct Story {
     /// The branching narrative skeleton.
     pub structure: NarrativeStructure,
-    /// The macro plot knob the structure was grown from, if recorded.
-    pub plot: Option<BookerPlot>,
+    /// The macro plot knob the structure was grown from, if recorded, scored
+    /// against weaker competing readings (ADR-0022). The generator assigns this
+    /// directly (not from a weighted candidate draw), so alternatives are always
+    /// empty today.
+    pub plot: Option<ScoredOne<BookerPlot>>,
     /// All quests, keyed by [`QuestId`].
     pub quests: SlotMap<QuestId, Quest>,
 }

@@ -303,7 +303,13 @@ mod tests {
         let spine_stages: Vec<MonomythStage> = structure
             .spine()
             .iter()
-            .map(|&id| structure.node(id).expect("spine node exists").stage)
+            .map(|&id| {
+                *structure
+                    .node(id)
+                    .expect("spine node exists")
+                    .stage
+                    .primary()
+            })
             .collect();
 
         let canonical = MonomythStage::all();
@@ -333,7 +339,7 @@ mod tests {
         let root = structure.root();
         assert_eq!(world.state.cursor, root);
         assert_eq!(
-            structure.node(root).expect("root exists").stage,
+            *structure.node(root).expect("root exists").stage.primary(),
             MonomythStage::CallToAdventure,
         );
     }
@@ -354,7 +360,7 @@ mod tests {
         let spine_stages: Vec<MonomythStage> = structure
             .spine()
             .iter()
-            .map(|&id| structure.node(id).expect("spine node").stage)
+            .map(|&id| *structure.node(id).expect("spine node").stage.primary())
             .collect();
         let mandatory: Vec<MonomythStage> = MonomythStage::all()
             .iter()
@@ -376,12 +382,12 @@ mod tests {
         let optional_off_spine = structure
             .nodes
             .values()
-            .filter(|node| node.stage.info().optional)
+            .filter(|node| node.stage.primary().info().optional)
             .inspect(|node| {
                 assert!(
-                    !on_spine.contains(&node.stage),
+                    !on_spine.contains(node.stage.primary()),
                     "forked optional {:?} must be off the spine",
-                    node.stage,
+                    node.stage.primary(),
                 );
             })
             .count();
@@ -419,7 +425,7 @@ mod tests {
         let spine_stages: Vec<MonomythStage> = structure
             .spine()
             .iter()
-            .map(|&id| structure.node(id).expect("spine node").stage)
+            .map(|&id| *structure.node(id).expect("spine node").stage.primary())
             .collect();
         assert!(
             spine_stages
@@ -457,7 +463,10 @@ mod tests {
             if !node.label.contains("_beat_") {
                 continue;
             }
-            let allowed: BTreeSet<_> = arc_functions(node.stage).iter().copied().collect();
+            let allowed: BTreeSet<_> = arc_functions(*node.stage.primary())
+                .iter()
+                .copied()
+                .collect();
             assert!(
                 node.functions
                     .keys()
@@ -476,14 +485,16 @@ mod tests {
             world
                 .entities
                 .values()
-                .any(|entity| entity.role == Some(ProppRole::Hero)),
+                .any(|entity| entity.role.as_ref().map(|role| *role.primary())
+                    == Some(ProppRole::Hero)),
             "the cast must include a Hero",
         );
         assert!(
             world
                 .entities
                 .values()
-                .any(|entity| entity.role == Some(ProppRole::Villain)),
+                .any(|entity| entity.role.as_ref().map(|role| *role.primary())
+                    == Some(ProppRole::Villain)),
             "the cast must include a Villain",
         );
     }

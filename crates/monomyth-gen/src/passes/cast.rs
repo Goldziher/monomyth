@@ -7,12 +7,14 @@
 //! entity/location relation kept in sync. Name and description slots stay empty,
 //! hinted with the Propp role.
 
-use monomyth_core::{Content, ContentKind, ContentPrompt, Entity, EntityKind, World};
-use monomyth_frameworks::{ProppRole, role_archetypes};
+use monomyth_core::{
+    Content, ContentKind, ContentPrompt, Entity, EntityKind, ScoredOne, Weight, World,
+};
+use monomyth_frameworks::{ProppRole, role_archetypes_weighted};
 use rand_chacha::ChaCha8Rng;
 
 use crate::error::GenError;
-use crate::pass::{ProceduralPass, draw_range_inclusive};
+use crate::pass::{ProceduralPass, draw_range_inclusive, draw_weighted_index};
 
 /// The roles every cast contains, guaranteeing a protagonist and an antagonist.
 const BASE_ROLES: [ProppRole; 2] = [ProppRole::Hero, ProppRole::Villain];
@@ -59,14 +61,7 @@ impl ProceduralPass for CastPass {
             .chain(EXTRA_ROLE_POOL.iter().copied().take(extra_count));
 
         for role in roles {
-            let archetypes = role_archetypes(role);
-            let archetype = if archetypes.is_empty() {
-                None
-            } else {
-                archetypes
-                    .get(draw_range_inclusive(rng, 0, archetypes.len() - 1))
-                    .copied()
-            };
+            let archetype = draw_archetype(rng, role);
 
             let name_hint = format!("name of the {role:?} character");
             let description_hint = format!("description of the {role:?} character");
@@ -79,7 +74,7 @@ impl ProceduralPass for CastPass {
                     description_hint,
                 )),
                 kind: EntityKind::Npc,
-                role: Some(role),
+                role: Some(ScoredOne::new(role)),
                 archetype,
                 location: Some(room),
             };
@@ -90,4 +85,24 @@ impl ProceduralPass for CastPass {
 
         Ok(())
     }
+}
+
+/// Draw a single weighted archetype from `role`'s crosswalk candidates
+/// ([`role_archetypes_weighted`]), wrapped as a [`ScoredOne`] with no
+/// alternatives, or `None` if the role has no assigned archetypes (or every
+/// candidate weight is zero).
+fn draw_archetype(
+    rng: &mut ChaCha8Rng,
+    role: ProppRole,
+) -> Option<ScoredOne<monomyth_frameworks::Archetype>> {
+    let candidates = role_archetypes_weighted(role);
+    if candidates.is_empty() {
+        return None;
+    }
+    let weights: Vec<Weight> = candidates
+        .iter()
+        .map(|&(_, permille)| Weight::new(permille))
+        .collect();
+    let index = draw_weighted_index(rng, &weights)?;
+    Some(ScoredOne::new(candidates[index].0))
 }

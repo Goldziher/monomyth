@@ -29,7 +29,17 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// reduction instead of `draw_indexed_subset`'s uniform swap-remove) changed, per
 /// the ADR's Confirmation section — a byte-identical golden is not expected to
 /// survive this change.
-const GOLDEN_SEED_42_FNV1A: u64 = 0x62a2_24a2_27e0_61a8;
+///
+/// Deliberately re-pinned again for ADR-0022 Phase S2: the remaining five
+/// framework-typed fields (`NarrativeNode.motifs`/`.situation`/`.stage`,
+/// `Story.plot`, `Quest.situation`, `Entity.role`/`.archetype`) moved from bare or
+/// unweighted shapes to `ScoredOne`/`ScoredSet`, moving the golden hash from
+/// `0x62a2_24a2_27e0_61a8` to `0x65f6_6a4b_a541_5419`, so both the serialized
+/// shape (mandatory `stage` now serializes as a `{"primary":...,"alternatives":
+/// {...}}` object instead of a bare string, etc.) and the draw sequence (motif
+/// selection now goes through `draw_weighted_index` instead of the uniform
+/// `draw_indexed_subset`) changed, per the ADR's Confirmation section.
+const GOLDEN_SEED_42_FNV1A: u64 = 0x65f6_6a4b_a541_5419;
 
 /// A tiny, dependency-free FNV-1a over raw bytes.
 fn fnv1a(bytes: &[u8]) -> u64 {

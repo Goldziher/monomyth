@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use monomyth_core::{
     Content, ContentKind, ContentPrompt, EdgeKind, NarrativeEdge, NarrativeNode,
-    NarrativeStructure, NodeKind, Quest, World,
+    NarrativeStructure, NodeKind, Quest, ScoredOne, World,
 };
 use monomyth_frameworks::{BookerPlot, MonomythStage, arc_functions, plot_situations};
 use rand_chacha::ChaCha8Rng;
@@ -148,13 +148,13 @@ impl ProceduralPass for BackbonePass {
             );
             world.story.quests.insert(Quest {
                 title: Content::empty(ContentPrompt::new(ContentKind::Title, hint)),
-                situation,
+                situation: situation.map(ScoredOne::new),
                 complete: false,
             });
         }
 
         world.story.structure = structure;
-        world.story.plot = Some(plot);
+        world.story.plot = Some(ScoredOne::new(plot));
         world.state.cursor = root;
         Ok(())
     }
@@ -237,7 +237,7 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
         }
         let from = ids[index];
         if let Some(&after) = forked.get(&index) {
-            let optional_stage = structure.nodes[ids[index + 1]].stage;
+            let optional_stage = *structure.nodes[ids[index + 1]].stage.primary();
             let skip_hint = format!("skip the optional {optional_stage:?} arc");
             structure.nodes[from].out.push(NarrativeEdge::new(
                 ids[after],
@@ -254,7 +254,8 @@ fn build_structure(runs: &[Run], decisions: &[bool]) -> Result<NarrativeStructur
             let to = ids[index + 1];
             let hint = format!(
                 "advance from {:?} to {:?}",
-                structure.nodes[from].stage, structure.nodes[to].stage,
+                structure.nodes[from].stage.primary(),
+                structure.nodes[to].stage.primary(),
             );
             structure
                 .nodes

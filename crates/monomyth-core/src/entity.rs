@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::Content;
 use crate::ids::{ItemId, LocationId};
+use crate::scored::ScoredOne;
 
 /// The default maximum health a freshly created [`Player`] starts with.
 ///
@@ -49,10 +50,16 @@ pub struct Entity {
     pub description: Content,
     /// What kind of entity this is.
     pub kind: EntityKind,
-    /// The Propp dramatis-personae role this entity plays, if any.
-    pub role: Option<ProppRole>,
-    /// The story archetype this entity wears, if any.
-    pub archetype: Option<Archetype>,
+    /// The Propp dramatis-personae role this entity plays, if any, scored against
+    /// weaker competing readings (ADR-0022). The generator assigns this directly
+    /// (not from a weighted candidate draw), so alternatives are always empty
+    /// today.
+    pub role: Option<ScoredOne<ProppRole>>,
+    /// The story archetype this entity wears, if any, scored against weaker
+    /// competing readings (ADR-0022). Drawn from a weighted candidate list (see
+    /// `role_archetypes_weighted`), so alternatives may be populated by a future
+    /// generation phase; empty today.
+    pub archetype: Option<ScoredOne<Archetype>>,
     /// Where the entity currently is, or `None` if unplaced.
     ///
     /// This is one side of the entity/location relationship whose other side is

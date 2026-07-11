@@ -175,7 +175,12 @@ pub fn render_intro(world: &World) -> String {
 pub fn render_structure(world: &World) -> String {
     let structure = &world.story.structure;
     let mut out = String::new();
-    let _ = writeln!(out, "Narrative structure (plot: {:?})", world.story.plot);
+    let plot = world
+        .story
+        .plot
+        .as_ref()
+        .map(monomyth_core::ScoredOne::primary);
+    let _ = writeln!(out, "Narrative structure (plot: {plot:?})");
 
     let _ = writeln!(out, "\nSpine:");
     for id in structure.spine() {
@@ -195,7 +200,7 @@ pub fn render_structure(world: &World) -> String {
     if forks.peek().is_some() {
         let _ = writeln!(out, "\nChoices:");
         for (_, node) in forks {
-            let _ = writeln!(out, "  at {:?}:", node.stage);
+            let _ = writeln!(out, "  at {:?}:", node.stage.primary());
             for edge in &node.out {
                 let verb = match edge.kind {
                     EdgeKind::Choice => "enter",
@@ -258,9 +263,10 @@ pub fn render_choices(world: &World) -> String {
 
 /// The Campbell stage name of a node, or a placeholder if the id does not resolve.
 fn stage_label(structure: &NarrativeStructure, id: NarrativeNodeId) -> String {
-    structure
-        .node(id)
-        .map_or_else(|| String::from("[?]"), |node| format!("{:?}", node.stage))
+    structure.node(id).map_or_else(
+        || String::from("[?]"),
+        |node| format!("{:?}", node.stage.primary()),
+    )
 }
 
 /// The filled value of a slot, or a bracketed placeholder while it is still empty.
@@ -563,7 +569,7 @@ mod tests {
 
         let mut world = single_room_world();
         world.story.structure = structure;
-        world.story.plot = Some(BookerPlot::RagsToRiches);
+        world.story.plot = Some(BookerPlot::RagsToRiches.into());
 
         let expected = "Narrative structure (plot: Some(RagsToRiches))\n\
              \nSpine:\n\

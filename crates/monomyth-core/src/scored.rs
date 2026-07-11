@@ -157,6 +157,19 @@ impl<T: Ord> ScoredOne<T> {
         }
         self.alternatives.insert(key, weight)
     }
+
+    /// Whether [`primary`](Self::primary) also appears as a key in
+    /// [`alternatives`](Self::alternatives), violating the type's invariant.
+    ///
+    /// [`insert_alternative`](Self::insert_alternative) upholds this invariant for
+    /// values built through the typed API, but a derived [`Deserialize`] does not
+    /// route through it — a hand-edited or externally produced JSON payload can
+    /// smuggle in a duplicated key. This is the check
+    /// [`World::validate`](crate::World::validate) calls at the load boundary.
+    #[must_use]
+    pub fn primary_duplicated_in_alternatives(&self) -> bool {
+        self.alternatives.contains_key(&self.primary)
+    }
 }
 
 /// Wrap a bare value as the primary label with no scored alternatives.
@@ -336,6 +349,25 @@ mod tests {
         let json = serde_json::to_string(&scored).unwrap();
         let round_tripped: ScoredOne<ProppFunction> = serde_json::from_str(&json).unwrap();
         assert_eq!(round_tripped, scored);
+    }
+
+    #[test]
+    fn scored_one_primary_duplicated_in_alternatives_should_detect_a_smuggled_duplicate() {
+        let mut scored = ScoredOne::new(ProppFunction::Departure);
+        assert!(
+            !scored.primary_duplicated_in_alternatives(),
+            "a fresh ScoredOne has no alternatives"
+        );
+
+        // Bypass insert_alternative's rejection to simulate a derived-Deserialize
+        // payload that smuggled the primary into alternatives.
+        scored
+            .alternatives
+            .insert(ProppFunction::Departure, Weight::new(500));
+        assert!(
+            scored.primary_duplicated_in_alternatives(),
+            "primary duplicated in alternatives must be detected"
+        );
     }
 
     #[test]

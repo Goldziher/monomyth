@@ -19,7 +19,6 @@
 //!   [`validate`](NarrativeStructure::validate)s, and only overwrites the original
 //!   on success — so a batch either lands whole and well-formed or not at all.
 
-use std::collections::BTreeSet;
 use std::fmt;
 
 use monomyth_frameworks::{MonomythStage, MotifClass, PoltiSituation, ProppFunction};
@@ -30,7 +29,7 @@ use crate::ids::NarrativeNodeId;
 use crate::narrative::{
     EdgeKind, NarrativeEdge, NarrativeError, NarrativeNode, NarrativeStructure, NodeKind,
 };
-use crate::scored::ScoredSet;
+use crate::scored::{ScoredOne, ScoredSet};
 
 /// The structural recipe for a new [`NarrativeNode`], independent of any topology.
 ///
@@ -46,16 +45,18 @@ use crate::scored::ScoredSet;
 pub struct NodeSpec {
     /// The stable structural label, e.g. `"CallToAdventure"`.
     pub label: String,
-    /// The macro anchor: which Campbell stage this beat covers.
-    pub stage: MonomythStage,
+    /// The macro anchor: which Campbell stage this beat covers, scored against
+    /// weaker competing readings (ADR-0022; mirrors [`NarrativeNode::stage`]).
+    pub stage: ScoredOne<MonomythStage>,
     /// Grounding guidance for the node's empty [`ContentKind::Synopsis`] slot.
     pub synopsis_hint: String,
-    /// The Polti dramatic situation this beat instantiates, if any.
-    pub situation: Option<PoltiSituation>,
+    /// The Polti dramatic situation this beat instantiates, if any, scored against
+    /// weaker competing readings.
+    pub situation: Option<ScoredOne<PoltiSituation>>,
     /// The realized subset of Propp functions, each scored by strength.
     pub functions: ScoredSet<ProppFunction>,
-    /// The realized Thompson motif classes.
-    pub motifs: BTreeSet<MotifClass>,
+    /// The realized Thompson motif classes, each scored by strength.
+    pub motifs: ScoredSet<MotifClass>,
 }
 
 impl NodeSpec {
@@ -70,7 +71,7 @@ impl NodeSpec {
     /// use monomyth_frameworks::MonomythStage;
     ///
     /// let spec = NodeSpec::new("CallToAdventure", MonomythStage::CallToAdventure, "the herald");
-    /// assert_eq!(spec.stage, MonomythStage::CallToAdventure);
+    /// assert_eq!(spec.stage.primary(), &MonomythStage::CallToAdventure);
     /// assert!(spec.situation.is_none());
     /// assert!(spec.functions.is_empty());
     /// ```
@@ -82,11 +83,11 @@ impl NodeSpec {
     ) -> Self {
         Self {
             label: label.into(),
-            stage,
+            stage: ScoredOne::new(stage),
             synopsis_hint: synopsis_hint.into(),
             situation: None,
             functions: ScoredSet::new(),
-            motifs: BTreeSet::new(),
+            motifs: ScoredSet::new(),
         }
     }
 }
@@ -165,15 +166,15 @@ pub enum NarrativeEdit {
     SetNodeStage {
         /// The node to retag.
         node: NarrativeNodeId,
-        /// The new stage.
-        stage: MonomythStage,
+        /// The new scored stage.
+        stage: ScoredOne<MonomythStage>,
     },
     /// Set (or clear) `node`'s Polti situation.
     SetNodeSituation {
         /// The node to retag.
         node: NarrativeNodeId,
         /// The new situation, or `None` to clear it.
-        situation: Option<PoltiSituation>,
+        situation: Option<ScoredOne<PoltiSituation>>,
     },
     /// Replace `node`'s realized Propp functions.
     SetNodeFunctions {
@@ -186,8 +187,8 @@ pub enum NarrativeEdit {
     SetNodeMotifs {
         /// The node to retag.
         node: NarrativeNodeId,
-        /// The new motif set.
-        motifs: BTreeSet<MotifClass>,
+        /// The new scored motif set.
+        motifs: ScoredSet<MotifClass>,
     },
     /// Register `node` as an ending.
     MarkEnding {
@@ -356,8 +357,14 @@ fn node_from_spec(spec: &NodeSpec) -> NarrativeNode {
         ContentKind::Synopsis,
         spec.synopsis_hint.clone(),
     ));
-    let mut node = NarrativeNode::new(spec.label.clone(), NodeKind::Beat, spec.stage, synopsis);
-    node.situation = spec.situation;
+    let mut node = NarrativeNode::new(
+        spec.label.clone(),
+        NodeKind::Beat,
+        *spec.stage.primary(),
+        synopsis,
+    );
+    node.stage = spec.stage.clone();
+    node.situation.clone_from(&spec.situation);
     node.functions.clone_from(&spec.functions);
     node.motifs.clone_from(&spec.motifs);
     node
@@ -446,11 +453,11 @@ impl NarrativeStructure {
                 Ok(EditOutcome::Applied)
             }
             NarrativeEdit::SetNodeStage { node, stage } => {
-                self.node_mut(*node)?.stage = *stage;
+                self.node_mut(*node)?.stage.clone_from(stage);
                 Ok(EditOutcome::Applied)
             }
             NarrativeEdit::SetNodeSituation { node, situation } => {
-                self.node_mut(*node)?.situation = *situation;
+                self.node_mut(*node)?.situation.clone_from(situation);
                 Ok(EditOutcome::Applied)
             }
             NarrativeEdit::SetNodeFunctions { node, functions } => {
@@ -727,9 +734,9 @@ impl NarrativeStructure {
             };
             NodeSpec {
                 label: beat.label.clone(),
-                stage: beat.stage,
+                stage: beat.stage.clone(),
                 synopsis_hint: beat.synopsis.prompt().hint.clone(),
-                situation: beat.situation,
+                situation: beat.situation.clone(),
                 functions: beat.functions.clone(),
                 motifs: beat.motifs.clone(),
             }
