@@ -2267,6 +2267,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-contracts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "monomyth-core",
+ "thiserror",
+]
+
+[[package]]
 name = "monomyth-core"
 version = "0.1.0"
 dependencies = [

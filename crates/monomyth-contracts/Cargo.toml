@@ -1,0 +1,17 @@
+[package]
+name = "monomyth-contracts"
+description = "Cross-plane seam traits (Classifier, Extractor, PassageRetriever) — ADR-0013 trait-first."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+monomyth-core = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
