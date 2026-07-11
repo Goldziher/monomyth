@@ -28,5 +28,17 @@ changed decision is a *new* ADR that supersedes the old one (never an edit).
 | [0005](./0005-commercial-licensing-ship-reference.md) | Commercial licensing: ship / reference namespaces | accepted |
 | [0006](./0006-rust-over-python.md) | Rust for the engine and corpus pipeline | accepted |
 | [0007](./0007-adopt-xberg-rag-engine.md) | Adopt xberg as the RAG engine | accepted |
-| [0008](./0008-vectorstore-backend-sqlite-then-lancedb.md) | VectorStore backend: SQLite-vec now, LanceDB later | accepted |
+| [0008](./0008-vectorstore-backend-sqlite-then-lancedb.md) | VectorStore backend: SQLite-vec now, LanceDB later | superseded by [0011](./0011-vectorstore-backends-sqlite-and-pgvector.md) |
 | [0009](./0009-local-onnx-embeddings.md) | Local ONNX embeddings | accepted |
+| [0010](./0010-rust-corpus-acquisition-pipeline.md) | Rust corpus acquisition pipeline and stored provenance | accepted (storage mechanism amended by [0012](./0012-opendal-corpus-blob-storage.md)) |
+| [0011](./0011-vectorstore-backends-sqlite-and-pgvector.md) | VectorStore backends: SQLite-vec embedded, pgvector server | accepted |
+| [0012](./0012-opendal-corpus-blob-storage.md) | OpenDAL corpus blob storage (local FS + cloud buckets) | accepted |
+| [0013](./0013-trait-first-planes-architecture.md) | Trait-first, planes-over-layers architecture | accepted |
+| [0014](./0014-contract-as-extraction-generation-pivot.md) | The contract as the extraction⇄generation pivot | accepted |
+| [0015](./0015-layered-override-configuration.md) | Layered override configuration (monomyth-config) | accepted |
+| [0016](./0016-build-time-methodology-and-law-synthesis.md) | Build-time methodology + reference-ingest law synthesis | accepted |
+| [0017](./0017-genre-as-config-dimension.md) | Genre as a cross-cutting config dimension | accepted |
+| [0018](./0018-extraction-subsystem.md) | Extraction subsystem (monomyth-extract) | accepted |
+| [0019](./0019-user-uploaded-media-namespace.md) | User-uploaded media + user namespace/tier | accepted |
+| [0020](./0020-medium-agnostic-rendering-adapters.md) | Medium-agnostic rendering adapters | accepted |
+| [0021](./0021-rust-architecture-guidelines-in-ai-rulez.md) | Rust architecture guidelines authored in ai-rulez | accepted |

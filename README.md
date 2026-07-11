@@ -1,14 +1,21 @@
 # monomyth
 
-An **adventure generation engine** — text-based adventures now, dynamically-generated pixel-art
-games later — grounded in comparative mythology. The name is Joseph Campbell's *monomyth*, the
-hero's journey, which the engine models explicitly as the story spine.
+monomyth is a **configurable, layered engine for narrative structure**. It moves between
+unstructured narrative and a structured, medium-agnostic **world/story model** in *both directions* —
+**generation** (model → text/media) today, **extraction** (text → model) next — for any narrative
+medium (prose, games, LitRPG, detective fiction, apps), grounded in source material. Its first
+instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey — modeled explicitly as
+the story spine.
 
-> Status: pre-1.0, under active development. The Rust workspace is up and running — the domain model
-> and deterministic engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer, a text
-> frontend, and a CLI. It is an **engine**: a headless, deterministic, corpus-grounded system that
-> *produces and transforms* a serializable world/story model. The CLI is a harness, not the product.
-> See [`adrs/`](./adrs) for the architecture decisions and their rationale.
+> Status: pre-1.0, under active development. **Built today:** the domain model and deterministic
+> engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer, a text frontend, and a
+> CLI. **Forthcoming** (see the roadmap): a layered configuration system, genre, an extraction
+> subsystem, user-uploaded corpora, and additional render adapters. It is an **engine**: a headless,
+> deterministic, corpus-grounded system that *produces and transforms* a serializable world/story
+> model. The CLI is a harness, not the product.
+>
+> **Start here:** [`docs/vision.md`](./docs/vision.md) · [`docs/architecture.md`](./docs/architecture.md)
+> · [`docs/roadmap.md`](./docs/roadmap.md). Decisions live in [`adrs/`](./adrs).
 
 ## Architecture
 
