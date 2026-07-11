@@ -55,8 +55,10 @@ mod ids;
 mod narrative;
 mod narrative_edit;
 mod rng;
+mod scored;
 mod story;
 mod validate;
+mod weight;
 mod world;
 
 pub use content::{Content, ContentKind, ContentPrompt, Provenance, ProvenanceSource};
@@ -68,6 +70,8 @@ pub use narrative::{
 };
 pub use narrative_edit::{EditError, EditOutcome, NarrativeEdit, NodeSpec};
 pub use rng::RngState;
+pub use scored::{ScoredOne, ScoredSet};
 pub use story::{Quest, Story};
 pub use validate::{LoadError, WorldError};
+pub use weight::Weight;
 pub use world::{Direction, Location, SCHEMA_VERSION, World, WorldMeta, WorldState};
