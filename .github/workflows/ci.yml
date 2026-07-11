@@ -73,6 +73,14 @@ jobs:
         working-directory: monomyth
         run: cargo test --workspace --locked
 
+      - name: Corpus license audit (ADR-0005)
+        working-directory: monomyth
+        run: |
+          db="$RUNNER_TEMP/corpus-audit-fixture.db"
+          cargo run --locked -p monomyth-cli -- --db "$db" \
+            ingest polti --text "The Suppliant implores a Power in authority for mercy and aid."
+          cargo run --locked -p monomyth-cli -- --db "$db" corpus audit
+
       - name: Dependency policy
         working-directory: monomyth
         run: |
