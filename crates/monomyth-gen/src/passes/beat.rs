@@ -24,12 +24,14 @@
 
 use std::collections::BTreeSet;
 
-use monomyth_core::{EdgeKind, EditOutcome, NarrativeEdit, NarrativeNodeId, NodeSpec, World};
-use monomyth_frameworks::{MonomythStage, MotifClass, arc_functions, plot_situations};
+use monomyth_core::{
+    EdgeKind, EditOutcome, NarrativeEdit, NarrativeNodeId, NodeSpec, ScoredSet, Weight, World,
+};
+use monomyth_frameworks::{MonomythStage, MotifClass, arc_functions_weighted, plot_situations};
 use rand_chacha::ChaCha8Rng;
 
 use crate::error::GenError;
-use crate::pass::{ProceduralPass, draw_range_inclusive};
+use crate::pass::{ProceduralPass, draw_range_inclusive, draw_weighted_index};
 
 /// The fewest beats the pass splices onto each stage node's spine.
 const DEFAULT_BEATS_MIN: usize = 1;
@@ -104,7 +106,6 @@ impl ProceduralPass for BeatPass {
                 self.config.beats_per_stage_min,
                 self.config.beats_per_stage_max,
             );
-            let functions = arc_functions(stage);
             let motif_candidates = stage_motif_candidates(stage);
 
             let mut previous = source;
@@ -112,7 +113,7 @@ impl ProceduralPass for BeatPass {
                 let ordinal = beat_index + 1;
                 let hint = format!("beat {ordinal} expanding the {stage:?} stage");
                 let mut spec = NodeSpec::new(format!("{stage:?}_beat_{ordinal}"), stage, hint);
-                spec.functions = draw_function_subset(rng, functions);
+                spec.functions = draw_function_subset(rng, stage);
                 spec.situation = draw_situation(rng, situations);
                 spec.motifs = draw_motif_subset(rng, motif_candidates);
 
@@ -164,15 +165,42 @@ fn draw_indexed_subset(rng: &mut ChaCha8Rng, len: usize, min: usize, max: usize)
     chosen
 }
 
-/// Draw a non-empty, canonically-ordered subset of `functions` (at least one when
-/// `functions` is non-empty), grounding the beat in a plausible slice of the
-/// stage's Propp functions rather than inventing a single arbitrary pick.
+/// Draw a non-empty, canonically-ordered, weighted subset of `stage`'s crosswalk
+/// Propp functions (at least one when the stage has any candidates), grounding the
+/// beat in a plausible slice of the stage's arc rather than inventing a single
+/// arbitrary pick.
+///
+/// Selection is weighted-without-replacement: each of `count` picks draws an index
+/// into the *remaining* candidate pool proportional to its crosswalk weight (via
+/// [`draw_weighted_index`]), and the chosen candidate is removed from the pool
+/// before the next pick (mirroring [`draw_indexed_subset`]'s partial Fisher-Yates,
+/// but weighted rather than uniform). The result is a [`ScoredSet`], so canonical
+/// order falls out of its `BTreeMap` backing with no separate sort needed.
 fn draw_function_subset(
     rng: &mut ChaCha8Rng,
-    functions: &'static [monomyth_frameworks::ProppFunction],
-) -> BTreeSet<monomyth_frameworks::ProppFunction> {
-    let indices = draw_indexed_subset(rng, functions.len(), 1, functions.len());
-    indices.into_iter().map(|index| functions[index]).collect()
+    stage: MonomythStage,
+) -> ScoredSet<monomyth_frameworks::ProppFunction> {
+    let candidates = arc_functions_weighted(stage);
+    if candidates.is_empty() {
+        return ScoredSet::new();
+    }
+
+    let count = draw_range_inclusive(rng, 1, candidates.len());
+    let mut pool: Vec<(monomyth_frameworks::ProppFunction, Weight)> = candidates
+        .iter()
+        .map(|&(function, permille)| (function, Weight::new(permille)))
+        .collect();
+
+    let mut chosen = ScoredSet::new();
+    for _ in 0..count {
+        let weights: Vec<Weight> = pool.iter().map(|&(_, weight)| weight).collect();
+        let Some(index) = draw_weighted_index(rng, &weights) else {
+            break;
+        };
+        let (function, weight) = pool.swap_remove(index);
+        chosen.insert(function, weight);
+    }
+    chosen
 }
 
 /// Draw at most one Polti situation from `situations` (empty when the story has no
@@ -324,7 +352,7 @@ mod tests {
             );
             saw_nonempty = true;
 
-            let realized: Vec<_> = beat.functions.iter().copied().collect();
+            let realized: Vec<_> = beat.functions.keys().copied().collect();
             let mut expected_order: Vec<_> = realized.clone();
             expected_order.sort_by_key(|function| {
                 allowed
@@ -339,7 +367,7 @@ mod tests {
             );
             assert!(
                 beat.functions
-                    .iter()
+                    .keys()
                     .all(|function| allowed.contains(function)),
                 "beat {:?} carries a function outside its stage's arc",
                 beat.label,

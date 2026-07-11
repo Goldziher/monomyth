@@ -8,7 +8,7 @@
 use monomyth_core::doc_support::single_node_structure;
 use monomyth_core::{
     EdgeKind, EditError, EditOutcome, NarrativeEdit, NarrativeNodeId, NarrativeStructure, NodeKind,
-    NodeSpec,
+    NodeSpec, Weight,
 };
 use monomyth_frameworks::{MonomythStage, MotifClass, PoltiSituation, ProppFunction};
 
@@ -353,7 +353,7 @@ fn relabel_and_attribute_setters_take_effect() {
             },
             NarrativeEdit::SetNodeFunctions {
                 node: a,
-                functions: [function].into_iter().collect(),
+                functions: [(function, Weight::FULL)].into_iter().collect(),
             },
             NarrativeEdit::SetNodeMotifs {
                 node: a,

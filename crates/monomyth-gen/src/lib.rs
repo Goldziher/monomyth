@@ -459,7 +459,9 @@ mod tests {
             }
             let allowed: BTreeSet<_> = arc_functions(node.stage).iter().copied().collect();
             assert!(
-                node.functions.is_subset(&allowed),
+                node.functions
+                    .keys()
+                    .all(|function| allowed.contains(function)),
                 "beat {:?} carries functions outside its stage's arc: {:?}",
                 node.label,
                 node.functions,

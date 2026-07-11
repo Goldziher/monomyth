@@ -38,8 +38,8 @@ mod tests;
 
 pub use character::{Archetype, GreimasActant, ProppRole};
 pub use crosswalk::{
-    CharacterAlignment, arc_functions, plot_situations, role_actants, role_alignment,
-    role_archetypes,
+    CharacterAlignment, arc_functions, arc_functions_weighted, plot_situations, role_actants,
+    role_alignment, role_archetypes,
 };
 pub use info::{
     ArchetypeInfo, AtuCategoryInfo, BookerPlotInfo, DundesMotifemeInfo, GreimasActantInfo,

@@ -20,7 +20,16 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// An intentional change to the generator (new pass, changed layout, reordered
 /// draws) is expected to change this value; update it deliberately and review the
 /// diff. An unexpected change means the generator lost determinism or drifted.
-const GOLDEN_SEED_42_FNV1A: u64 = 0xa84b_01f9_00a0_5164;
+///
+/// Deliberately re-pinned for ADR-0022 Phase S1: `NarrativeNode.functions` moved
+/// from an unweighted `BTreeSet<ProppFunction>` to the scored
+/// `ScoredSet<ProppFunction>` shape, so both the serialized form (a permille
+/// weighted object, e.g. `{"VillainyOrLack":1000,"Mediation":1000}`, instead of a
+/// bare JSON array) and the draw modulus (`draw_weighted_index`'s cumulative-sum
+/// reduction instead of `draw_indexed_subset`'s uniform swap-remove) changed, per
+/// the ADR's Confirmation section — a byte-identical golden is not expected to
+/// survive this change.
+const GOLDEN_SEED_42_FNV1A: u64 = 0x62a2_24a2_27e0_61a8;
 
 /// A tiny, dependency-free FNV-1a over raw bytes.
 fn fnv1a(bytes: &[u8]) -> u64 {

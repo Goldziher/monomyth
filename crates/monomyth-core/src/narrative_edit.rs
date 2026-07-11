@@ -30,6 +30,7 @@ use crate::ids::NarrativeNodeId;
 use crate::narrative::{
     EdgeKind, NarrativeEdge, NarrativeError, NarrativeNode, NarrativeStructure, NodeKind,
 };
+use crate::scored::ScoredSet;
 
 /// The structural recipe for a new [`NarrativeNode`], independent of any topology.
 ///
@@ -51,8 +52,8 @@ pub struct NodeSpec {
     pub synopsis_hint: String,
     /// The Polti dramatic situation this beat instantiates, if any.
     pub situation: Option<PoltiSituation>,
-    /// The realized subset of Propp functions.
-    pub functions: BTreeSet<ProppFunction>,
+    /// The realized subset of Propp functions, each scored by strength.
+    pub functions: ScoredSet<ProppFunction>,
     /// The realized Thompson motif classes.
     pub motifs: BTreeSet<MotifClass>,
 }
@@ -84,7 +85,7 @@ impl NodeSpec {
             stage,
             synopsis_hint: synopsis_hint.into(),
             situation: None,
-            functions: BTreeSet::new(),
+            functions: ScoredSet::new(),
             motifs: BTreeSet::new(),
         }
     }
@@ -178,8 +179,8 @@ pub enum NarrativeEdit {
     SetNodeFunctions {
         /// The node to retag.
         node: NarrativeNodeId,
-        /// The new function set.
-        functions: BTreeSet<ProppFunction>,
+        /// The new scored function set.
+        functions: ScoredSet<ProppFunction>,
     },
     /// Replace `node`'s realized Thompson motif classes.
     SetNodeMotifs {

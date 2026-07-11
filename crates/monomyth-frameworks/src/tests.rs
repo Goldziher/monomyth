@@ -141,6 +141,37 @@ fn arc_crosswalk_ids_resolve() {
     assert_ids_resolve(ARC_JSON, "propp_function_ids", ProppFunction::from_id);
 }
 
+/// ADR-0022 Phase S1: `propp_function_weights` must be parallel to
+/// `propp_function_ids` (same length) and every weight must be a valid permille
+/// value in `0..=1000`.
+#[test]
+fn arc_crosswalk_weights_are_well_formed() {
+    let value: serde_json::Value = serde_json::from_str(ARC_JSON).expect("crosswalk is valid JSON");
+    let items = value["items"].as_array().expect("items array");
+    for item in items {
+        let ids = item["propp_function_ids"]
+            .as_array()
+            .expect("propp_function_ids is an array");
+        let weights = item["propp_function_weights"]
+            .as_array()
+            .expect("propp_function_weights is an array");
+        assert_eq!(
+            ids.len(),
+            weights.len(),
+            "propp_function_weights must be parallel to propp_function_ids for item {}",
+            item["id"],
+        );
+        for weight in weights {
+            let weight = weight.as_u64().expect("weight is an integer");
+            assert!(
+                weight <= 1000,
+                "weight {weight} out of permille range 0..=1000 for item {}",
+                item["id"],
+            );
+        }
+    }
+}
+
 #[test]
 fn plot_crosswalk_ids_resolve() {
     assert_scalar_id_resolves(PLOT_JSON, "booker_plot_id", BookerPlot::from_id);

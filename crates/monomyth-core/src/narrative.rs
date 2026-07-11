@@ -28,6 +28,7 @@ use thiserror::Error;
 
 use crate::content::Content;
 use crate::ids::NarrativeNodeId;
+use crate::scored::ScoredSet;
 
 /// The validated authorial role of a [`NarrativeNode`] within the graph topology.
 ///
@@ -150,8 +151,9 @@ pub struct NarrativeNode {
     pub kind: NodeKind,
     /// The macro anchor: which Campbell stage this beat covers.
     pub stage: MonomythStage,
-    /// The realized subset of Propp functions (meso; set later, empty in v1).
-    pub functions: BTreeSet<ProppFunction>,
+    /// The realized subset of Propp functions, each scored by strength (meso; set
+    /// later, empty in v1).
+    pub functions: ScoredSet<ProppFunction>,
     /// The Polti dramatic situation this beat instantiates, if any (meso; set later).
     pub situation: Option<PoltiSituation>,
     /// The realized Thompson motif classes (micro; set later, empty in v1).
@@ -185,7 +187,7 @@ impl NarrativeNode {
             label: label.into(),
             kind,
             stage,
-            functions: BTreeSet::new(),
+            functions: ScoredSet::new(),
             situation: None,
             motifs: BTreeSet::new(),
             synopsis,

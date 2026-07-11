@@ -31,7 +31,15 @@ use crate::story::Story;
 /// / `current_stage` fields were replaced by a branching
 /// [`NarrativeStructure`](crate::NarrativeStructure) and a
 /// [`WorldState::cursor`] play position.
-pub const SCHEMA_VERSION: u32 = 2;
+///
+/// Bumped 2 → 3 per ADR-0022 ("Scored / weighted classification attributes for
+/// framework tags"), Phase S1: [`NarrativeNode::functions`](crate::NarrativeNode)
+/// changed shape from an unweighted `BTreeSet<ProppFunction>` to the scored
+/// [`ScoredSet<ProppFunction>`](crate::ScoredSet), a `BTreeMap`-backed permille
+/// distribution over candidates. No migration path is provided: a v2 world is
+/// intentionally rejected by [`from_json_checked`](crate::World::from_json_checked)
+/// rather than silently reinterpreted.
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// A compass or vertical direction connecting two locations.
 ///

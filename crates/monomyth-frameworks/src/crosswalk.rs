@@ -2,6 +2,8 @@
 //! crosswalk artifacts at load time.
 //!
 //! - [`arc_functions`] — Campbell stage → the Propp functions that realize it.
+//! - [`arc_functions_weighted`] — the same binding, paired with each function's
+//!   crosswalk weight (ADR-0022).
 //! - [`plot_situations`] — Booker plot → its representative Polti situations.
 //! - [`role_alignment`] / [`role_actants`] / [`role_archetypes`] — Propp role →
 //!   its typical Greimas actants and story archetypes.
@@ -22,6 +24,7 @@ use crate::meso_tier::{PoltiSituation, ProppFunction};
 /// An empty slice used when a key has no crosswalk entry (e.g. a psychological
 /// stage with no direct Propp counterpart).
 const NO_FUNCTIONS: &[ProppFunction] = &[];
+const NO_WEIGHTED_FUNCTIONS: &[(ProppFunction, u16)] = &[];
 const NO_SITUATIONS: &[PoltiSituation] = &[];
 const NO_ACTANTS: &[GreimasActant] = &[];
 const NO_ARCHETYPES: &[Archetype] = &[];
@@ -55,6 +58,7 @@ where
 struct ArcItem {
     campbell_stage_id: u16,
     propp_function_ids: Vec<u16>,
+    propp_function_weights: Vec<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +86,25 @@ static ARC_MAP: LazyLock<BTreeMap<u16, Vec<ProppFunction>>> = LazyLock::new(|| {
                 item.campbell_stage_id,
                 resolve(&item.propp_function_ids, ProppFunction::from_id),
             )
+        })
+        .collect()
+});
+
+/// The same binding as [`ARC_MAP`], paired with each function's crosswalk weight
+/// (permille, `0..=1000`), in the artifact's listed order.
+static ARC_WEIGHTED_MAP: LazyLock<BTreeMap<u16, Vec<(ProppFunction, u16)>>> = LazyLock::new(|| {
+    let items: Vec<ArcItem> = parse_crosswalk(include_str!(
+        "../../../artifacts/frameworks/arc_crosswalk.json"
+    ));
+    items
+        .into_iter()
+        .map(|item| {
+            let functions = resolve(&item.propp_function_ids, ProppFunction::from_id);
+            let paired = functions
+                .into_iter()
+                .zip(item.propp_function_weights.iter().copied())
+                .collect();
+            (item.campbell_stage_id, paired)
         })
         .collect()
 });
@@ -147,6 +170,29 @@ static CHARACTER_MAP: LazyLock<BTreeMap<ProppRole, CharacterAlignment>> = LazyLo
 #[must_use]
 pub fn arc_functions(stage: MonomythStage) -> &'static [ProppFunction] {
     ARC_MAP.get(&stage.id()).map_or(NO_FUNCTIONS, Vec::as_slice)
+}
+
+/// The Propp functions that typically realize a Campbell stage, paired with each
+/// function's crosswalk weight (permille, `0..=1000`).
+///
+/// The pairing preserves the artifact's listed order — the same order
+/// [`arc_functions`] returns, since both are drawn from the same underlying list.
+/// Returns an empty slice under the same conditions as [`arc_functions`].
+///
+/// ```
+/// use monomyth_frameworks::{arc_functions_weighted, MonomythStage, ProppFunction};
+///
+/// assert_eq!(
+///     arc_functions_weighted(MonomythStage::CallToAdventure),
+///     &[(ProppFunction::VillainyOrLack, 1000), (ProppFunction::Mediation, 1000)],
+/// );
+/// assert!(arc_functions_weighted(MonomythStage::RefusalOfTheCall).is_empty());
+/// ```
+#[must_use]
+pub fn arc_functions_weighted(stage: MonomythStage) -> &'static [(ProppFunction, u16)] {
+    ARC_WEIGHTED_MAP
+        .get(&stage.id())
+        .map_or(NO_WEIGHTED_FUNCTIONS, Vec::as_slice)
 }
 
 /// The Polti situations that typically instantiate a Booker plot.
