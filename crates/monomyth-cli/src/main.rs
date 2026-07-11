@@ -10,6 +10,7 @@ use crate::cli::{Cli, Command, CorpusCommand};
 
 mod cli;
 mod commands;
+mod evaluate;
 mod play;
 
 #[tokio::main]
@@ -37,5 +38,11 @@ async fn main() -> Result<()> {
             }
             CorpusCommand::Audit {} => commands::run_corpus_audit(&cli.db).await,
         },
+        Command::Eval {
+            work,
+            extractor,
+            benchmarks_dir,
+            out,
+        } => evaluate::run_eval(&work, &extractor, &benchmarks_dir, out, &cli.db).await,
     }
 }

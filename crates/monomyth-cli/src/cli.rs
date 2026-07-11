@@ -13,6 +13,10 @@ const DEFAULT_MODEL: &str = "openai/gpt-4o-mini";
 const DEFAULT_DB: &str = "./monomyth.db";
 /// Default number of passages a `retrieve` returns.
 const DEFAULT_TOP_K: u32 = 5;
+/// Default directory holding the benchmark registry (`index.json`) and fixtures.
+const DEFAULT_BENCHMARKS_DIR: &str = "./artifacts/benchmarks";
+/// Default extraction strategy for `eval`.
+const DEFAULT_EXTRACTOR: &str = "rag-softmax";
 
 /// monomyth: an adventure generation engine, composed into a playable text slice.
 #[derive(Debug, Parser)]
@@ -103,6 +107,25 @@ pub(crate) enum Command {
     Corpus {
         #[command(subcommand)]
         command: CorpusCommand,
+    },
+
+    /// Score an extractor against a ground-truth benchmark fixture (ADR-0023).
+    Eval {
+        /// Benchmark fixture id from the registry (e.g. `odyssey_campbell_macro`).
+        #[arg(long)]
+        work: String,
+
+        /// Extraction strategy to score. Only `rag-softmax` is available today.
+        #[arg(long, default_value = DEFAULT_EXTRACTOR)]
+        extractor: String,
+
+        /// Directory holding the benchmark registry (`index.json`) and fixtures.
+        #[arg(long, default_value = DEFAULT_BENCHMARKS_DIR)]
+        benchmarks_dir: PathBuf,
+
+        /// Write the JSON report here instead of to stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 

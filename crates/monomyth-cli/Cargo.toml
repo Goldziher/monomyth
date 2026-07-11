@@ -13,13 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+monomyth-contracts = { workspace = true }
 monomyth-core = { workspace = true }
+monomyth-eval = { workspace = true }
+monomyth-extract = { workspace = true }
 monomyth-gen = { workspace = true }
 monomyth-knowledge = { workspace = true, features = ["acquire"] }
 monomyth-llm = { workspace = true }
 monomyth-text = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["formatting", "macros"] }
 tokio = { workspace = true }

@@ -2254,13 +2254,18 @@ name = "monomyth-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "dotenvy",
+ "monomyth-contracts",
  "monomyth-core",
+ "monomyth-eval",
+ "monomyth-extract",
  "monomyth-gen",
  "monomyth-knowledge",
  "monomyth-llm",
  "monomyth-text",
+ "serde",
  "serde_json",
  "time",
  "tokio",
