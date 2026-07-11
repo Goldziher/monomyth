@@ -1,0 +1,236 @@
+//! [`Scorer`], [`Report`], and the FNV-golden fingerprint over a quantized report.
+//!
+//! This module defines the scoring seam ADR-0023 calls for, without implementing
+//! node alignment yet (that is Phase B3 — matching extracted narrative nodes to
+//! gold nodes before per-node metrics are meaningful). What *is* here is the
+//! shape a future scorer fills in: an aggregate [`Report`] of per-axis
+//! [`DistScore`]s, plus a place for the eventual node [`Alignment`], and a
+//! reproducible [`report_fingerprint`] so a `Report` can be pinned the same way
+//! generator output and fixtures are.
+
+use std::collections::BTreeMap;
+
+use serde::Serialize;
+
+use crate::metrics::DistScore;
+use crate::util::fnv1a;
+use monomyth_core::{NarrativeNodeId, World};
+
+/// A gold-to-predicted narrative node correspondence.
+///
+/// Empty today — no scorer produces one yet. This is the seam Phase B3's
+/// node-alignment scorer fills in: it must be unit-tested against hand-crafted
+/// near-miss DAGs before any aggregate score built on top of it is trusted (per
+/// ADR-0023's Decision Outcome), which is why the type exists now but stays
+/// unpopulated until that work lands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Alignment {
+    /// Gold node id -> matched predicted node id, for every node the (future)
+    /// alignment scorer was able to match.
+    pub matches: BTreeMap<NarrativeNodeId, NarrativeNodeId>,
+}
+
+/// The aggregate result of scoring a predicted [`World`] against a gold one.
+///
+/// Per-axis scores are keyed by a caller-chosen axis name (e.g. `"stage"`,
+/// `"functions"`) rather than a fixed field per framework system, so a
+/// [`Scorer`] implementation can score whichever axes it covers without this
+/// type growing a field per framework enum. `BTreeMap`-keyed for canonical,
+/// snapshot-stable iteration order, matching the project-wide convention.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Report {
+    /// Per-axis distribution scores, keyed by axis name.
+    pub axes: BTreeMap<String, DistScore>,
+    /// The gold-to-predicted node correspondence, once a node-alignment scorer
+    /// exists (Phase B3). Always [`Alignment::default`] (empty) until then.
+    pub alignment: Alignment,
+}
+
+/// Scores a predicted [`World`] against a gold [`World`], producing a [`Report`].
+///
+/// Deliberately narrow for Phase B1: the trait and [`Report`] shape are defined
+/// so downstream code (a CLI `eval` subcommand, later scorers) can be written
+/// against a stable seam, but no implementation exists yet — node alignment
+/// (Phase B3) is the prerequisite for any per-node metric, and no axis scorer is
+/// wired up until a fixture exists (Phase B2).
+pub trait Scorer {
+    /// Compare `predicted` against `gold` and produce a [`Report`].
+    fn score(&self, gold: &World, predicted: &World) -> Report;
+}
+
+/// Quantization step for [`report_fingerprint`]: scores are rounded to the
+/// nearest permille (three decimal digits) before hashing.
+///
+/// Named so the magic `1000.0` does not appear unexplained at the call site;
+/// matches the permille scale [`Weight`](monomyth_core::Weight) already uses
+/// elsewhere in the contract, for a consistent precision budget across the
+/// codebase.
+const QUANTIZATION_SCALE: f64 = 1000.0;
+
+/// Round `value` to the nearest permille (three decimal digits) and return it as
+/// an integer.
+///
+/// # Determinism note
+///
+/// `Report`'s scores are `f64`, and hashing raw `f64` bit patterns risks
+/// cross-platform drift: two runs that agree to any reasonable tolerance (e.g.
+/// `0.699999999998` vs `0.7`) can still hash to different values if compared
+/// bit-for-bit, and transcendental functions like `ln` (used by
+/// [`cross_entropy`](crate::cross_entropy)) are not guaranteed bit-identical
+/// across platforms/toolchains by IEEE 754. Quantizing to a fixed integer
+/// precision before hashing makes the hashed form robust to that class of noise
+/// while still catching genuine score drift larger than one permille.
+///
+/// The four metrics this crate produces are all bounded to small ranges
+/// (roughly `-1000..=1000` for the permille-scaled ratio metrics, and a few
+/// tens of thousands at most for [`cross_entropy`](crate::cross_entropy)'s
+/// smoothed worst case), so the `f64 -> i64` cast never truncates in practice;
+/// the lint is silenced rather than threading a fallible path through a pure
+/// quantization helper.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "quantized scores are bounded to a small range (see doc); truncation is not reachable"
+)]
+fn quantize(value: f64) -> i64 {
+    (value * QUANTIZATION_SCALE).round() as i64
+}
+
+/// A `Report` reduced to the exact integer values [`report_fingerprint`] hashes:
+/// every score quantized to permille precision, in the same canonical key order
+/// as the source `Report` (`BTreeMap` iteration).
+#[derive(Serialize)]
+struct QuantizedReport {
+    axes: BTreeMap<String, QuantizedDistScore>,
+    alignment: Alignment,
+}
+
+/// [`DistScore`] with every `f64` field replaced by its quantized `i64`.
+#[derive(Serialize)]
+struct QuantizedDistScore {
+    histogram_intersection: i64,
+    cross_entropy: i64,
+    top1_accuracy: i64,
+    kendall_tau: i64,
+}
+
+impl From<&DistScore> for QuantizedDistScore {
+    fn from(score: &DistScore) -> Self {
+        Self {
+            histogram_intersection: quantize(score.histogram_intersection),
+            cross_entropy: quantize(score.cross_entropy),
+            top1_accuracy: quantize(score.top1_accuracy),
+            kendall_tau: quantize(score.kendall_tau),
+        }
+    }
+}
+
+/// Hash a [`Report`] into a stable `u64` fingerprint, quantizing every score to
+/// permille precision first.
+///
+/// This is the `Report` analogue of `monomyth-gen`'s golden-seed FNV hash: it
+/// lets a `Report` be pinned in a regression test the same way generator output
+/// is, without the hash drifting across platforms on floating-point noise (see
+/// [`quantize`]'s doc). Two `Report`s whose scores agree to permille precision
+/// fingerprint identically, even if their raw `f64` bit patterns differ.
+///
+/// # Panics
+///
+/// Never in practice: [`QuantizedReport`] is built entirely from `String`-keyed
+/// `BTreeMap`s and plain integer/struct fields, none of which
+/// [`serde_json::to_vec`] can fail to serialize. The `.expect` documents that
+/// assumption rather than threading a `Result` through a function whose only
+/// fallible step is unreachable for this type.
+#[must_use]
+pub fn report_fingerprint(report: &Report) -> u64 {
+    let quantized = QuantizedReport {
+        axes: report
+            .axes
+            .iter()
+            .map(|(axis, score)| (axis.clone(), QuantizedDistScore::from(score)))
+            .collect(),
+        alignment: report.alignment.clone(),
+    };
+    let bytes = serde_json::to_vec(&quantized)
+        .expect("QuantizedReport contains no non-serializable types (no floats, no maps with non-string keys at the top level)");
+    fnv1a(&bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn score(
+        histogram_intersection: f64,
+        cross_entropy: f64,
+        top1_accuracy: f64,
+        kendall_tau: f64,
+    ) -> DistScore {
+        DistScore {
+            histogram_intersection,
+            cross_entropy,
+            top1_accuracy,
+            kendall_tau,
+        }
+    }
+
+    #[test]
+    fn report_fingerprint_should_be_deterministic_for_identical_reports() {
+        let mut report = Report::default();
+        report
+            .axes
+            .insert("stage".to_string(), score(0.8, 0.693, 1.0, 0.0));
+
+        assert_eq!(report_fingerprint(&report), report_fingerprint(&report));
+    }
+
+    #[test]
+    fn report_fingerprint_should_treat_sub_permille_differences_as_identical() {
+        let mut a = Report::default();
+        a.axes
+            .insert("stage".to_string(), score(0.800_000_1, 0.693, 1.0, 0.0));
+
+        let mut b = Report::default();
+        b.axes
+            .insert("stage".to_string(), score(0.799_999_9, 0.693, 1.0, 0.0));
+
+        assert_eq!(
+            report_fingerprint(&a),
+            report_fingerprint(&b),
+            "scores equal after quantization to permille precision must hash identically"
+        );
+    }
+
+    #[test]
+    fn report_fingerprint_should_diverge_on_a_real_score_difference() {
+        let mut a = Report::default();
+        a.axes
+            .insert("stage".to_string(), score(0.8, 0.693, 1.0, 0.0));
+
+        let mut b = Report::default();
+        b.axes
+            .insert("stage".to_string(), score(0.5, 0.693, 1.0, 0.0));
+
+        assert_ne!(report_fingerprint(&a), report_fingerprint(&b));
+    }
+
+    #[test]
+    fn report_fingerprint_should_be_sensitive_to_axis_name() {
+        let mut a = Report::default();
+        a.axes
+            .insert("stage".to_string(), score(0.8, 0.693, 1.0, 0.0));
+
+        let mut b = Report::default();
+        b.axes
+            .insert("functions".to_string(), score(0.8, 0.693, 1.0, 0.0));
+
+        assert_ne!(report_fingerprint(&a), report_fingerprint(&b));
+    }
+
+    #[test]
+    fn quantize_should_round_to_nearest_permille() {
+        assert_eq!(quantize(0.7), 700);
+        assert_eq!(quantize(0.699_999_9), 700);
+        assert_eq!(quantize(1.0), 1000);
+        assert_eq!(quantize(0.0), 0);
+    }
+}

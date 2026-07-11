@@ -2280,6 +2280,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-eval"
+version = "0.1.0"
+dependencies = [
+ "monomyth-core",
+ "monomyth-frameworks",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "monomyth-frameworks"
 version = "0.1.0"
 dependencies = [

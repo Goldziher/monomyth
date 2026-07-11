@@ -1,0 +1,19 @@
+[package]
+name = "monomyth-eval"
+description = "Deterministic, LLM-free benchmark-scoring harness for the contract's classification/distribution claims."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[dependencies]
+monomyth-core = { workspace = true }
+monomyth-frameworks = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
