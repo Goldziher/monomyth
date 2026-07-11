@@ -250,7 +250,10 @@ async fn attempt_once(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, At
     // Fast reject when the server declares an over-cap length up front. This is
     // the compressed length (or absent under gzip), so the streaming check
     // below is the authoritative guard against decompression bombs.
-    if response.content_length().is_some_and(|len| len > MAX_RESPONSE_BYTES) {
+    if response
+        .content_length()
+        .is_some_and(|len| len > MAX_RESPONSE_BYTES)
+    {
         return Err(AttemptError::TooLarge);
     }
 

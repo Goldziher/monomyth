@@ -23,9 +23,9 @@ pub use error::AcquireError;
 pub use fetch::FetchedWork;
 mod http;
 
-use crate::ledger::{Namespace, SourceEntry, Tier};
 #[cfg(test)]
 use crate::ledger::Ledger;
+use crate::ledger::{Namespace, SourceEntry, Tier};
 use crate::{Knowledge, KnowledgeError};
 
 use fetch::gutendex::{self, SearchBy};
@@ -146,7 +146,11 @@ pub async fn build_corpus(
 
     let mut report = BuildReport::default();
     for entry in knowledge.ledger().entries() {
-        if opts.source.as_deref().is_some_and(|wanted| entry.id != wanted) {
+        if opts
+            .source
+            .as_deref()
+            .is_some_and(|wanted| entry.id != wanted)
+        {
             continue;
         }
         let outcome = match classify_entry(entry) {
