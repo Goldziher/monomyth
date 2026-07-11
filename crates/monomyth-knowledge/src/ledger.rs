@@ -79,6 +79,27 @@ pub enum Tier {
     Reference,
 }
 
+impl Tier {
+    /// The token this tier serializes to on the wire and in stored document
+    /// metadata. The single source of truth for comparing a stored `tier` tag
+    /// against the ledger (see `crate::audit`), mirroring
+    /// [`Namespace::as_wire`] so the comparison can never drift from what
+    /// `ingest_metadata` actually writes (pinned by `tier_wire_token_matches_serde`).
+    #[must_use]
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Tier::System => "system",
+            Tier::PublicDomain => "public_domain",
+            Tier::Cc0 => "cc0",
+            Tier::Permissive => "permissive",
+            Tier::ShareAlike => "sharealike",
+            Tier::Noncommercial => "noncommercial",
+            Tier::Copyright => "copyright",
+            Tier::Reference => "reference",
+        }
+    }
+}
+
 /// One declared corpus source.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SourceEntry {
@@ -207,6 +228,27 @@ mod tests {
                 serialized,
                 serde_json::Value::String(namespace.as_wire().to_owned()),
                 "as_wire must equal the serde representation for {namespace:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_wire_token_matches_serde() {
+        for tier in [
+            Tier::System,
+            Tier::PublicDomain,
+            Tier::Cc0,
+            Tier::Permissive,
+            Tier::ShareAlike,
+            Tier::Noncommercial,
+            Tier::Copyright,
+            Tier::Reference,
+        ] {
+            let serialized = serde_json::to_value(tier).expect("tier serializes");
+            assert_eq!(
+                serialized,
+                serde_json::Value::String(tier.as_wire().to_owned()),
+                "as_wire must equal the serde representation for {tier:?}",
             );
         }
     }

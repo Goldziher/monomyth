@@ -34,6 +34,9 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "acquire")]
+pub mod acquire;
+mod audit;
 mod error;
 mod ledger;
 
@@ -50,6 +53,8 @@ use xberg_rag::pipeline::{
 };
 use xberg_rag::{CollectionSpec, DocumentId, Filter, FilterField, RetrieveQuery, RetrievedChunk};
 
+#[cfg(feature = "acquire")]
+pub use crate::acquire::{BuildOptions, BuildReport, SourceOutcome, SourceReport, build_corpus};
 pub use crate::error::KnowledgeError;
 pub use crate::ledger::{
     Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, SourceEntry, Tier,
@@ -74,6 +79,12 @@ const META_LICENSE: &str = "license";
 const META_TIER: &str = "tier";
 /// Metadata key carrying the content domain on each stored document.
 const META_DOMAIN: &str = "domain";
+/// Metadata key carrying the source URL on each stored document, when known.
+const META_URL: &str = "url";
+/// Metadata key carrying the content checksum on each stored document, when known.
+const META_CHECKSUM: &str = "checksum";
+/// Metadata key carrying the retrieval date on each stored document, when known.
+const META_RETRIEVED: &str = "retrieved";
 
 /// Our input type for a single ingest, deliberately narrower than the pipeline's
 /// [`IngestRequest`]: licensing metadata is supplied by the ledger, not the
@@ -86,16 +97,22 @@ pub struct IngestInput {
     pub title: Option<String>,
     /// Optional source URI (path, URL, object key).
     pub source_uri: Option<String>,
+    /// Optional content checksum, carried as provenance (ADR-0005).
+    pub checksum: Option<String>,
+    /// Optional retrieval date, carried as provenance (ADR-0005).
+    pub retrieved: Option<String>,
 }
 
 impl IngestInput {
-    /// Construct an input from full text, with no title or URI.
+    /// Construct an input from full text, with no title, URI, or provenance.
     #[must_use]
     pub fn new(full_text: impl Into<String>) -> Self {
         Self {
             full_text: full_text.into(),
             title: None,
             source_uri: None,
+            checksum: None,
+            retrieved: None,
         }
     }
 }
@@ -157,6 +174,12 @@ pub struct Passage {
     pub namespace: Namespace,
     /// The source's license string.
     pub license: String,
+    /// The source URL, when known (ADR-0005 provenance).
+    pub url: Option<String>,
+    /// The content checksum, when known (ADR-0005 provenance).
+    pub checksum: Option<String>,
+    /// The retrieval date, when known (ADR-0005 provenance).
+    pub retrieved: Option<String>,
 }
 
 impl Passage {
@@ -262,13 +285,7 @@ impl Knowledge {
             });
         }
 
-        let metadata = serde_json::json!({
-            META_SOURCE_ID: source_id,
-            META_NAMESPACE: entry.namespace,
-            META_LICENSE: entry.license,
-            META_TIER: entry.tier,
-            META_DOMAIN: entry.domain,
-        });
+        let metadata = ingest_metadata(source_id, entry, &input);
 
         let request = IngestRequest {
             full_text: input.full_text,
@@ -339,6 +356,13 @@ impl Knowledge {
             .collect()
     }
 
+    /// The embedded license ledger, for callers (e.g. the acquisition pipeline) that need to
+    /// enumerate declared sources.
+    #[must_use]
+    pub fn ledger(&self) -> &Ledger {
+        &self.ledger
+    }
+
     /// Ensure `collection` exists at the embedding dimension. Idempotent.
     async fn ensure_collection(&self, collection: &str) -> Result<(), KnowledgeError> {
         let spec = CollectionSpec::new(collection, EMBEDDING_DIM);
@@ -360,6 +384,35 @@ fn ship_filter() -> Filter {
         field: FilterField(format!("doc.metadata.{META_NAMESPACE}")),
         value: Value::String(Namespace::Ship.as_wire().to_owned()),
     }
+}
+
+/// Build the stored document metadata for an ingest: the ledger-declared
+/// licensing tags (always present) plus the caller-supplied provenance fields
+/// (`url`, `checksum`, `retrieved`) — written only when present, so the stored
+/// JSON never carries null provenance keys (ADR-0005).
+fn ingest_metadata(source_id: &str, entry: &SourceEntry, input: &IngestInput) -> Value {
+    let mut metadata = serde_json::json!({
+        META_SOURCE_ID: source_id,
+        META_NAMESPACE: entry.namespace,
+        META_LICENSE: entry.license,
+        META_TIER: entry.tier,
+        META_DOMAIN: entry.domain,
+    });
+
+    let Value::Object(object) = &mut metadata else {
+        unreachable!("json!({{...}}) with braces always builds an object");
+    };
+    if let Some(url) = &input.source_uri {
+        object.insert(META_URL.to_owned(), Value::String(url.clone()));
+    }
+    if let Some(checksum) = &input.checksum {
+        object.insert(META_CHECKSUM.to_owned(), Value::String(checksum.clone()));
+    }
+    if let Some(retrieved) = &input.retrieved {
+        object.insert(META_RETRIEVED.to_owned(), Value::String(retrieved.clone()));
+    }
+
+    metadata
 }
 
 /// Semantic chunking paired with the default embedding model, per the corpus
@@ -444,12 +497,28 @@ fn build_passage(
         collection: collection.to_owned(),
     })?;
 
+    let url = metadata
+        .get(META_URL)
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let checksum = metadata
+        .get(META_CHECKSUM)
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let retrieved = metadata
+        .get(META_RETRIEVED)
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
     Ok(Passage {
         text,
         source_id,
         score,
         namespace,
         license,
+        url,
+        checksum,
+        retrieved,
     })
 }
 
@@ -524,11 +593,14 @@ mod tests {
     #[tokio::test]
     async fn ingest_then_surfaceable_retrieve_round_trips_ship_source() {
         let knowledge = test_knowledge();
+        let input = IngestInput {
+            source_uri: Some("https://example.org/polti.txt".to_owned()),
+            checksum: Some("sha256:deadbeef".to_owned()),
+            retrieved: Some("2026-07-11".to_owned()),
+            ..IngestInput::new("The Suppliant implores a Power in authority for mercy and aid.")
+        };
         knowledge
-            .ingest(
-                "polti",
-                IngestInput::new("The Suppliant implores a Power in authority for mercy and aid."),
-            )
+            .ingest("polti", input)
             .await
             .expect("ship source ingests");
 
@@ -544,6 +616,21 @@ mod tests {
         let passage = &passages[0];
         assert_eq!(passage.namespace, Namespace::Ship);
         assert_eq!(passage.source_id, "polti");
+        assert_eq!(
+            passage.url.as_deref(),
+            Some("https://example.org/polti.txt"),
+            "provenance url must round-trip through stored metadata"
+        );
+        assert_eq!(
+            passage.checksum.as_deref(),
+            Some("sha256:deadbeef"),
+            "provenance checksum must round-trip through stored metadata"
+        );
+        assert_eq!(
+            passage.retrieved.as_deref(),
+            Some("2026-07-11"),
+            "provenance retrieved date must round-trip through stored metadata"
+        );
     }
 
     #[tokio::test]
@@ -673,5 +760,99 @@ mod tests {
         assert_eq!(passage.namespace, Namespace::Ship);
         assert_eq!(passage.source_id, "somesource");
         assert_eq!(passage.text, "the trial");
+        assert_eq!(
+            passage.url, None,
+            "metadata without a url key must build a passage with no url"
+        );
+        assert_eq!(
+            passage.checksum, None,
+            "metadata without a checksum key must build a passage with no checksum"
+        );
+        assert_eq!(
+            passage.retrieved, None,
+            "metadata without a retrieved key must build a passage with no retrieved date"
+        );
+    }
+
+    #[test]
+    fn build_passage_reads_provenance_when_present_in_metadata() {
+        let mut metadata = tagged_metadata("ship");
+        metadata[META_URL] = Value::String("https://example.org/src.txt".to_owned());
+        metadata[META_CHECKSUM] = Value::String("sha256:abc123".to_owned());
+        metadata[META_RETRIEVED] = Value::String("2026-01-15".to_owned());
+
+        let passage = build_passage(
+            &metadata,
+            Some("the trial".to_owned()),
+            0.5,
+            SHIP_COLLECTION,
+        )
+        .expect("a well-formed ship chunk with provenance builds a passage");
+        assert_eq!(passage.url.as_deref(), Some("https://example.org/src.txt"));
+        assert_eq!(passage.checksum.as_deref(), Some("sha256:abc123"));
+        assert_eq!(passage.retrieved.as_deref(), Some("2026-01-15"));
+    }
+
+    #[test]
+    fn ingest_metadata_omits_absent_provenance_keys() {
+        let entry = SourceEntry {
+            id: "somesource".to_owned(),
+            name: "Some Source".to_owned(),
+            tier: Tier::System,
+            namespace: Namespace::Ship,
+            domain: "myth".to_owned(),
+            license: "CC0".to_owned(),
+            note: None,
+            url: None,
+        };
+        let metadata = ingest_metadata("somesource", &entry, &IngestInput::new("text"));
+
+        let object = metadata.as_object().expect("metadata is a json object");
+        assert!(
+            !object.contains_key(META_URL),
+            "no url given: the url key must be absent, not null"
+        );
+        assert!(
+            !object.contains_key(META_CHECKSUM),
+            "no checksum given: the checksum key must be absent, not null"
+        );
+        assert!(
+            !object.contains_key(META_RETRIEVED),
+            "no retrieved date given: the retrieved key must be absent, not null"
+        );
+    }
+
+    #[test]
+    fn ingest_metadata_includes_provenance_keys_when_present() {
+        let entry = SourceEntry {
+            id: "somesource".to_owned(),
+            name: "Some Source".to_owned(),
+            tier: Tier::System,
+            namespace: Namespace::Ship,
+            domain: "myth".to_owned(),
+            license: "CC0".to_owned(),
+            note: None,
+            url: None,
+        };
+        let input = IngestInput {
+            source_uri: Some("https://example.org/src.txt".to_owned()),
+            checksum: Some("sha256:abc123".to_owned()),
+            retrieved: Some("2026-01-15".to_owned()),
+            ..IngestInput::new("text")
+        };
+        let metadata = ingest_metadata("somesource", &entry, &input);
+
+        assert_eq!(
+            metadata[META_URL],
+            Value::String("https://example.org/src.txt".to_owned())
+        );
+        assert_eq!(
+            metadata[META_CHECKSUM],
+            Value::String("sha256:abc123".to_owned())
+        );
+        assert_eq!(
+            metadata[META_RETRIEVED],
+            Value::String("2026-01-15".to_owned())
+        );
     }
 }

@@ -84,6 +84,31 @@ pub enum KnowledgeError {
         /// The collection the chunk came from.
         collection: String,
     },
+
+    /// The acquisition pipeline (fetch/normalize) failed.
+    #[cfg(feature = "acquire")]
+    #[error("corpus acquisition failed")]
+    Acquire(#[from] crate::acquire::AcquireError),
+
+    /// A CI/audit-time check found a stored document's metadata disagreeing
+    /// with its ledger entry, or a document misfiled outside its collection's
+    /// namespace. This is the third enforcement point of the licensing
+    /// invariant (ADR-0005): ingest and retrieval are the first two.
+    #[error(
+        "collection '{collection}' source '{source_id}' field '{field}': ledger says {expected:?}, stored metadata says {found:?}"
+    )]
+    AuditViolation {
+        /// The collection the offending document was found in.
+        collection: String,
+        /// The stored `source_id` of the offending document.
+        source_id: String,
+        /// Which field disagreed.
+        field: &'static str,
+        /// The value the ledger declares.
+        expected: String,
+        /// The value actually stored on the document.
+        found: String,
+    },
 }
 
 impl KnowledgeError {
