@@ -127,6 +127,21 @@ pub(crate) enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+
+    /// Export PD-gated text↔scored-structure fine-tune pairs for a fixture (JSONL).
+    FinetuneExport {
+        /// Benchmark fixture id from the registry (e.g. `odyssey_campbell_macro`).
+        #[arg(long)]
+        work: String,
+
+        /// Directory holding the benchmark registry (`index.json`) and fixtures.
+        #[arg(long, default_value = DEFAULT_BENCHMARKS_DIR)]
+        benchmarks_dir: PathBuf,
+
+        /// Write the JSONL here instead of to stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 /// Corpus acquisition subcommands.

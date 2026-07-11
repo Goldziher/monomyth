@@ -44,5 +44,10 @@ async fn main() -> Result<()> {
             benchmarks_dir,
             out,
         } => evaluate::run_eval(&work, &extractor, &benchmarks_dir, out, &cli.db).await,
+        Command::FinetuneExport {
+            work,
+            benchmarks_dir,
+            out,
+        } => evaluate::run_finetune_export(&work, &benchmarks_dir, out),
     }
 }

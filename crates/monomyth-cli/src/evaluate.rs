@@ -16,9 +16,11 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use monomyth_contracts::{Extractor, PassageRetriever, RetrievalError, ScoredHit};
-use monomyth_eval::{AlignmentScorer, Benchmark, Scorer, report_fingerprint};
+use monomyth_eval::{
+    AlignmentScorer, Benchmark, Scorer, report_fingerprint, stage_training_examples, to_jsonl,
+};
 use monomyth_extract::{RagSoftmaxClassifier, StageReclassifyingExtractor};
-use monomyth_knowledge::{Knowledge, KnowledgeQuery};
+use monomyth_knowledge::{Knowledge, KnowledgeQuery, Ledger, Tier};
 
 /// The only extractor strategy available today. Kept as a named constant so the
 /// allowlist in [`validate_extractor`] and the error message share one source.
@@ -39,6 +41,8 @@ struct FixtureEntry {
     id: String,
     /// Fixture path, relative to the benchmarks directory.
     path: String,
+    /// The declaring corpus `source_id` (gated against the ledger on export).
+    source_id: String,
     /// The classification axis this fixture is gold for (e.g. `campbell_macro`).
     axis: String,
     /// The pinned FNV-1a content hash, as a `0x`-prefixed hex string.
@@ -217,6 +221,96 @@ pub(crate) async fn run_eval(
     Ok(())
 }
 
+/// Whether a source's license [`Tier`] permits exporting derived fine-tune data.
+///
+/// The allowlist is the public-domain family only — `PublicDomain`, `Cc0`,
+/// `Permissive`. Everything else is refused: `ShareAlike` (copyleft that must not
+/// contaminate a training set), `Noncommercial`/`Copyright`/`Reference` (never
+/// redistributable at all), and even `System` (no benchmark fixture should ride
+/// on the uncopyrightable-taxonomy tier). This is deliberately stricter than the
+/// ship gate: exported pairs are meant to travel as training data, so only the
+/// most permissive tiers qualify.
+const fn is_exportable_tier(tier: Tier) -> bool {
+    matches!(tier, Tier::PublicDomain | Tier::Cc0 | Tier::Permissive)
+}
+
+/// Handle `finetune-export`: emit PD-gated text↔scored-structure training pairs
+/// for a benchmark fixture as JSON Lines.
+///
+/// The gate is enforced before anything is read or written: the fixture's
+/// `source_id` is resolved in the license ledger, and export is refused unless
+/// its tier is in the public-domain family ([`is_exportable_tier`]). This is why
+/// the export can never leak reference/copyright-derived data even though the
+/// fixtures themselves carry no prose.
+///
+/// # Errors
+///
+/// Fails if the registry or fixture cannot be read/parsed, the fixture's
+/// `source_id` is undeclared in the ledger or not a public-domain-family tier,
+/// the content hash does not match, or serialization/writing fails.
+pub(crate) fn run_finetune_export(
+    work: &str,
+    benchmarks_dir: &Path,
+    out: Option<PathBuf>,
+) -> Result<()> {
+    let index_path = benchmarks_dir.join("index.json");
+    let index_json = std::fs::read_to_string(&index_path)
+        .with_context(|| format!("reading benchmark registry {}", index_path.display()))?;
+    let index: BenchmarkIndex = serde_json::from_str(&index_json)
+        .with_context(|| format!("parsing benchmark registry {}", index_path.display()))?;
+    let fixture = resolve_fixture(&index, work)?;
+
+    // The licensing gate: refuse to export anything derived from a non-PD source.
+    let ledger = Ledger::load_embedded().context("loading the license ledger")?;
+    let entry = ledger.get(&fixture.source_id).ok_or_else(|| {
+        anyhow!(
+            "fixture {work:?} declares source {:?}, which is not in the license ledger",
+            fixture.source_id
+        )
+    })?;
+    if !is_exportable_tier(entry.tier) {
+        bail!(
+            "refusing to export fixture {work:?}: source {:?} is tier {} — fine-tune export is restricted to public_domain / cc0 / permissive sources",
+            fixture.source_id,
+            entry.tier.as_wire()
+        );
+    }
+
+    let content_hash = parse_content_hash(&fixture.content_hash)?;
+    let fixture_path = benchmarks_dir.join(&fixture.path);
+    let world_json = std::fs::read_to_string(&fixture_path)
+        .with_context(|| format!("reading fixture {}", fixture_path.display()))?;
+    let gold = Benchmark::load(&world_json, content_hash)
+        .with_context(|| {
+            format!(
+                "loading fixture {} at its pinned hash",
+                fixture_path.display()
+            )
+        })?
+        .world;
+
+    let examples = stage_training_examples(&gold, &fixture.axis);
+    let jsonl = to_jsonl(&examples).context("serializing training examples as JSONL")?;
+
+    eprintln!(
+        "finetune-export {work} ({}): {} example(s) from source {} [{}]",
+        fixture.axis,
+        examples.len(),
+        fixture.source_id,
+        entry.tier.as_wire()
+    );
+
+    match out {
+        Some(path) => {
+            std::fs::write(&path, format!("{jsonl}\n"))
+                .with_context(|| format!("writing JSONL to {}", path.display()))?;
+            eprintln!("Wrote {} example(s) to {}", examples.len(), path.display());
+        }
+        None => println!("{jsonl}"),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,10 +319,46 @@ mod tests {
         serde_json::from_str(
             r#"{ "fixtures": [
                 { "id": "odyssey_campbell_macro", "path": "greek/odyssey.json",
+                  "source_id": "gutenberg_odyssey_butler",
                   "axis": "campbell_macro", "content_hash": "0x60d092bed27740f9" }
             ] }"#,
         )
         .expect("test index parses")
+    }
+
+    #[test]
+    fn exportable_tier_should_allow_public_domain_family_only() {
+        assert!(is_exportable_tier(Tier::PublicDomain));
+        assert!(is_exportable_tier(Tier::Cc0));
+        assert!(is_exportable_tier(Tier::Permissive));
+        assert!(!is_exportable_tier(Tier::ShareAlike));
+        assert!(!is_exportable_tier(Tier::Noncommercial));
+        assert!(!is_exportable_tier(Tier::Copyright));
+        assert!(!is_exportable_tier(Tier::Reference));
+        assert!(!is_exportable_tier(Tier::System));
+    }
+
+    #[test]
+    fn export_gate_should_accept_the_odyssey_source_and_refuse_a_reference_one() {
+        let ledger = Ledger::load_embedded().expect("embedded ledger loads");
+
+        let odyssey = ledger
+            .get("gutenberg_odyssey_butler")
+            .expect("the Odyssey PD source is declared");
+        assert!(
+            is_exportable_tier(odyssey.tier),
+            "the Odyssey fixture's public-domain source must be exportable"
+        );
+
+        // `trilogy` is a share-alike source: real, declared, and correctly
+        // refused for fine-tune export.
+        let reference = ledger
+            .get("trilogy")
+            .expect("the trilogy source is declared");
+        assert!(
+            !is_exportable_tier(reference.tier),
+            "a non-public-domain source must be refused for export"
+        );
     }
 
     #[test]

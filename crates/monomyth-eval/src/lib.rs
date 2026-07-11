@@ -28,6 +28,7 @@
 mod alignment;
 mod benchmark;
 mod dist;
+mod export;
 mod metrics;
 mod report;
 pub mod util;
@@ -35,5 +36,6 @@ pub mod util;
 pub use alignment::AlignmentScorer;
 pub use benchmark::{Benchmark, BenchmarkError};
 pub use dist::Dist;
+pub use export::{TrainingExample, stage_training_examples, to_jsonl};
 pub use metrics::{DistScore, cross_entropy, histogram_intersection, kendall_tau, top1_accuracy};
 pub use report::{Alignment, Report, Scorer, report_fingerprint};
