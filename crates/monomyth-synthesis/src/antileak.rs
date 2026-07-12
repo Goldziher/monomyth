@@ -51,7 +51,10 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// Normalize `text` into lowercase words with ASCII punctuation stripped and
 /// whitespace collapsed, so `"The Suppliant implores!"` and `"the suppliant
 /// implores"` shingle identically.
-fn normalize_words(text: &str) -> Vec<String> {
+///
+/// Shared with [`crate::prescore`] so the deterministic pre-score tokenizes
+/// candidate and grounding text exactly as the anti-leak gate does.
+pub(crate) fn normalize_words(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|word| {
             word.chars()

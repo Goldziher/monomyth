@@ -24,6 +24,7 @@ use crate::antileak::verify_no_verbatim;
 use crate::candidate::CandidateLaw;
 use crate::error::SynthesisError;
 use crate::judge::{DEFAULT_CRITERIA, JudgeVerdict, judge_candidate, weighted_score};
+use crate::prescore::{PreScore, pre_score};
 use crate::retrieval::{DEFAULT_PER_QUERY_TOP_K, MAX_GROUNDING_PASSAGES, gather_grounding};
 
 /// The `schemars`/`Llm::generate` schema name for [`CandidateLaw`].
@@ -162,6 +163,11 @@ pub struct DraftedLaw {
     /// The best-scoring candidate's judge verdict, when at least one judge
     /// call succeeded.
     pub verdict: Option<JudgeVerdict>,
+    /// The best-scoring candidate's deterministic advisory pre-score (see
+    /// [`crate::pre_score`]), computed only when the run targeted a coverage
+    /// framework (so there are framework stages to measure coverage against).
+    /// Recorded for the reviewer; never used to accept or reject.
+    pub pre_score: Option<PreScore>,
 }
 
 /// One iteration's candidate together with the state needed to track the
@@ -171,6 +177,26 @@ struct IterationResult {
     usage: Option<Usage>,
     score: f64,
     verdict: JudgeVerdict,
+    pre: Option<PreScore>,
+}
+
+impl IterationResult {
+    /// The fallback result when the loop never judged an iteration
+    /// (`max_iterations == 0`): the last-drafted candidate, unscored, with an
+    /// empty verdict and no pre-score.
+    fn unscored(candidate: CandidateLaw, usage: Option<Usage>) -> Self {
+        Self {
+            candidate,
+            usage,
+            score: 0.0,
+            verdict: JudgeVerdict {
+                criteria: Vec::new(),
+                missing_phases: Vec::new(),
+                instructions: Vec::new(),
+            },
+            pre: None,
+        }
+    }
 }
 
 /// Draft one candidate law artifact from reference-namespace priors, via an
@@ -224,6 +250,12 @@ pub async fn draft_law(
         .generate::<CandidateLaw>(&initial_prompt, CANDIDATE_SCHEMA_NAME)
         .await?;
 
+    // The framework stages this run targeted (the coverage sub-queries — for a
+    // `--coverage-framework campbell` run, the Campbell stage names), used as
+    // the yardstick for the advisory pre-score. Empty when no framework was
+    // given, in which case the pre-score is skipped (nothing to measure against).
+    let framework_stages: Vec<&str> = request.sub_queries.iter().map(String::as_str).collect();
+
     let mut best: Option<IterationResult> = None;
     let mut iterations = 0;
 
@@ -231,6 +263,12 @@ pub async fn draft_law(
         iterations += 1;
         let bar =
             config.initial_passing_score + f64::from(iteration_index) * config.score_increment;
+
+        let pre = if framework_stages.is_empty() {
+            None
+        } else {
+            Some(pre_score(&candidate, &grounding, &framework_stages))
+        };
 
         let verdict = judge_candidate(llm, &candidate, &grounding, DEFAULT_CRITERIA).await?;
         let score = weighted_score(&verdict, DEFAULT_CRITERIA);
@@ -244,6 +282,7 @@ pub async fn draft_law(
                 usage: current_usage.clone(),
                 score,
                 verdict: verdict.clone(),
+                pre,
             });
         }
 
@@ -283,16 +322,8 @@ pub async fn draft_law(
         usage: best_usage,
         score: final_score,
         verdict: best_verdict,
-    } = best.unwrap_or(IterationResult {
-        candidate,
-        usage: current_usage,
-        score: 0.0,
-        verdict: JudgeVerdict {
-            criteria: Vec::new(),
-            missing_phases: Vec::new(),
-            instructions: Vec::new(),
-        },
-    });
+        pre: best_pre,
+    } = best.unwrap_or_else(|| IterationResult::unscored(candidate, current_usage));
 
     verify_candidate_against_passages(&best_candidate, &grounding)?;
 
@@ -308,6 +339,7 @@ pub async fn draft_law(
         final_score,
         iterations,
         verdict: Some(best_verdict),
+        pre_score: best_pre,
     })
 }
 

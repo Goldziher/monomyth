@@ -15,8 +15,8 @@ use anyhow::{Context, Result, bail};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
 use monomyth_synthesis::{
-    CoverageFramework, DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, coverage_sub_queries,
-    draft_law,
+    CoverageFramework, DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, PreScore,
+    coverage_sub_queries, draft_law,
 };
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -88,6 +88,10 @@ struct ReviewContext {
     /// improvement instructions, so the reviewer sees the machine's own
     /// assessment beside the sources.
     verdict: Option<JudgeVerdict>,
+    /// A deterministic, no-LLM second opinion (coverage / ordering / grounding
+    /// overlap) the reviewer can hold up against the judge's score. Present only
+    /// when the run targeted a coverage framework.
+    pre_score: Option<PreScore>,
     /// Token usage for the distillation call, when the backend reported one.
     usage: Option<monomyth_llm::Usage>,
     /// The reference passages retrieved as grounding, in retrieval order.
@@ -164,6 +168,7 @@ fn write_candidate(
         final_score: drafted.final_score,
         iterations: drafted.iterations,
         verdict: drafted.verdict.clone(),
+        pre_score: drafted.pre_score.clone(),
         usage: drafted.usage.clone(),
         passages: drafted
             .passages
@@ -394,6 +399,7 @@ mod tests {
             final_score: 90.0,
             iterations: 1,
             verdict: None,
+            pre_score: None,
         }
     }
 

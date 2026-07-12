@@ -45,6 +45,7 @@ mod enrich;
 mod error;
 mod judge;
 mod pipeline;
+mod prescore;
 mod retrieval;
 
 pub use antileak::verify_no_verbatim;
@@ -55,6 +56,7 @@ pub use judge::{
     CriterionScore, DEFAULT_CRITERIA, JudgeVerdict, LawCriterion, judge_candidate, weighted_score,
 };
 pub use pipeline::{DraftRequest, DraftedLaw, LoopConfig, draft_law};
+pub use prescore::{PreScore, pre_score};
 pub use retrieval::gather_grounding;
 
 // Re-exported so a caller building a `DraftRequest`/`draft_law` call site does
