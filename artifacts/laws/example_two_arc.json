@@ -1,0 +1,30 @@
+{
+  "law": "example_two_arc",
+  "title": "Example — two-arc macro structure (schema fixture)",
+  "license": "idea/taxonomy only; authored for monomyth as a loader fixture, no source prose reproduced",
+  "namespace": "ship",
+  "tier": "system",
+  "domain": "myth",
+  "tier_note": "Scaffolding example that validates the law loader; replace with human-reviewed synthesized laws.",
+  "synthesis": {
+    "reference_source_ids": [],
+    "model": "(authored)",
+    "generated": "2026-07-12",
+    "reviewed_by": "nhirschfeld@gmail.com"
+  },
+  "count": 2,
+  "items": [
+    {
+      "id": 1,
+      "name": "Departure Arc",
+      "description": "The opening half of a two-arc macro structure, in which the protagonist leaves the known world.",
+      "phase_order": ["call", "threshold", "trials"]
+    },
+    {
+      "id": 2,
+      "name": "Return Arc",
+      "description": "The closing half of a two-arc macro structure, in which the protagonist resolves the journey and re-integrates.",
+      "phase_order": ["climax", "return", "integration"]
+    }
+  ]
+}

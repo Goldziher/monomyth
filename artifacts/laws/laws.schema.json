@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://monomyth.dev/schemas/laws.schema.json",
+  "title": "monomyth law artifact",
+  "description": "A build-time-synthesized, human-reviewed structural law artifact (ADR-0016). Tier `system`: an uncopyrightable idea/taxonomy, ship-safe, no source prose reproduced.",
+  "type": "object",
+  "required": [
+    "law",
+    "title",
+    "license",
+    "namespace",
+    "tier",
+    "domain",
+    "tier_note",
+    "synthesis",
+    "count",
+    "items"
+  ],
+  "properties": {
+    "law": {
+      "type": "string",
+      "description": "Stable machine-readable law identifier.",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable title of the law artifact."
+    },
+    "license": {
+      "type": "string",
+      "description": "Licensing note for this artifact's content (idea/taxonomy only, no reproduced prose)."
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Shippability namespace. Laws are always ship-safe.",
+      "const": "ship"
+    },
+    "tier": {
+      "type": "string",
+      "description": "Licensing tier. Laws are always the uncopyrightable system tier.",
+      "const": "system"
+    },
+    "domain": {
+      "type": "string",
+      "description": "The corpus domain this law belongs to (e.g. myth, folklore, esoterica)."
+    },
+    "tier_note": {
+      "type": "string",
+      "description": "Human-readable note explaining why this artifact is ship-safe at tier `system`."
+    },
+    "synthesis": {
+      "type": "object",
+      "description": "Provenance of the build-time synthesis step that produced this law (ADR-0016).",
+      "required": ["reference_source_ids", "model", "generated", "reviewed_by"],
+      "properties": {
+        "reference_source_ids": {
+          "type": "array",
+          "description": "Ids of `reference`-namespace corpus/manifest.json sources this law was synthesized from.",
+          "items": { "type": "string" }
+        },
+        "model": {
+          "type": "string",
+          "description": "The model (or '(authored)') that produced the synthesis candidate."
+        },
+        "generated": {
+          "type": "string",
+          "description": "Date the synthesis candidate was generated (ISO 8601 date)."
+        },
+        "reviewed_by": {
+          "type": "string",
+          "description": "The human reviewer who approved this law before commit. Mandatory and non-empty."
+        },
+        "candidate_sha256": {
+          "type": "string",
+          "description": "Optional checksum of the pre-review synthesis candidate, for audit trail."
+        }
+      },
+      "additionalProperties": false
+    },
+    "count": {
+      "type": "integer",
+      "description": "Number of items; must equal items.length.",
+      "minimum": 0
+    },
+    "items": {
+      "type": "array",
+      "description": "The law's ordered, contiguously-id'd items.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Stable 1-based item id, contiguous within the artifact.",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Canonical item name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Authored description of the item."
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

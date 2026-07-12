@@ -1,0 +1,5 @@
+{
+  "index": "monomyth law artifacts",
+  "note": "Build-time-synthesized, human-reviewed structural laws (ADR-0016). Runtime-loaded via monomyth-frameworks::load_law, not compile-time enums — the vocabulary grows over time.",
+  "laws": [{ "law": "example_two_arc", "count": 2, "namespace": "ship", "tier": "system" }]
+}

@@ -15,6 +15,9 @@
 //! - **micro** — [`MotifClass`].
 //! - **character** — [`ProppRole`], [`GreimasActant`], [`Archetype`].
 //! - **crosswalks** — [`arc_functions`], [`plot_situations`], [`role_alignment`].
+//! - **laws** — build-time-synthesized, human-reviewed structural laws
+//!   (`artifacts/laws/*.json`, ADR-0016), loaded at runtime by [`load_law`]
+//!   rather than as compile-time enums, since the law vocabulary grows over time.
 //!
 //! # Serialization
 //!
@@ -28,6 +31,7 @@
 mod character;
 mod crosswalk;
 mod info;
+mod law;
 mod macro_tier;
 mod macros;
 mod meso_tier;
@@ -46,6 +50,7 @@ pub use info::{
     ArchetypeInfo, AtuCategoryInfo, BookerPlotInfo, DundesMotifemeInfo, GreimasActantInfo,
     MonomythStageInfo, MotifClassInfo, PoltiSituationInfo, ProppFunctionInfo, ProppRoleInfo,
 };
+pub use law::{LawArtifact, LawError, LawItem, LawSynthesis, load_law};
 pub use macro_tier::{AtuCategory, BookerPlot, MonomythStage};
 pub use meso_tier::{DundesMotifeme, PoltiSituation, ProppFunction};
 pub use micro_tier::MotifClass;
