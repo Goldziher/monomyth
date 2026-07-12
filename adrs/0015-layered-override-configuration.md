@@ -136,6 +136,11 @@ points of record:
   reproduce the seed-42 golden `0x65f6_6a4b_a541_5419`) and one cross-crate test in `monomyth-cli`
   binding `monomyth-config`'s system default to that golden.
 
-The file schema currently deserializes via `serde` + `toml` (the `deny_unknown_fields` guard makes a
-misspelled key a hard error); the `schemars` JSON-Schema emission this ADR mentions is deferred to a
-later slice alongside the `[models]`/`[retrieval]`/`[synthesis]`/`[paths]` sections.
+The file schema deserializes via `serde` + `toml` (the `deny_unknown_fields` guard makes a misspelled
+key a hard error). Sections landed so far: `[generation]` (fork probability + the beat/map/item/cast
+procedural bounds), `[models]` (per-task `content`/`synthesis` routing, replacing the CLI's hardcoded
+model consts — model ids now live only in `ModelsSettings::default()`), and `[synthesis]` (the judge
+loop's integer knobs, bound to `LoopConfig::default()` by a `monomyth-cli` test). `monomyth.example.toml`
+documents the whole schema. Still deferred: `[retrieval]`/`[paths]`, the synthesis f64 bar thresholds,
+the extraction softmax temperature, a dedicated judge model (needs `draft_law`'s API widened), and the
+`schemars` JSON-Schema emission.

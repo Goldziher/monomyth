@@ -41,5 +41,5 @@ pub use layered::{LayerSource, Layered};
 pub use resolver::{ConfigResolver, RuntimeOverrides};
 pub use schema::{
     GenerationSection, GenerationSettings, ModelRole, ModelsSection, ModelsSettings,
-    MonomythConfig, MonomythConfigFile,
+    MonomythConfig, MonomythConfigFile, SynthesisSection, SynthesisSettings,
 };

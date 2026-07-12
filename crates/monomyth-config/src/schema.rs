@@ -41,6 +41,17 @@ const DEFAULT_ITEMS_MAX: usize = 6;
 /// The system default for `generation.max_extra_cast`.
 const DEFAULT_MAX_EXTRA_CAST: usize = 3;
 
+/// The system default for `synthesis.max_iterations`.
+///
+/// Duplicates `monomyth-synthesis`'s `LoopConfig` defaults for the duration of the
+/// migration; the two must agree, guarded by `monomyth-cli`'s test asserting the
+/// resolved-default synthesis config equals `LoopConfig::default()`.
+const DEFAULT_MAX_ITERATIONS: u32 = 3;
+/// The system default for `synthesis.per_query_top_k`.
+const DEFAULT_PER_QUERY_TOP_K: u32 = 8;
+/// The system default for `synthesis.max_grounding`.
+const DEFAULT_MAX_GROUNDING: usize = 24;
+
 /// The system-default `provider/model` routing string for the per-slot content
 /// pass. Gemini Flash is the cheaper, faster tier suited to content fill.
 ///
@@ -78,6 +89,8 @@ pub struct MonomythConfigFile {
     pub generation: GenerationSection,
     /// The `[models]` table.
     pub models: ModelsSection,
+    /// The `[synthesis]` table.
+    pub synthesis: SynthesisSection,
 }
 
 /// The `[generation]` table as it appears on disk.
@@ -122,6 +135,23 @@ pub struct ModelsSection {
     pub synthesis: Option<String>,
 }
 
+/// The `[synthesis]` table as it appears on disk: the law-synthesis judge loop's
+/// integer tuning knobs. The f64 passing-bar thresholds stay as
+/// `monomyth-synthesis::LoopConfig` internals for now.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct SynthesisSection {
+    /// Max judge/refine iterations before the loop stops. Absent → the system
+    /// default.
+    pub max_iterations: Option<u32>,
+    /// Reference passages retrieved per coverage query. Absent → the system
+    /// default.
+    pub per_query_top_k: Option<u32>,
+    /// Max deduped grounding passages kept across all queries. Absent → the
+    /// system default.
+    pub max_grounding: Option<usize>,
+}
+
 /// The fully-resolved configuration: every value tagged with the [`Layered`] source
 /// that set it.
 #[derive(Clone, Debug)]
@@ -130,6 +160,8 @@ pub struct MonomythConfig {
     pub generation: GenerationSettings,
     /// Resolved per-task model routing.
     pub models: ModelsSettings,
+    /// Resolved law-synthesis judge-loop knobs.
+    pub synthesis: SynthesisSettings,
 }
 
 /// Resolved narrative-generation knobs.
@@ -162,6 +194,17 @@ pub struct ModelsSettings {
     pub synthesis: Layered<String>,
 }
 
+/// Resolved law-synthesis judge-loop knobs.
+#[derive(Clone, Debug)]
+pub struct SynthesisSettings {
+    /// Resolved max judge/refine iterations.
+    pub max_iterations: Layered<u32>,
+    /// Resolved reference passages retrieved per coverage query.
+    pub per_query_top_k: Layered<u32>,
+    /// Resolved max deduped grounding passages across all queries.
+    pub max_grounding: Layered<usize>,
+}
+
 impl Default for MonomythConfig {
     fn default() -> Self {
         Self {
@@ -178,6 +221,11 @@ impl Default for MonomythConfig {
             models: ModelsSettings {
                 content: Layered::system_default(DEFAULT_CONTENT_MODEL.to_owned()),
                 synthesis: Layered::system_default(DEFAULT_SYNTHESIS_MODEL.to_owned()),
+            },
+            synthesis: SynthesisSettings {
+                max_iterations: Layered::system_default(DEFAULT_MAX_ITERATIONS),
+                per_query_top_k: Layered::system_default(DEFAULT_PER_QUERY_TOP_K),
+                max_grounding: Layered::system_default(DEFAULT_MAX_GROUNDING),
             },
         }
     }
@@ -227,6 +275,15 @@ impl MonomythConfig {
         self.models
             .synthesis
             .override_with(file.models.synthesis.clone(), from);
+        self.synthesis
+            .max_iterations
+            .override_with(file.synthesis.max_iterations, from);
+        self.synthesis
+            .per_query_top_k
+            .override_with(file.synthesis.per_query_top_k, from);
+        self.synthesis
+            .max_grounding
+            .override_with(file.synthesis.max_grounding, from);
     }
 }
 
@@ -235,8 +292,8 @@ mod tests {
     use super::{
         DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_CONTENT_MODEL,
         DEFAULT_FORK_CHANCE_PERMILLE, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN, DEFAULT_MAX_EXTRA_CAST,
-        DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig,
-        MonomythConfigFile,
+        DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX,
+        DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
     };
     use crate::layered::LayerSource;
 
@@ -346,6 +403,37 @@ mod tests {
             config.model_for(ModelRole::Synthesis),
             DEFAULT_SYNTHESIS_MODEL,
             "an untouched model keeps its system default"
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_synthesis_knobs() {
+        let config = MonomythConfig::default();
+        assert_eq!(
+            *config.synthesis.max_iterations.get(),
+            DEFAULT_MAX_ITERATIONS
+        );
+        assert_eq!(
+            *config.synthesis.per_query_top_k.get(),
+            DEFAULT_PER_QUERY_TOP_K
+        );
+        assert_eq!(*config.synthesis.max_grounding.get(), DEFAULT_MAX_GROUNDING);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_synthesis_knobs_at_its_layer() {
+        let file: MonomythConfigFile = toml::from_str(
+            "[synthesis]\nmax_iterations = 5\nper_query_top_k = 12\nmax_grounding = 40\n",
+        )
+        .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::UserOverride);
+        assert_eq!(*config.synthesis.max_iterations.get(), 5);
+        assert_eq!(*config.synthesis.per_query_top_k.get(), 12);
+        assert_eq!(*config.synthesis.max_grounding.get(), 40);
+        assert_eq!(
+            config.synthesis.max_iterations.source(),
+            LayerSource::UserOverride
         );
     }
 

@@ -30,6 +30,9 @@ pub struct RuntimeOverrides {
     pub content_model: Option<String>,
     /// Overrides `models.synthesis` when present (the `synthesize law --model` flag).
     pub synthesis_model: Option<String>,
+    /// Overrides `synthesis.per_query_top_k` when present (the `synthesize law
+    /// --top-k` flag).
+    pub synthesis_per_query_top_k: Option<u32>,
 }
 
 /// Accumulates the layered configuration and yields the resolved [`MonomythConfig`].
@@ -91,6 +94,10 @@ impl ConfigResolver {
             .models
             .synthesis
             .override_with(overrides.synthesis_model, LayerSource::RuntimeOverride);
+        self.config.synthesis.per_query_top_k.override_with(
+            overrides.synthesis_per_query_top_k,
+            LayerSource::RuntimeOverride,
+        );
         self
     }
 

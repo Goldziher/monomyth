@@ -211,8 +211,9 @@ pub(crate) struct SynthesizeLawArgs {
     /// Seed retrieval query against the reference collection.
     pub(crate) query: String,
     /// Reference passages retrieved per coverage query (the loop's
-    /// `per_query_top_k`).
-    pub(crate) top_k: u32,
+    /// `per_query_top_k`). `None` resolves the configured default; `Some` is a
+    /// runtime override.
+    pub(crate) top_k: Option<u32>,
     /// `provider/model` routing string for the synthesis LLM. `None` resolves the
     /// configured `models.synthesis` default; `Some` is a runtime override.
     pub(crate) model: Option<String>,
@@ -270,6 +271,7 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
         .context("resolving configuration")?
         .with_runtime(RuntimeOverrides {
             synthesis_model: model,
+            synthesis_per_query_top_k: top_k,
             ..RuntimeOverrides::default()
         })
         .resolve();
@@ -294,7 +296,9 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
         model,
         generated,
         loop_config: LoopConfig {
-            per_query_top_k: top_k,
+            max_iterations: *config.synthesis.max_iterations.get(),
+            per_query_top_k: *config.synthesis.per_query_top_k.get(),
+            max_grounding: *config.synthesis.max_grounding.get(),
             ..LoopConfig::default()
         },
     };
@@ -466,6 +470,27 @@ mod tests {
         assert!(
             matches!(load_result, Err(LawError::MissingReviewer { .. })),
             "an unreviewed candidate must fail load_law with MissingReviewer, got {load_result:?}"
+        );
+    }
+
+    #[test]
+    fn default_config_synthesis_knobs_match_loop_config_default() {
+        use monomyth_config::ConfigResolver;
+        use monomyth_synthesis::LoopConfig;
+
+        let config = ConfigResolver::defaults().resolve();
+        let loop_default = LoopConfig::default();
+        assert_eq!(
+            *config.synthesis.max_iterations.get(),
+            loop_default.max_iterations
+        );
+        assert_eq!(
+            *config.synthesis.per_query_top_k.get(),
+            loop_default.per_query_top_k
+        );
+        assert_eq!(
+            *config.synthesis.max_grounding.get(),
+            loop_default.max_grounding
         );
     }
 

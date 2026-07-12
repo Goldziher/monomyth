@@ -1,0 +1,41 @@
+# monomyth.example.toml — sample configuration for the monomyth engine (ADR-0015).
+#
+# Copy this to `monomyth.toml` (in the working directory) to activate it. The
+# values below are the built-in system defaults, so a verbatim copy changes
+# nothing — delete the keys you do not want to override.
+#
+# Resolution precedence (later wins):
+#   SystemDefault  <  $MONOMYTH_CONFIG_DIR/monomyth.toml  (deployment)
+#                  <  ./monomyth.toml                      (project)
+#                  <  ~/.config/monomyth/monomyth.toml     (user)
+#                  <  CLI flags                            (runtime)
+# Every key is optional; an omitted key falls through to the layer below it.
+# An unknown/misspelled key is a hard error, not a silent no-op.
+#
+# Secrets never live here: a model is named by its `provider/model` routing
+# string, but the API key stays in the environment (e.g. GEMINI_API_KEY in .env).
+
+# Per-task model routing. Overridden by the global `--model` (content) and
+# `synthesize law --model` (synthesis) flags.
+[models]
+content = "gemini/gemini-3.5-flash"         # per-slot content fill (cheaper tier)
+synthesis = "gemini/gemini-3.1-pro-preview" # law-synthesis distillation (quality tier)
+
+# Procedural generation knobs. These feed the seeded, deterministic passes; the
+# defaults reproduce the pinned determinism golden exactly.
+[generation]
+fork_chance_permille = 500 # permille (0..=1000) an optional-stage run forks into a choice
+beats_per_stage_min = 1    # fewest beats spliced onto each stage node
+beats_per_stage_max = 3    # most beats spliced onto each stage node
+rooms_min = 5              # fewest rooms in a generated world
+rooms_max = 9              # most rooms in a generated world
+items_min = 2              # fewest items scattered across the world
+items_max = 6              # most items scattered across the world
+max_extra_cast = 3         # most supporting roles added on top of the base cast
+
+# Law-synthesis judge-loop tuning. `per_query_top_k` is overridden by
+# `synthesize law --top-k`.
+[synthesis]
+max_iterations = 3  # max judge/refine iterations before the loop stops
+per_query_top_k = 8 # reference passages retrieved per coverage query
+max_grounding = 24  # max deduped grounding passages kept across all queries
