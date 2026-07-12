@@ -80,3 +80,24 @@ Follow-ups: robust hybrid retrieval (FTS5-escaped lexical arm + pre-embedded den
 framework-vocabulary query enrichment — seeding coverage queries from the taxonomy monomyth already
 owns (Campbell stages, Propp functions), the monomyth-native analogue of grantflow's Wikidata
 enrichment.
+
+## Update (2026-07-12): robust hybrid landed
+
+The two follow-ups above have shipped, completing the deferral this ADR recorded rather than reversing
+its decision:
+
+- **Robust hybrid retrieval.** The reference path (`retrieve_reference`) now runs `RetrieveMode::Hybrid`.
+  It pre-embeds the **raw** query itself via `Embedder::embed_query` (preserving the query-side prefix)
+  and sets `query_vector`, so xberg does not re-embed and uses `query_text` **only** for the FTS arm;
+  the lexical arm receives a **separately FTS5-escaped** term string from `fts5_match_query`, which
+  double-quotes each whitespace token (escaping embedded quotes by doubling) so punctuation is inert.
+  A store that does not support hybrid (the in-memory backend) returns `RagError::UnsupportedMode`, on
+  which the path falls back to plain vector search reusing the same pre-computed vector. The
+  surfaceable (ship) path is untouched — still plain vector — so the content-fill cassette is
+  byte-identical. This resolves the "vector-only forgoes lexical exact-term matching" consequence
+  above. Dedup is unaffected (it keys on normalized content, not score, and only assumes descending
+  order), and the `monomyth-synthesis` grounding consumer dedups by `(source_id, text)` keeping the
+  highest score, so it is tolerant of the RRF score scale.
+- **Framework-vocabulary query enrichment.** Landed as `monomyth-synthesis`'s `CoverageFramework` /
+  `coverage_sub_queries` behind the CLI `--coverage-framework` flag (see ADR-0024 and the methodology
+  doc).

@@ -55,7 +55,8 @@ use xberg_rag::pipeline::{
     retrieve as pipeline_retrieve,
 };
 use xberg_rag::{
-    CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveQuery, RetrievedChunk,
+    CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveMode, RetrieveQuery,
+    RetrievedChunk,
 };
 
 #[cfg(feature = "acquire")]
@@ -429,17 +430,23 @@ impl Knowledge {
             .collect()
     }
 
-    /// The reference (priors-only) retrieval path: dense vector search with
-    /// over-fetch + near-duplicate dedup for *distinct* coverage. A single long
-    /// source chunked with overlap otherwise returns several near-identical
-    /// passages, starving the distillation of distinct grounding.
+    /// The reference (priors-only) retrieval path: hybrid (dense + lexical)
+    /// search with over-fetch + near-duplicate dedup for *distinct* coverage. A
+    /// single long source chunked with overlap otherwise returns several
+    /// near-identical passages, starving the distillation of distinct grounding.
     ///
-    /// Vector (not hybrid) is deliberate: xberg's hybrid mode passes `query_text`
+    /// Robust hybrid (ADR-0025): xberg's hybrid mode otherwise passes `query_text`
     /// straight to FTS5's `MATCH` parser, which errors on ordinary punctuation in
-    /// a natural-language query (an apostrophe, colon, or comma). Robust hybrid
-    /// would require pre-embedding the raw query for the dense arm and passing a
-    /// separately FTS5-escaped term query for the lexical arm; until that lands,
-    /// dense search plus dedup and multi-query coverage is the safe path.
+    /// a natural-language query (an apostrophe, colon, or comma). We sidestep that
+    /// by pre-embedding the **raw** query ourselves for the dense arm and passing a
+    /// **separately FTS5-escaped** term query ([`fts5_match_query`]) for the
+    /// lexical arm — because `query_vector` is then set, xberg does not re-embed
+    /// and uses `query_text` only for FTS. A backend that does not support hybrid
+    /// (e.g. the in-memory store) reports [`RagError::UnsupportedMode`], on which
+    /// we fall back to plain vector search with the same pre-computed vector.
+    ///
+    /// The surfaceable (ship) path is deliberately **not** changed — it stays on
+    /// plain vector so recorded content-fill fixtures keep matching.
     async fn retrieve_reference(
         &self,
         text: &str,
@@ -447,23 +454,71 @@ impl Knowledge {
     ) -> Result<Vec<Passage>, KnowledgeError> {
         self.ensure_collection(REFERENCE_COLLECTION).await?;
         let fetch_k = top_k.saturating_mul(REFERENCE_OVERFETCH).max(top_k);
-        let query = RetrieveQuery {
-            query_text: Some(text.to_owned()),
+
+        // Pre-embed the raw query for the dense arm (query-side prefix preserved
+        // by `embed_query`); an FTS5-escaped term string drives the lexical arm.
+        // An all-punctuation query escapes to no terms, degrading to vector-only.
+        let query_vector = self
+            .embedder
+            .embed_query(vec![text.to_owned()])
+            .await
+            .map_err(|error| KnowledgeError::store("embedding reference query", error))?
+            .pop();
+        let escaped = fts5_match_query(text);
+
+        let chunks = self
+            .run_reference_retrieve(fetch_k, query_vector, escaped)
+            .await?;
+
+        dedup_chunks(chunks, top_k as usize)
+            .into_iter()
+            .map(|chunk| passage_from_chunk(chunk, REFERENCE_COLLECTION))
+            .collect()
+    }
+
+    /// Run the reference retrieval as hybrid when a lexical query and a store
+    /// that supports it are available, falling back to plain vector search on
+    /// [`RagError::UnsupportedMode`]. The pre-computed `query_vector` is reused
+    /// across both, so the dense arm is identical in either branch.
+    async fn run_reference_retrieve(
+        &self,
+        fetch_k: u32,
+        query_vector: Option<Vec<f32>>,
+        escaped: Option<String>,
+    ) -> Result<Vec<RetrievedChunk>, KnowledgeError> {
+        let vector_query = |query_vector: Option<Vec<f32>>| RetrieveQuery {
+            query_vector,
             filter: None,
             include_content: true,
             include_document: true,
             ..RetrieveQuery::vector(fetch_k)
         };
 
-        let chunks = self
-            .run_retrieve(REFERENCE_COLLECTION, query)
-            .await
-            .map_err(|error| KnowledgeError::store("retrieving chunks", error))?;
+        // No lexical terms (empty/all-punctuation query) → plain vector.
+        let Some(match_query) = escaped else {
+            return self
+                .run_retrieve(REFERENCE_COLLECTION, vector_query(query_vector))
+                .await
+                .map_err(|error| KnowledgeError::store("retrieving chunks", error));
+        };
 
-        dedup_chunks(chunks, top_k as usize)
-            .into_iter()
-            .map(|chunk| passage_from_chunk(chunk, REFERENCE_COLLECTION))
-            .collect()
+        let hybrid_query = RetrieveQuery {
+            mode: RetrieveMode::Hybrid,
+            query_text: Some(match_query),
+            query_vector: query_vector.clone(),
+            filter: None,
+            include_content: true,
+            include_document: true,
+            ..RetrieveQuery::vector(fetch_k)
+        };
+        match self.run_retrieve(REFERENCE_COLLECTION, hybrid_query).await {
+            Ok(chunks) => Ok(chunks),
+            Err(RagError::UnsupportedMode { .. }) => self
+                .run_retrieve(REFERENCE_COLLECTION, vector_query(query_vector))
+                .await
+                .map_err(|error| KnowledgeError::store("retrieving chunks", error)),
+            Err(error) => Err(KnowledgeError::store("retrieving chunks", error)),
+        }
     }
 
     /// Run a prepared retrieval against `collection`, returning the raw chunks.
@@ -580,6 +635,31 @@ fn normalize_for_dedup(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+/// Turn a natural-language query into a valid FTS5 `MATCH` string for the hybrid
+/// lexical arm (ADR-0025), or `None` when there are no usable terms.
+///
+/// FTS5's `MATCH` parser treats `:`, `,`, `-`, `*`, `(`, `)`, `^`, `"` and a bare
+/// apostrophe as syntax, so a raw natural-language query (`"the hero's descent:
+/// trial, and return"`) is a syntax error. Wrapping **each** whitespace-split
+/// token in double quotes turns it into a literal FTS5 string token where those
+/// characters are inert; embedded quotes are escaped by doubling (`"` -> `""`).
+/// Tokens are joined with a space (FTS5 implicit AND) — the lexical arm is the
+/// *precise* signal, since RRF already unions it with the dense arm. An empty or
+/// all-whitespace query yields no tokens and returns `None`, so the caller
+/// degrades to plain vector search rather than sending an (also-invalid) empty
+/// `MATCH`.
+fn fts5_match_query(text: &str) -> Option<String> {
+    let quoted: Vec<String> = text
+        .split_whitespace()
+        .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
+        .collect();
+    if quoted.is_empty() {
+        None
+    } else {
+        Some(quoted.join(" "))
+    }
 }
 
 fn passage_from_chunk(chunk: RetrievedChunk, collection: &str) -> Result<Passage, KnowledgeError> {
@@ -843,6 +923,84 @@ mod tests {
             !passage.is_surfaceable(),
             "a reference passage must never be surfaceable",
         );
+    }
+
+    /// Build a knowledge layer over a hybrid-capable in-memory **sqlite** store
+    /// (sqlite-vec + FTS5), so the reference path actually exercises hybrid
+    /// retrieval rather than falling back to vector on the in-memory store.
+    async fn sqlite_test_knowledge() -> Knowledge {
+        let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(
+            SqliteVectorStore::open_in_memory(STORE_NAME)
+                .await
+                .expect("in-memory sqlite store opens"),
+        );
+        let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
+        let ledger = Ledger::load_embedded().expect("embedded manifest parses");
+        Knowledge::with(store, embedder, ledger)
+    }
+
+    #[tokio::test]
+    async fn reference_hybrid_retrieval_survives_punctuation_that_crashes_raw_fts5() {
+        // This exact query — apostrophe, colon, comma — is a syntax error to
+        // FTS5's MATCH parser if passed raw; the escaping + pre-embed path must
+        // make it succeed rather than crash.
+        let knowledge = sqlite_test_knowledge().await;
+        knowledge
+            .ingest_reference(
+                "perseus",
+                IngestInput::new(
+                    "The hero's descent to the underworld: a trial, a nadir, and the return.",
+                ),
+            )
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::reference(
+                "the hero's descent: trial, nadir, and return",
+                5,
+            ))
+            .await
+            .expect("hybrid reference retrieval must not crash on punctuation");
+
+        assert!(
+            !passages.is_empty(),
+            "expected at least one reference passage"
+        );
+        assert!(
+            passages.iter().all(|passage| !passage.is_surfaceable()),
+            "a reference passage must never be surfaceable",
+        );
+        assert!(
+            passages
+                .iter()
+                .all(|passage| passage.namespace == Namespace::Reference),
+            "hybrid reference retrieval must stay in the reference namespace",
+        );
+    }
+
+    #[test]
+    fn fts5_match_query_quotes_each_token_neutralizing_operators() {
+        // Apostrophe survives inside the quoted token; colon/comma no longer parse
+        // as FTS5 operators.
+        assert_eq!(
+            fts5_match_query("the hero's descent: trial, return").as_deref(),
+            Some("\"the\" \"hero's\" \"descent:\" \"trial,\" \"return\""),
+        );
+    }
+
+    #[test]
+    fn fts5_match_query_escapes_embedded_double_quotes() {
+        assert_eq!(
+            fts5_match_query("say \"hi\"").as_deref(),
+            Some("\"say\" \"\"\"hi\"\"\""),
+        );
+    }
+
+    #[test]
+    fn fts5_match_query_returns_none_for_termless_input() {
+        assert_eq!(fts5_match_query(""), None);
+        assert_eq!(fts5_match_query("   \t\n  "), None);
     }
 
     /// ADR-0016 confirmation: a document ingested through the reference path is

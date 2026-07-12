@@ -76,10 +76,13 @@ ordering with the "generation grounding first" near-term-focus decision.
   and the CLI judge trail (`final_score`/`iterations`/`verdict` in the `.context.json`, a banner
   score line). A live judge-gated run over the broader corpus lifted the Campbell macro-law from 4
   coarse phases to 17 arc-spanning phases (judge 92/100, first iteration; four honest abstentions).
-  **Remaining:** a synthesis quality-baseline benchmark under ADR-0023; robust hybrid retrieval
-  (FTS5-escaped lexical arm); full TOML-file configuration (the `monomyth-config` spine, routing
-  per-task model selection); and the rest of `monomyth-llm` ergonomics (named prompt templates +
-  identifiers, thinking budgets, structured tracing).
+  Robust hybrid reference retrieval also landed (ADR-0025 Update): the reference path pre-embeds the
+  raw query and passes a separately FTS5-escaped lexical arm, with a vector fallback on unsupported
+  backends; the ship path is untouched.
+  **Remaining:** a synthesis quality-baseline benchmark under ADR-0023; full TOML-file configuration
+  (the `monomyth-config` spine, routing per-task model selection); and the rest of `monomyth-llm`
+  ergonomics (named prompt templates + identifiers, thinking budgets, structured tracing,
+  JSON-repair hardening).
 
 **Exit criteria:** build a small ship corpus, generate a world with layered config overrides, confirm
 grounded content-fill; reference-ingest a myth-theory source and confirm it stays reference-only.
