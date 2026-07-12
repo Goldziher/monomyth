@@ -79,3 +79,39 @@ impl LlmError {
         }
     }
 }
+
+/// Errors from loading, replaying, or recording a cassette.
+#[derive(Debug, Error)]
+pub enum CassetteError {
+    /// The cassette file could not be read or written.
+    #[error("cassette io error at '{path}': {source}")]
+    Io {
+        /// The path of the cassette file involved.
+        path: String,
+        /// The underlying IO error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The cassette file's contents could not be parsed as a [`crate::Cassette`].
+    #[error("cassette parse error at '{path}': {source}")]
+    Parse {
+        /// The path of the cassette file involved.
+        path: String,
+        /// The underlying JSON error.
+        #[source]
+        source: serde_json::Error,
+    },
+
+    /// No unconsumed recorded interaction matched the requested call.
+    #[error(
+        "cassette miss for schema '{schema_name}' (prompt sha {prompt_sha}); \
+         re-record with MONOMYTH_RECORD=1"
+    )]
+    Miss {
+        /// The schema name of the missed call.
+        schema_name: String,
+        /// The full sha256 hex of the missed prompt.
+        prompt_sha: String,
+    },
+}

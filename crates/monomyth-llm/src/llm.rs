@@ -10,7 +10,7 @@ use std::fmt;
 use schemars::{JsonSchema, schema_for};
 use serde::de::DeserializeOwned;
 
-use crate::backend::{StructuredBackend, Usage, XbergBackend};
+use crate::backend::{BackendOptions, StructuredBackend, Usage, XbergBackend};
 use crate::error::LlmError;
 
 /// Number of retries granted after the first attempt when model output fails to
@@ -79,12 +79,44 @@ impl Llm {
         Ok(Self::new(Box::new(XbergBackend::new(model))))
     }
 
+    /// Construct an [`Llm`] targeting `model` with explicit transport tuning,
+    /// reading the provider API key from the environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LlmError::EmptyModel`] if `model` is empty or whitespace.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use monomyth_llm::{BackendOptions, Llm};
+    ///
+    /// let llm = Llm::from_env_with_options(
+    ///     "anthropic/claude-sonnet-4-20250514",
+    ///     BackendOptions::default(),
+    /// )?;
+    /// # Ok::<(), monomyth_llm::LlmError>(())
+    /// ```
+    pub fn from_env_with_options(model: &str, options: BackendOptions) -> Result<Self, LlmError> {
+        if model.trim().is_empty() {
+            return Err(LlmError::EmptyModel);
+        }
+        Ok(Self::new(Box::new(XbergBackend::with_options(
+            model, options,
+        ))))
+    }
+
     /// Generate a value of type `T`, constraining the model to `T`'s JSON schema.
     ///
     /// On a deserialization failure the prompt is augmented with the parser error
     /// and retried up to [`MAX_RETRIES`] times. Token usage is accumulated across
     /// every attempt, so [`Generated::usage`] (and [`LlmError::Parse`]'s `usage`)
     /// reflect the full cost of the call, not just the final round-trip.
+    ///
+    /// Each of the [`MAX_ATTEMPTS`] parse attempts may itself retry at the
+    /// transport level (see [`BackendOptions::max_retries`]), so the worst-case
+    /// number of underlying provider calls is the product of the two — bounded,
+    /// not unbounded, but larger than `MAX_ATTEMPTS` alone suggests.
     ///
     /// # Errors
     ///
@@ -185,7 +217,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{Generated, Llm, MAX_ATTEMPTS};
-    use crate::backend::{StructuredBackend, Usage};
+    use crate::backend::{BackendOptions, StructuredBackend, Usage};
     use crate::error::{BackendError, LlmError};
 
     #[derive(Debug, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -459,6 +491,17 @@ mod tests {
     fn should_reject_a_whitespace_only_model() {
         assert!(
             matches!(Llm::from_env("   "), Err(LlmError::EmptyModel)),
+            "a whitespace-only model string must be rejected as empty",
+        );
+    }
+
+    #[test]
+    fn should_reject_a_whitespace_only_model_with_options() {
+        assert!(
+            matches!(
+                Llm::from_env_with_options("   ", BackendOptions::default()),
+                Err(LlmError::EmptyModel)
+            ),
             "a whitespace-only model string must be rejected as empty",
         );
     }

@@ -2851,6 +2851,7 @@ name = "monomyth-gen"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dotenvy",
  "monomyth-core",
  "monomyth-frameworks",
  "monomyth-knowledge",
@@ -2892,6 +2893,8 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
  "thiserror",
  "tokio",
  "xberg",

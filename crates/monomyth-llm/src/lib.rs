@@ -29,9 +29,11 @@
 #![forbid(unsafe_code)]
 
 mod backend;
+mod cassette;
 mod error;
 mod llm;
 
-pub use backend::{StructuredBackend, Usage, XbergBackend};
-pub use error::{BackendError, LlmError};
+pub use backend::{BackendOptions, StructuredBackend, Usage, XbergBackend};
+pub use cassette::{Cassette, Interaction, RecordingBackend, ReplayBackend};
+pub use error::{BackendError, CassetteError, LlmError};
 pub use llm::{Generated, Llm, MAX_ATTEMPTS};
