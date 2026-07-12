@@ -5,11 +5,12 @@
 //! a fake; production uses [`XbergBackend`], which calls the xberg free functions
 //! and maps their results into crate-local types.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use xberg::core::config::LlmConfig;
 use xberg::types::LlmUsage;
 
@@ -218,26 +219,129 @@ fn provider_api_key(model: &str) -> Option<String> {
 /// so the request never reaches the model.
 const UNSUPPORTED_ROOT_SCHEMA_KEYS: [&str; 3] = ["$schema", "$id", "title"];
 
-/// Strip [`UNSUPPORTED_ROOT_SCHEMA_KEYS`] from the schema *root only*, unless the
-/// model is an `OpenAI` one (whose strict mode tolerates them, and whose path we
-/// keep byte-identical — mirroring xberg's own `additionalProperties` gating).
+/// The keys under which an emitter collects reusable subschema definitions.
+/// `schemars` (JSON Schema 2020-12) uses `$defs`; older drafts use
+/// `definitions`. Nested DTOs (e.g. a `Vec<CandidateItem>` field) make the
+/// emitter hoist the element schema into one of these pools and reference it by
+/// `$ref`, both of which Gemini's `responseSchema` validator rejects.
+const DEFINITION_KEYS: [&str; 2] = ["$defs", "definitions"];
+
+/// Rewrite `schema` into a form the target model's structured-output validator
+/// accepts, unless the model is an `OpenAI` one (whose strict mode tolerates the
+/// full draft, and whose path we keep byte-identical — mirroring xberg's own
+/// `additionalProperties` gating).
 ///
-/// Stripping only at the root is deliberate: these are schema keywords when they
-/// are direct keys of the schema object, but a user field literally named
-/// `title` would appear as a key *under* `properties`, where it must be
-/// preserved. A recursive strip would corrupt such a schema.
+/// Two rewrites, both required for Gemini:
+///
+/// 1. **Inline `$ref`/`$defs`.** Gemini rejects both the `$ref` keyword and a
+///    `$defs`/`definitions` pool, so a nested DTO fails outright. Every local
+///    `$ref` is replaced by its resolved definition (recursively, so a
+///    definition referencing another definition also inlines), sibling
+///    annotations such as `description` are preserved, and the now-empty
+///    definition pools are dropped from the root. A cyclic definition (which
+///    Gemini could not represent regardless) is left as an unresolved `$ref`
+///    rather than expanded forever.
+/// 2. **Strip [`UNSUPPORTED_ROOT_SCHEMA_KEYS`] at the root only.** These are
+///    schema keywords when they are direct keys of the schema object, but a user
+///    field literally named `title` appears as a key *under* `properties`, where
+///    it must survive. A recursive strip would corrupt such a schema, so the
+///    strip is deliberately root-scoped.
 fn sanitize_schema_for_model(model: &str, schema: &Value) -> Value {
     if model.starts_with("openai/") {
         return schema.clone();
     }
-    let Value::Object(map) = schema else {
+    let Value::Object(root) = schema else {
         return schema.clone();
     };
-    let mut cleaned = map.clone();
-    for key in UNSUPPORTED_ROOT_SCHEMA_KEYS {
-        cleaned.remove(key);
+
+    let mut definitions = Map::new();
+    for key in DEFINITION_KEYS {
+        if let Some(Value::Object(pool)) = root.get(key) {
+            for (name, definition) in pool {
+                definitions.insert(name.clone(), definition.clone());
+            }
+        }
+    }
+
+    let mut active = BTreeSet::new();
+    let inlined = inline_refs(schema, &definitions, &mut active);
+
+    let Value::Object(mut cleaned) = inlined else {
+        return inlined;
+    };
+    for key in UNSUPPORTED_ROOT_SCHEMA_KEYS
+        .iter()
+        .chain(DEFINITION_KEYS.iter())
+    {
+        cleaned.remove(*key);
     }
     Value::Object(cleaned)
+}
+
+/// The definition name a local `$ref` string points at (`#/$defs/<name>` or
+/// `#/definitions/<name>`), or `None` for any other reference form (which we
+/// leave untouched rather than guess at).
+fn local_definition_name(reference: &str) -> Option<&str> {
+    reference
+        .strip_prefix("#/$defs/")
+        .or_else(|| reference.strip_prefix("#/definitions/"))
+}
+
+/// Recursively replace every local `$ref` in `node` with its resolved definition
+/// from `definitions`, guarding against cyclic references via `active` (the set
+/// of definition names currently being expanded on this path).
+fn inline_refs(
+    node: &Value,
+    definitions: &Map<String, Value>,
+    active: &mut BTreeSet<String>,
+) -> Value {
+    match node {
+        Value::Object(map) => inline_object(map, definitions, active),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| inline_refs(item, definitions, active))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Inline a single object node: if it is a resolvable local `$ref`, splice in the
+/// referenced definition (carrying over sibling annotations); otherwise recurse
+/// into each value.
+fn inline_object(
+    map: &Map<String, Value>,
+    definitions: &Map<String, Value>,
+    active: &mut BTreeSet<String>,
+) -> Value {
+    // A cyclic ref cannot be represented by Gemini anyway; the `active` filter
+    // leaves it unresolved rather than recursing without end.
+    if let Some(Value::String(reference)) = map.get("$ref")
+        && let Some(name) = local_definition_name(reference)
+        && let Some(definition) = definitions.get(name).filter(|_| !active.contains(name))
+    {
+        active.insert(name.to_owned());
+        let mut resolved = inline_refs(definition, definitions, active);
+        active.remove(name);
+        // Overlay sibling keys (e.g. a `description` alongside the ref) onto the
+        // resolved definition so annotations are not lost.
+        if let Value::Object(ref mut resolved_map) = resolved {
+            for (key, value) in map {
+                if key == "$ref" {
+                    continue;
+                }
+                resolved_map.insert(key.clone(), inline_refs(value, definitions, active));
+            }
+        }
+        return resolved;
+    }
+
+    let mut out = Map::new();
+    for (key, value) in map {
+        out.insert(key.clone(), inline_refs(value, definitions, active));
+    }
+    Value::Object(out)
 }
 
 #[async_trait]
@@ -316,5 +420,119 @@ mod tests {
         let original = schemars_like();
         let cleaned = sanitize_schema_for_model("openai/gpt-4o-mini", &original);
         assert_eq!(cleaned, original, "the OpenAI path is byte-identical");
+    }
+
+    /// The shape `schemars` produces for a DTO with a nested `Vec<Item>` field:
+    /// the element schema is hoisted into `$defs` and referenced by `$ref`.
+    fn nested_schemars_like() -> serde_json::Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "CandidateLaw",
+            "type": "object",
+            "properties": {
+                "law": { "type": "string" },
+                "items": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/CandidateItem" }
+                }
+            },
+            "required": ["law", "items"],
+            "$defs": {
+                "CandidateItem": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "description": { "type": "string" }
+                    },
+                    "required": ["name", "description"]
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn inlines_refs_and_drops_defs_for_gemini() {
+        let cleaned = sanitize_schema_for_model("gemini/gemini-3.5-flash", &nested_schemars_like());
+        let object = cleaned.as_object().expect("schema stays an object");
+
+        assert!(!object.contains_key("$defs"), "the $defs pool is dropped");
+        assert!(!object.contains_key("$schema"), "root $schema is stripped");
+        assert!(!object.contains_key("title"), "root title is stripped");
+
+        let element = &object["properties"]["items"]["items"];
+        assert!(
+            element.get("$ref").is_none(),
+            "the array element $ref must be inlined, not left dangling"
+        );
+        assert_eq!(
+            element["type"],
+            json!("object"),
+            "the referenced definition is spliced in place of its $ref"
+        );
+        assert_eq!(element["required"], json!(["name", "description"]));
+
+        // Belt-and-braces: no `$ref` anywhere in the serialized output.
+        assert!(
+            !serde_json::to_string(&cleaned)
+                .expect("serializes")
+                .contains("$ref"),
+            "no $ref keyword may survive for Gemini"
+        );
+    }
+
+    #[test]
+    fn preserves_sibling_annotations_on_an_inlined_ref() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "child": { "$ref": "#/$defs/Child", "description": "the child node" }
+            },
+            "$defs": {
+                "Child": { "type": "object", "properties": { "x": { "type": "string" } } }
+            }
+        });
+        let cleaned = sanitize_schema_for_model("gemini/gemini-3.5-flash", &schema);
+        let child = &cleaned["properties"]["child"];
+
+        assert_eq!(
+            child["type"],
+            json!("object"),
+            "definition body is spliced in"
+        );
+        assert_eq!(
+            child["description"],
+            json!("the child node"),
+            "a sibling annotation alongside the $ref must survive"
+        );
+    }
+
+    #[test]
+    fn leaves_a_cyclic_ref_unresolved_rather_than_looping() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "self": { "$ref": "#/$defs/Node" } },
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": { "next": { "$ref": "#/$defs/Node" } }
+                }
+            }
+        });
+        // The outer ref inlines once; the self-reference inside it is left as a
+        // `$ref` (a cycle Gemini could not represent), and the call terminates.
+        let cleaned = sanitize_schema_for_model("gemini/gemini-3.5-flash", &schema);
+        let inner = &cleaned["properties"]["self"]["properties"]["next"];
+        assert_eq!(
+            inner["$ref"],
+            json!("#/$defs/Node"),
+            "the cyclic back-reference is left unresolved"
+        );
+    }
+
+    #[test]
+    fn leaves_nested_openai_schemas_untouched() {
+        let original = nested_schemars_like();
+        let cleaned = sanitize_schema_for_model("openai/gpt-4o-mini", &original);
+        assert_eq!(cleaned, original, "the OpenAI path keeps $ref/$defs intact");
     }
 }
