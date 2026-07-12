@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
-use monomyth_synthesis::{DraftRequest, DraftedLaw, draft_law};
+use monomyth_synthesis::{DraftRequest, DraftedLaw, LoopConfig, draft_law};
 use serde::Serialize;
 use time::OffsetDateTime;
 use time::macros::format_description;
@@ -203,9 +203,11 @@ pub(crate) async fn run_synthesize_law(
         law_id: law.clone(),
         domain,
         query,
+        sub_queries: Vec::new(),
         top_k,
         model,
         generated,
+        loop_config: LoopConfig::default(),
     };
     let drafted = draft_law(&knowledge, &llm, &request)
         .await
@@ -320,6 +322,9 @@ mod tests {
             passages: vec![passage],
             usage: None,
             candidate_sha256: "deadbeef".to_owned(),
+            final_score: 90.0,
+            iterations: 1,
+            verdict: None,
         }
     }
 

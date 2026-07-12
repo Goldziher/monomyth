@@ -15,9 +15,11 @@ pub enum SynthesisError {
     #[error("reference retrieval failed")]
     Retrieval(#[from] KnowledgeError),
 
-    /// The LLM distillation call failed (backend error, or output that would
-    /// not parse into [`crate::candidate::CandidateLaw`]).
-    #[error("law distillation LLM call failed")]
+    /// An LLM call failed: backend error, or output that would not parse into
+    /// the expected schema ([`crate::candidate::CandidateLaw`] for a
+    /// distillation/refine call, [`crate::judge::JudgeVerdict`] for a judge
+    /// call).
+    #[error("law drafting LLM call failed")]
     Generation(#[from] LlmError),
 
     /// Retrieval returned zero reference passages for the query.
@@ -35,7 +37,7 @@ pub enum SynthesisError {
     /// returned a passage that reports itself surfaceable
     /// ([`monomyth_knowledge::Passage::is_surfaceable`]).
     ///
-    /// This can only happen if the reference collection was mis-populated (a
+    /// This can only happen if the reference collection was incorrectly populated (a
     /// ship source ingested into it, or a stored namespace tag disagreeing with
     /// the ledger). It is a licensing-invariant breach — defense in depth atop
     /// `monomyth-knowledge`'s own ingest/retrieval gates — so the pipeline hard

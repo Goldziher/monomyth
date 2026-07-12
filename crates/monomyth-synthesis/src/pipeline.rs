@@ -1,9 +1,13 @@
 //! The build-time law-drafting pipeline (ADR-0016 Phase 2b/2c).
 //!
-//! [`draft_law`] composes the full retrieve -> distill -> gate -> stamp
-//! sequence: retrieve reference-namespace passages as priors, ask the LLM to
-//! distill an abstract structural taxonomy from them, run the machine-checked
-//! anti-leak gate, and stamp a pre-review [`LawArtifact`]. The artifact's
+//! [`draft_law`] composes the full retrieve -> distill -> judge -> refine ->
+//! gate -> stamp sequence: gather multi-query reference-namespace passages as
+//! priors, ask the LLM to distill an abstract structural taxonomy from them,
+//! score the candidate with an LLM judge against weighted criteria, and — while
+//! the score is below a rising passing bar and iterations remain — retrieve
+//! targeted grounding for the phases the judge names missing and re-draft. The
+//! best-scoring candidate then runs the machine-checked anti-leak gate and is
+//! stamped into a pre-review [`LawArtifact`]. The artifact's
 //! `synthesis.reviewed_by` is always left empty here — [`load_law`] refuses to
 //! load a law with an empty reviewer, so a drafted candidate is structurally
 //! incapable of shipping until a human reviews it and fills that field in.
@@ -12,13 +16,15 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use monomyth_frameworks::{LawArtifact, LawItem, LawSynthesis};
-use monomyth_knowledge::{Knowledge, KnowledgeQuery, Passage};
+use monomyth_knowledge::{Knowledge, Passage};
 use monomyth_llm::{Generated, Llm, Usage};
 use sha2::{Digest, Sha256};
 
 use crate::antileak::verify_no_verbatim;
 use crate::candidate::CandidateLaw;
 use crate::error::SynthesisError;
+use crate::judge::{DEFAULT_CRITERIA, JudgeVerdict, judge_candidate, weighted_score};
+use crate::retrieval::{DEFAULT_PER_QUERY_TOP_K, MAX_GROUNDING_PASSAGES, gather_grounding};
 
 /// The `schemars`/`Llm::generate` schema name for [`CandidateLaw`].
 const CANDIDATE_SCHEMA_NAME: &str = "CandidateLaw";
@@ -43,6 +49,59 @@ const ARTIFACT_TIER_NOTE: &str = "Synthesized from reference-namespace priors vi
      by the pipeline, not the model. Requires human review (synthesis.reviewed_by) before it may \
      load.";
 
+/// Default maximum number of judge/refine iterations in the feedback loop.
+///
+/// Three iterations (one initial draft plus up to two refinements) is enough
+/// headroom to recover from an under-collected first pass without letting a
+/// stuck loop burn unbounded LLM calls.
+const DEFAULT_MAX_ITERATIONS: u32 = 3;
+
+/// Default weighted score a candidate must reach on the first judged iteration
+/// to be accepted outright.
+const DEFAULT_INITIAL_PASSING_SCORE: f64 = 70.0;
+
+/// Default amount the passing bar rises per iteration.
+///
+/// The bar rises rather than staying flat so that a candidate which has
+/// already consumed a refinement round is held to a somewhat higher standard
+/// than one that passed on the first try — the loop is meant to converge, not
+/// to let a mediocre candidate squeak through on a technicality after
+/// spending its retries.
+const DEFAULT_SCORE_INCREMENT: f64 = 5.0;
+
+/// Configuration for the judge feedback loop in [`draft_law`].
+#[derive(Clone, Debug)]
+pub struct LoopConfig {
+    /// Maximum number of judge/refine iterations. The initial draft always
+    /// happens; this bounds how many times the loop may judge-and-refine
+    /// after it.
+    pub max_iterations: u32,
+    /// The weighted score (see [`weighted_score`]) a candidate must reach on
+    /// the first iteration to be accepted.
+    pub initial_passing_score: f64,
+    /// The amount added to the passing bar on each subsequent iteration (see
+    /// [`DEFAULT_SCORE_INCREMENT`] for why the bar rises rather than staying
+    /// flat).
+    pub score_increment: f64,
+    /// `top_k` passed to each individual query in [`gather_grounding`].
+    pub per_query_top_k: u32,
+    /// Maximum total grounding passages retained by [`gather_grounding`]
+    /// after dedup, across all queries.
+    pub max_grounding: usize,
+}
+
+impl Default for LoopConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: DEFAULT_MAX_ITERATIONS,
+            initial_passing_score: DEFAULT_INITIAL_PASSING_SCORE,
+            score_increment: DEFAULT_SCORE_INCREMENT,
+            per_query_top_k: DEFAULT_PER_QUERY_TOP_K,
+            max_grounding: MAX_GROUNDING_PASSAGES,
+        }
+    }
+}
+
 /// A request to draft one candidate law.
 #[derive(Clone, Debug)]
 pub struct DraftRequest {
@@ -53,6 +112,11 @@ pub struct DraftRequest {
     pub domain: String,
     /// The retrieval query issued against the reference collection.
     pub query: String,
+    /// Additional coverage queries unioned with `query` for the initial
+    /// retrieval (see [`gather_grounding`]). Empty is fine — the loop still
+    /// works from `query` alone, and gains targeted queries as the judge
+    /// names missing phases.
+    pub sub_queries: Vec<String>,
     /// Maximum number of reference passages to retrieve as grounding.
     pub top_k: u32,
     /// A provenance label for the model that produced the candidate (e.g.
@@ -63,36 +127,67 @@ pub struct DraftRequest {
     /// [`LawSynthesis::generated`]. The crate reads no wall clock, so
     /// generation stays deterministic and reproducible from its inputs.
     pub generated: String,
+    /// Configuration for the judge feedback loop.
+    pub loop_config: LoopConfig,
 }
 
 /// The result of a successful [`draft_law`] call.
 #[derive(Clone, Debug)]
 pub struct DraftedLaw {
-    /// The raw model output, before pipeline stamping.
+    /// The raw model output, before pipeline stamping. This is the
+    /// best-scoring candidate across all iterations, not necessarily the
+    /// last one drafted.
     pub candidate: CandidateLaw,
     /// The pre-review artifact. `synthesis.reviewed_by` is always empty, so
     /// [`monomyth_frameworks::load_law`] refuses to load it until a human
     /// reviews and stamps a reviewer.
     pub artifact: LawArtifact,
-    /// The reference passages retrieved as grounding for the distillation.
+    /// The reference passages retrieved as grounding for the distillation,
+    /// including any targeted passages folded in by mid-loop refinement.
     pub passages: Vec<Passage>,
     /// Token usage for the distillation call, when the backend reported one.
+    ///
+    /// Reports only the usage of the call that produced [`Self::candidate`]
+    /// (not the judge calls or any discarded refinement drafts), so it
+    /// answers "what did the accepted candidate cost to draft".
     pub usage: Option<Usage>,
     /// The sha256 hex digest of the candidate's canonical JSON, for audit
     /// trail (also recorded in [`LawSynthesis::candidate_sha256`]).
     pub candidate_sha256: String,
+    /// The best-scoring candidate's weighted judge score (see
+    /// [`weighted_score`]).
+    pub final_score: f64,
+    /// How many judge/refine iterations ran before the loop stopped
+    /// (accepted, or exhausted [`LoopConfig::max_iterations`]).
+    pub iterations: u32,
+    /// The best-scoring candidate's judge verdict, when at least one judge
+    /// call succeeded.
+    pub verdict: Option<JudgeVerdict>,
 }
 
-/// Draft one candidate law artifact from reference-namespace priors.
+/// One iteration's candidate together with the state needed to track the
+/// best-scoring candidate across the loop.
+struct IterationResult {
+    candidate: CandidateLaw,
+    usage: Option<Usage>,
+    score: f64,
+    verdict: JudgeVerdict,
+}
+
+/// Draft one candidate law artifact from reference-namespace priors, via an
+/// LLM-judge feedback loop.
 ///
-/// Steps: retrieve reference passages for `request.query`; refuse if none are
-/// found ([`SynthesisError::NoReferenceGrounding`]) or if any retrieved
-/// passage reports itself surfaceable
-/// ([`SynthesisError::SurfaceablePassageInReferenceQuery`]); ask `llm` to
-/// distill an abstract taxonomy from the passages; run the anti-leak gate
-/// over the candidate's text against the retrieved passages
+/// Steps: gather multi-query grounding for `request.query` plus
+/// `request.sub_queries`; refuse if none are found
+/// ([`SynthesisError::NoReferenceGrounding`]); ask the LLM to distill an
+/// initial candidate; then, for up to `request.loop_config.max_iterations`,
+/// judge the candidate against [`DEFAULT_CRITERIA`], accept it once its
+/// weighted score clears a rising bar, or else retrieve targeted grounding for
+/// the judge's named missing phases and ask the LLM to refine the candidate.
+/// The best-scoring candidate across all iterations then runs the anti-leak
+/// gate over the full accumulated grounding
 /// ([`SynthesisError::VerbatimOverlap`] on a hit — no artifact is constructed
-/// in that case); then stamp a pre-review [`LawArtifact`].
+/// in that case) and is stamped into a pre-review [`LawArtifact`].
 ///
 /// # Errors
 ///
@@ -104,52 +199,177 @@ pub async fn draft_law(
     llm: &Llm,
     request: &DraftRequest,
 ) -> Result<DraftedLaw, SynthesisError> {
-    let passages = knowledge
-        .retrieve(KnowledgeQuery::reference(&request.query, request.top_k))
-        .await?;
+    let config = &request.loop_config;
 
-    if passages.is_empty() {
+    let mut queries = vec![request.query.clone()];
+    queries.extend(request.sub_queries.iter().cloned());
+    let mut grounding = gather_grounding(
+        knowledge,
+        &queries,
+        config.per_query_top_k,
+        config.max_grounding,
+    )
+    .await?;
+
+    if grounding.is_empty() {
         return Err(SynthesisError::NoReferenceGrounding {
             query: request.query.clone(),
         });
     }
-    if let Some(surfaceable) = passages.iter().find(|passage| passage.is_surfaceable()) {
-        return Err(SynthesisError::SurfaceablePassageInReferenceQuery {
-            source_id: surfaceable.source_id.clone(),
-        });
-    }
 
-    let prompt = build_distillation_prompt(&passages);
+    let initial_prompt = build_distillation_prompt(&grounding);
     let Generated {
-        value: candidate,
-        usage,
+        value: mut candidate,
+        usage: mut current_usage,
     } = llm
-        .generate::<CandidateLaw>(&prompt, CANDIDATE_SCHEMA_NAME)
+        .generate::<CandidateLaw>(&initial_prompt, CANDIDATE_SCHEMA_NAME)
         .await?;
 
-    verify_candidate_against_passages(&candidate, &passages)?;
+    let mut best: Option<IterationResult> = None;
+    let mut iterations = 0;
 
-    let candidate_sha256 = candidate_sha256(&candidate);
-    let artifact = stamp_artifact(request, &candidate, &passages, &candidate_sha256);
+    for iteration_index in 0..config.max_iterations {
+        iterations += 1;
+        let bar =
+            config.initial_passing_score + f64::from(iteration_index) * config.score_increment;
+
+        let verdict = judge_candidate(llm, &candidate, &grounding, DEFAULT_CRITERIA).await?;
+        let score = weighted_score(&verdict, DEFAULT_CRITERIA);
+
+        let is_new_best = best
+            .as_ref()
+            .is_none_or(|current_best| score > current_best.score);
+        if is_new_best {
+            best = Some(IterationResult {
+                candidate: candidate.clone(),
+                usage: current_usage.clone(),
+                score,
+                verdict: verdict.clone(),
+            });
+        }
+
+        if score >= bar {
+            break;
+        }
+
+        let has_more_iterations = iteration_index + 1 < config.max_iterations;
+        if !has_more_iterations {
+            break;
+        }
+
+        if !verdict.missing_phases.is_empty() {
+            let targeted = gather_grounding(
+                knowledge,
+                &verdict.missing_phases,
+                config.per_query_top_k,
+                config.max_grounding,
+            )
+            .await?;
+            grounding = merge_grounding(grounding, targeted, config.max_grounding);
+        }
+
+        let refine_prompt = build_refine_prompt(&candidate, &verdict, &grounding);
+        let Generated {
+            value: refined,
+            usage: refined_usage,
+        } = llm
+            .generate::<CandidateLaw>(&refine_prompt, CANDIDATE_SCHEMA_NAME)
+            .await?;
+        candidate = refined;
+        current_usage = refined_usage;
+    }
+
+    let IterationResult {
+        candidate: best_candidate,
+        usage: best_usage,
+        score: final_score,
+        verdict: best_verdict,
+    } = best.unwrap_or(IterationResult {
+        candidate,
+        usage: current_usage,
+        score: 0.0,
+        verdict: JudgeVerdict {
+            criteria: Vec::new(),
+            missing_phases: Vec::new(),
+            instructions: Vec::new(),
+        },
+    });
+
+    verify_candidate_against_passages(&best_candidate, &grounding)?;
+
+    let candidate_sha256 = candidate_sha256(&best_candidate);
+    let artifact = stamp_artifact(request, &best_candidate, &grounding, &candidate_sha256);
 
     Ok(DraftedLaw {
-        candidate,
+        candidate: best_candidate,
         artifact,
-        passages,
-        usage,
+        passages: grounding,
+        usage: best_usage,
         candidate_sha256,
+        final_score,
+        iterations,
+        verdict: Some(best_verdict),
     })
 }
 
-/// Build the distillation prompt.
+/// Merge `additional` passages into `existing`, deduplicating by
+/// `(source_id, normalized text)` (keeping the higher score on a collision),
+/// then re-sort by score descending and truncate to `cap`.
+///
+/// Reuses the same normalization rule as [`crate::retrieval::gather_grounding`]
+/// so a passage already present from the initial retrieval is recognized as a
+/// duplicate when it resurfaces from a targeted mid-loop query.
+fn merge_grounding(existing: Vec<Passage>, additional: Vec<Passage>, cap: usize) -> Vec<Passage> {
+    let mut deduped: std::collections::BTreeMap<(String, String), Passage> =
+        std::collections::BTreeMap::new();
+
+    for passage in existing.into_iter().chain(additional) {
+        let key = (
+            passage.source_id.clone(),
+            normalize_for_merge(&passage.text),
+        );
+        match deduped.get(&key) {
+            Some(current) if current.score >= passage.score => {}
+            _ => {
+                deduped.insert(key, passage);
+            }
+        }
+    }
+
+    let mut merged: Vec<Passage> = deduped.into_values().collect();
+    merged.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    merged.truncate(cap);
+    merged
+}
+
+/// Normalize `text` for dedup comparison, matching
+/// [`crate::retrieval::gather_grounding`]'s normalization rule so a passage
+/// merged mid-loop is recognized as a duplicate of one already present.
+fn normalize_for_merge(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Build the initial distillation prompt.
 ///
 /// The prompt is the anti-leak gate's first line of defense (the machine-checked
 /// gate in [`crate::antileak`] is the second, structural backstop): it instructs
 /// the model to output only an abstract structural taxonomy — general
 /// stage/role/phase names and one-sentence structural descriptions — and
 /// explicitly forbids quoting, close paraphrase, or copying wording/proper
-/// nouns from the supplied passages. The passages are included as background
-/// context the model reasons *over*, not text it is asked to reproduce.
+/// nouns from the supplied passages. It also demands exhaustiveness: the
+/// dominant failure mode observed in practice is under-collection (a source
+/// supporting a dozen distinct phases flattened into three or four coarse
+/// buckets), so the prompt explicitly asks for macro-tier granularity across
+/// the whole arc, including the return/restoration, rather than stopping once
+/// a plausible-looking handful of items has been produced.
 fn build_distillation_prompt(passages: &[Passage]) -> String {
     let mut prompt = String::from(
         "You are distilling an ABSTRACT STRUCTURAL TAXONOMY from the reference passages below. \
@@ -157,6 +377,13 @@ fn build_distillation_prompt(passages: &[Passage]) -> String {
          or character structure that recurs across the material.\n\n\
          Output a taxonomy: a short title, and an ordered list of items, each with a general \
          name (a stage, role, or phase label) and a one-sentence ABSTRACT structural description.\n\n\
+         Exhaustiveness is critical: enumerate EVERY distinct structural phase implied by the \
+         grounding, in narrative order, across the WHOLE arc — from the initial departure, \
+         through the trials and crux, to the return and restoration. Do not merge two distinct \
+         phases into one coarse bucket just because they are adjacent; if the grounding supports \
+         separating a beat into two phases, list them as two items. When the material supports \
+         it, target macro-tier granularity: on the order of a dozen or more distinct phases, not \
+         a handful.\n\n\
          Strict rules:\n\
          - Do NOT quote any passage.\n\
          - Do NOT closely paraphrase any passage's wording or sentence structure.\n\
@@ -165,12 +392,69 @@ fn build_distillation_prompt(passages: &[Passage]) -> String {
          - Describe the STRUCTURE only (the recurring pattern), never a specific instance of it.\n\n\
          Reference passages (priors only, never to be reproduced):\n",
     );
+    append_passages(&mut prompt, passages);
+    prompt
+}
+
+/// Build the refine prompt for a mid-loop iteration.
+///
+/// Shows the model its own current candidate, the judge's `missing_phases`
+/// and `instructions`, and the (possibly augmented) grounding, and instructs
+/// it to EXPAND or refine the candidate — adding the missing phases and
+/// addressing the instructions — while returning a complete, self-contained
+/// [`CandidateLaw`] (not a diff) and keeping the same anti-leak-by-construction
+/// rules as the initial distillation prompt.
+fn build_refine_prompt(
+    candidate: &CandidateLaw,
+    verdict: &JudgeVerdict,
+    grounding: &[Passage],
+) -> String {
+    let mut prompt = String::from(
+        "You are REFINING an abstract structural taxonomy you previously drafted, based on an \
+         evaluator's feedback. Return a COMPLETE, self-contained taxonomy (title and the full \
+         ordered list of items) — not a diff or a list of additions only.\n\n\
+         Your current candidate:\n",
+    );
+    let _ = writeln!(prompt, "Title: {}", candidate.title);
+    for (index, item) in candidate.items.iter().enumerate() {
+        let position = index + 1;
+        let _ = writeln!(prompt, "{position}. {}: {}", item.name, item.description);
+    }
+
+    prompt.push_str("\nThe evaluator found these structural phases missing or underdeveloped:\n");
+    for phase in &verdict.missing_phases {
+        let _ = writeln!(prompt, "- {phase}");
+    }
+
+    prompt.push_str("\nThe evaluator's improvement instructions:\n");
+    for instruction in &verdict.instructions {
+        let _ = writeln!(prompt, "- {instruction}");
+    }
+
+    prompt.push_str(
+        "\nExpand and refine the candidate to add the missing phases (in correct narrative order \
+         relative to the existing items) and address the instructions, while keeping every \
+         existing item that the evaluator did not flag as a problem.\n\n\
+         Strict rules (unchanged from the original draft):\n\
+         - Do NOT quote any passage.\n\
+         - Do NOT closely paraphrase any passage's wording or sentence structure.\n\
+         - Do NOT copy proper nouns, character names, or specific story details from the \
+           passages into your output.\n\
+         - Describe the STRUCTURE only (the recurring pattern), never a specific instance of it.\n\n\
+         Reference passages (priors only, never to be reproduced):\n",
+    );
+    append_passages(&mut prompt, grounding);
+    prompt
+}
+
+/// Append numbered `passages` to `prompt`, shared by the distillation and
+/// refine prompt builders.
+fn append_passages(prompt: &mut String, passages: &[Passage]) {
     for (index, passage) in passages.iter().enumerate() {
         let position = index + 1;
         // `write!` to a `String` never fails, so the result is discarded.
         let _ = writeln!(prompt, "\n[{position}] {}", passage.text);
     }
-    prompt
 }
 
 /// Run the anti-leak gate over every text field of `candidate` against every

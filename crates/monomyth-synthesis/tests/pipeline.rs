@@ -1,14 +1,15 @@
 //! Offline integration tests for [`draft_law`], exercising the full
-//! retrieve -> distill -> gate -> stamp pipeline against an in-memory
-//! [`Knowledge`] and a canned [`StructuredBackend`]. No network calls.
+//! gather-grounding -> distill -> judge -> refine -> gate -> stamp pipeline
+//! against an in-memory [`Knowledge`] and a canned, schema-dispatching
+//! [`StructuredBackend`]. No network calls.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use monomyth_frameworks::load_law;
 use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, KnowledgeQuery, Ledger};
 use monomyth_llm::{BackendError, Llm, StructuredBackend, Usage};
-use monomyth_synthesis::{DraftRequest, SynthesisError, draft_law};
+use monomyth_synthesis::{DraftRequest, LoopConfig, SynthesisError, draft_law};
 use serde_json::{Value, json};
 use xberg_rag::pipeline::Embedder;
 use xberg_rag::{InMemoryVectorStore, RagResult};
@@ -73,17 +74,32 @@ async fn knowledge_with_reference_text() -> Knowledge {
     knowledge
 }
 
-/// A canned [`StructuredBackend`] that returns a fixed JSON response for
-/// `complete_json`, regardless of prompt or schema name. This injects the
-/// transport seam at the crate boundary (`StructuredBackend` is public) — it
-/// is not mocking an internal service.
+/// A canned [`StructuredBackend`] that dispatches on `schema_name`: successive
+/// calls for `"CandidateLaw"` pop from a queued list of candidate responses
+/// (in order), and successive calls for `"JudgeVerdict"` pop from a queued
+/// list of verdict responses (in order). This injects the transport seam at
+/// the crate boundary (`StructuredBackend` is public) — it is not mocking an
+/// internal service.
 struct CannedBackend {
-    response: Value,
+    candidate_responses: Mutex<Vec<Value>>,
+    verdict_responses: Mutex<Vec<Value>>,
 }
 
 impl CannedBackend {
-    fn new(response: Value) -> Self {
-        Self { response }
+    /// A backend that always returns the same candidate response, with no
+    /// judge responses queued (for tests that never reach a judge call).
+    fn single_candidate(response: Value) -> Self {
+        Self {
+            candidate_responses: Mutex::new(vec![response]),
+            verdict_responses: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn new(candidate_responses: Vec<Value>, verdict_responses: Vec<Value>) -> Self {
+        Self {
+            candidate_responses: Mutex::new(candidate_responses),
+            verdict_responses: Mutex::new(verdict_responses),
+        }
     }
 }
 
@@ -92,17 +108,42 @@ impl StructuredBackend for CannedBackend {
     async fn complete_json(
         &self,
         _prompt: &str,
-        _schema_name: &str,
+        schema_name: &str,
         _schema: &Value,
     ) -> Result<(Value, Option<Usage>), BackendError> {
-        Ok((
-            self.response.clone(),
-            Some(Usage {
-                prompt_tokens: Some(100),
-                completion_tokens: Some(50),
-                total_tokens: Some(150),
-            }),
-        ))
+        let usage = Some(Usage {
+            prompt_tokens: Some(100),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+        });
+
+        let response = match schema_name {
+            "CandidateLaw" => {
+                let mut responses = self.candidate_responses.lock().expect("lock poisoned");
+                if responses.is_empty() {
+                    return Err(BackendError::new(
+                        "no scripted CandidateLaw responses remain",
+                    ));
+                }
+                responses.remove(0)
+            }
+            "JudgeVerdict" => {
+                let mut responses = self.verdict_responses.lock().expect("lock poisoned");
+                if responses.is_empty() {
+                    return Err(BackendError::new(
+                        "no scripted JudgeVerdict responses remain",
+                    ));
+                }
+                responses.remove(0)
+            }
+            other => {
+                return Err(BackendError::new(format!(
+                    "unexpected schema name: {other}"
+                )));
+            }
+        };
+
+        Ok((response, usage))
     }
 
     async fn complete_text(&self, _prompt: &str) -> Result<(String, Option<Usage>), BackendError> {
@@ -130,6 +171,28 @@ fn clean_candidate_json() -> Value {
     })
 }
 
+/// A richer clean paraphrase adding a third item, used as the "refined"
+/// candidate in the refine-then-accept test.
+fn richer_candidate_json() -> Value {
+    json!({
+        "title": "The Mediating Plea",
+        "items": [
+            {
+                "name": "Petition",
+                "description": "A dependent figure appeals to a higher authority for aid it cannot compel."
+            },
+            {
+                "name": "Threshold Stand",
+                "description": "An intermediary occupies the space between two opposing forces until resolution."
+            },
+            {
+                "name": "Resolution",
+                "description": "The standoff concludes and balance is restored between the two poles."
+            }
+        ]
+    })
+}
+
 /// A candidate embedding a verbatim >=8-word span from
 /// [`SYNTHETIC_REFERENCE_TEXT`] ("the suppliant implores a power in authority
 /// to grant"), which must trip the anti-leak gate.
@@ -149,14 +212,47 @@ fn leaking_candidate_json() -> Value {
     })
 }
 
+/// A high judge verdict clearing the default initial passing bar (70.0).
+fn high_verdict_json() -> Value {
+    json!({
+        "criteria": [
+            { "name": "Exhaustiveness", "score": 90, "rationale": "covers the arc well" },
+            { "name": "Source grounding", "score": 90, "rationale": "grounded" },
+            { "name": "Ordering & non-overlap", "score": 90, "rationale": "ordered" },
+            { "name": "Abstraction", "score": 90, "rationale": "abstract" },
+            { "name": "Tier fit", "score": 90, "rationale": "macro-tier" }
+        ],
+        "missing_phases": [],
+        "instructions": []
+    })
+}
+
+/// A low judge verdict below the default initial passing bar (70.0), naming
+/// a missing phase to drive a targeted retrieval and refinement.
+fn low_verdict_json() -> Value {
+    json!({
+        "criteria": [
+            { "name": "Exhaustiveness", "score": 40, "rationale": "missing the resolution phase" },
+            { "name": "Source grounding", "score": 60, "rationale": "mostly grounded" },
+            { "name": "Ordering & non-overlap", "score": 60, "rationale": "ordered so far" },
+            { "name": "Abstraction", "score": 60, "rationale": "abstract enough" },
+            { "name": "Tier fit", "score": 40, "rationale": "too coarse" }
+        ],
+        "missing_phases": ["a mediator between two poles"],
+        "instructions": ["add a resolution phase"]
+    })
+}
+
 fn base_request() -> DraftRequest {
     DraftRequest {
         law_id: "mediating_plea".to_owned(),
         domain: "myth".to_owned(),
         query: "a plea to a powerful protector".to_owned(),
+        sub_queries: Vec::new(),
         top_k: 5,
         model: "anthropic/claude-sonnet-4-20250514".to_owned(),
         generated: "2026-07-11".to_owned(),
+        loop_config: LoopConfig::default(),
     }
 }
 
@@ -164,7 +260,10 @@ fn base_request() -> DraftRequest {
 async fn draft_law_happy_path_produces_a_pre_review_artifact_that_load_law_rejects_until_reviewed()
 {
     let knowledge = knowledge_with_reference_text().await;
-    let llm = Llm::new(Box::new(CannedBackend::new(clean_candidate_json())));
+    let llm = Llm::new(Box::new(CannedBackend::new(
+        vec![clean_candidate_json()],
+        vec![high_verdict_json()],
+    )));
     let request = base_request();
 
     let drafted = draft_law(&knowledge, &llm, &request)
@@ -216,6 +315,20 @@ async fn draft_law_happy_path_produces_a_pre_review_artifact_that_load_law_rejec
     );
     assert!(drafted.usage.is_some(), "usage must be reported");
 
+    assert_eq!(
+        drafted.iterations, 1,
+        "a high first verdict must accept on the first judged iteration"
+    );
+    assert!(
+        (drafted.final_score - 90.0).abs() < 1e-9,
+        "final_score must equal the accepted verdict's weighted score, got {}",
+        drafted.final_score
+    );
+    assert!(
+        drafted.verdict.is_some(),
+        "the best candidate's verdict must be recorded"
+    );
+
     let serialized = serde_json::to_string(artifact).expect("artifact serializes");
     let load_error =
         load_law(&serialized).expect_err("an unreviewed candidate must be rejected by load_law");
@@ -237,7 +350,9 @@ async fn draft_law_happy_path_produces_a_pre_review_artifact_that_load_law_rejec
 #[tokio::test]
 async fn draft_law_refuses_when_reference_retrieval_is_empty() {
     let knowledge = test_knowledge();
-    let llm = Llm::new(Box::new(CannedBackend::new(clean_candidate_json())));
+    let llm = Llm::new(Box::new(CannedBackend::single_candidate(
+        clean_candidate_json(),
+    )));
     let request = base_request();
 
     let error = draft_law(&knowledge, &llm, &request)
@@ -253,14 +368,92 @@ async fn draft_law_refuses_when_reference_retrieval_is_empty() {
 }
 
 #[tokio::test]
-async fn draft_law_trips_the_anti_leak_gate_and_returns_no_artifact() {
+async fn draft_law_refines_after_a_low_verdict_then_accepts_the_richer_candidate() {
     let knowledge = knowledge_with_reference_text().await;
-    let llm = Llm::new(Box::new(CannedBackend::new(leaking_candidate_json())));
+    let llm = Llm::new(Box::new(CannedBackend::new(
+        vec![clean_candidate_json(), richer_candidate_json()],
+        vec![low_verdict_json(), high_verdict_json()],
+    )));
     let request = base_request();
 
-    let error = draft_law(&knowledge, &llm, &request)
+    let drafted = draft_law(&knowledge, &llm, &request)
         .await
-        .expect_err("a candidate embedding a verbatim source span must be refused");
+        .expect("a refine-then-accept run must succeed");
+
+    assert_eq!(
+        drafted.iterations, 2,
+        "must have judged twice: once low, once high"
+    );
+    assert_eq!(
+        drafted.artifact.count, 3,
+        "the accepted candidate must be the richer, three-item one"
+    );
+    assert_eq!(drafted.artifact.items[2].name, "Resolution");
+    assert!(
+        (drafted.final_score - 90.0).abs() < 1e-9,
+        "final_score must reflect the accepted (high) verdict, got {}",
+        drafted.final_score
+    );
+}
+
+#[tokio::test]
+async fn draft_law_keeps_the_best_candidate_when_no_iteration_ever_passes() {
+    let knowledge = knowledge_with_reference_text().await;
+    // Three low verdicts, none clearing even the initial (lowest) bar, so the
+    // loop runs to `max_iterations` and returns the best (first) scored
+    // candidate rather than looping forever.
+    let llm = Llm::new(Box::new(CannedBackend::new(
+        vec![
+            clean_candidate_json(),
+            richer_candidate_json(),
+            richer_candidate_json(),
+        ],
+        vec![low_verdict_json(), low_verdict_json(), low_verdict_json()],
+    )));
+    let mut request = base_request();
+    request.loop_config.max_iterations = 3;
+
+    let drafted = draft_law(&knowledge, &llm, &request)
+        .await
+        .expect("a never-passing run must still return the best-scored candidate");
+
+    assert_eq!(
+        drafted.iterations, 3,
+        "must exhaust max_iterations when no verdict ever clears its bar"
+    );
+    // Every low_verdict_json() scores identically, so the *first* judged
+    // candidate remains best (later ones don't strictly exceed it).
+    assert_eq!(
+        drafted.artifact.count, 2,
+        "must keep the first (initial) candidate, since no later score exceeded it"
+    );
+    let expected_low_score = {
+        // (40*1.0 + 60*0.9 + 60*0.7 + 60*0.8 + 40*0.6) / (1.0+0.9+0.7+0.8+0.6)
+        let numerator =
+            40.0f64.mul_add(1.0, 60.0 * 0.9) + 60.0f64.mul_add(0.7, 60.0 * 0.8) + 40.0 * 0.6;
+        let denominator = 1.0 + 0.9 + 0.7 + 0.8 + 0.6;
+        numerator / denominator
+    };
+    assert!(
+        (drafted.final_score - expected_low_score).abs() < 1e-9,
+        "final_score must equal the low verdict's weighted score, got {} expected {}",
+        drafted.final_score,
+        expected_low_score
+    );
+}
+
+#[tokio::test]
+async fn draft_law_trips_the_anti_leak_gate_even_when_the_judge_scores_it_high() {
+    let knowledge = knowledge_with_reference_text().await;
+    let llm = Llm::new(Box::new(CannedBackend::new(
+        vec![leaking_candidate_json()],
+        vec![high_verdict_json()],
+    )));
+    let request = base_request();
+
+    let error = draft_law(&knowledge, &llm, &request).await.expect_err(
+        "a candidate embedding a verbatim source span must be refused regardless of judge score",
+    );
 
     match error {
         SynthesisError::VerbatimOverlap {
