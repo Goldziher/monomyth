@@ -31,3 +31,4 @@ CLAUDE.md
 
 # basemind index cache (regenerable; the committed basemind.toml is the source of truth)
 .basemind/
+poly.local.toml
