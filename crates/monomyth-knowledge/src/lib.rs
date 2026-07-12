@@ -55,8 +55,7 @@ use xberg_rag::pipeline::{
     retrieve as pipeline_retrieve,
 };
 use xberg_rag::{
-    CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveMode, RetrieveQuery,
-    RetrievedChunk,
+    CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveQuery, RetrievedChunk,
 };
 
 #[cfg(feature = "acquire")]
@@ -430,12 +429,17 @@ impl Knowledge {
             .collect()
     }
 
-    /// The reference (priors-only) retrieval path: hybrid search (vector +
-    /// full-text RRF) for relevance, over-fetch + near-duplicate dedup for
-    /// *distinct* coverage. Falls back to vector search on a store that does not
-    /// implement hybrid (the in-memory test store returns
-    /// [`RagError::UnsupportedMode`]), so behaviour degrades gracefully rather
-    /// than erroring.
+    /// The reference (priors-only) retrieval path: dense vector search with
+    /// over-fetch + near-duplicate dedup for *distinct* coverage. A single long
+    /// source chunked with overlap otherwise returns several near-identical
+    /// passages, starving the distillation of distinct grounding.
+    ///
+    /// Vector (not hybrid) is deliberate: xberg's hybrid mode passes `query_text`
+    /// straight to FTS5's `MATCH` parser, which errors on ordinary punctuation in
+    /// a natural-language query (an apostrophe, colon, or comma). Robust hybrid
+    /// would require pre-embedding the raw query for the dense arm and passing a
+    /// separately FTS5-escaped term query for the lexical arm; until that lands,
+    /// dense search plus dedup and multi-query coverage is the safe path.
     async fn retrieve_reference(
         &self,
         text: &str,
@@ -443,8 +447,7 @@ impl Knowledge {
     ) -> Result<Vec<Passage>, KnowledgeError> {
         self.ensure_collection(REFERENCE_COLLECTION).await?;
         let fetch_k = top_k.saturating_mul(REFERENCE_OVERFETCH).max(top_k);
-        let build = |mode| RetrieveQuery {
-            mode,
+        let query = RetrieveQuery {
             query_text: Some(text.to_owned()),
             filter: None,
             include_content: true,
@@ -452,17 +455,10 @@ impl Knowledge {
             ..RetrieveQuery::vector(fetch_k)
         };
 
-        let chunks = match self
-            .run_retrieve(REFERENCE_COLLECTION, build(RetrieveMode::Hybrid))
+        let chunks = self
+            .run_retrieve(REFERENCE_COLLECTION, query)
             .await
-        {
-            Ok(chunks) => chunks,
-            Err(RagError::UnsupportedMode { .. }) => self
-                .run_retrieve(REFERENCE_COLLECTION, build(RetrieveMode::Vector))
-                .await
-                .map_err(|error| KnowledgeError::store("retrieving chunks", error))?,
-            Err(error) => return Err(KnowledgeError::store("retrieving chunks", error)),
-        };
+            .map_err(|error| KnowledgeError::store("retrieving chunks", error))?;
 
         dedup_chunks(chunks, top_k as usize)
             .into_iter()
