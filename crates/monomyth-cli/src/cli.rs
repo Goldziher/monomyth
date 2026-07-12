@@ -217,6 +217,12 @@ pub(crate) enum SynthesizeCommand {
         #[arg(long, default_value = DEFAULT_SYNTHESIS_MODEL)]
         model: String,
 
+        /// Seed coverage sub-queries from a framework taxonomy (e.g.
+        /// "campbell"), so initial retrieval spans the whole arc. Opt-in;
+        /// omit for a domain with no coverage framework.
+        #[arg(long)]
+        coverage_framework: Option<String>,
+
         /// Directory to write the candidate into (must NOT be under artifacts/).
         #[arg(long, default_value = DEFAULT_CANDIDATES_DIR)]
         out: PathBuf,

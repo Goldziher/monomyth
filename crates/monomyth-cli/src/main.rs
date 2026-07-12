@@ -67,9 +67,22 @@ async fn main() -> Result<()> {
                 query,
                 top_k,
                 model,
+                coverage_framework,
                 out,
             } => {
-                synthesize::run_synthesize_law(law, domain, query, top_k, model, out, &cli.db).await
+                synthesize::run_synthesize_law(
+                    synthesize::SynthesizeLawArgs {
+                        law,
+                        domain,
+                        query,
+                        top_k,
+                        model,
+                        coverage_framework,
+                        out,
+                    },
+                    &cli.db,
+                )
+                .await
             }
         },
     }

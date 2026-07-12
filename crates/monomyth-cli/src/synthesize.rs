@@ -14,7 +14,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
-use monomyth_synthesis::{DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, draft_law};
+use monomyth_synthesis::{
+    CoverageFramework, DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, coverage_sub_queries,
+    draft_law,
+};
 use serde::Serialize;
 use time::OffsetDateTime;
 use time::macros::format_description;
@@ -181,6 +184,27 @@ fn write_candidate(
     Ok(artifact_path)
 }
 
+/// The resolved arguments for [`run_synthesize_law`], bundled so the handler
+/// stays under clippy's argument-count limit and the composition root
+/// ([`crate::main`]) builds one value from the parsed subcommand.
+pub(crate) struct SynthesizeLawArgs {
+    /// Machine-readable law id to stamp; never seen by the model.
+    pub(crate) law: String,
+    /// Corpus domain the law belongs to (e.g. `"myth"`).
+    pub(crate) domain: String,
+    /// Seed retrieval query against the reference collection.
+    pub(crate) query: String,
+    /// Reference passages retrieved per coverage query (the loop's
+    /// `per_query_top_k`).
+    pub(crate) top_k: u32,
+    /// `provider/model` routing string for the synthesis LLM.
+    pub(crate) model: String,
+    /// Optional framework whose taxonomy seeds coverage sub-queries.
+    pub(crate) coverage_framework: Option<String>,
+    /// Directory to write the candidate into (must not be under `artifacts/`).
+    pub(crate) out: PathBuf,
+}
+
 /// Handle `synthesize law`: draft a pre-review candidate law artifact and
 /// write it to `out` for human review.
 ///
@@ -194,18 +218,36 @@ fn write_candidate(
 /// cannot be initialized, if today's date cannot be formatted, if
 /// [`monomyth_synthesis::draft_law`] fails (see [`monomyth_synthesis::SynthesisError`]),
 /// or if writing the candidate files fails.
-pub(crate) async fn run_synthesize_law(
-    law: String,
-    domain: String,
-    query: String,
-    top_k: u32,
-    model: String,
-    out: PathBuf,
-    db: &Path,
-) -> Result<()> {
+pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Result<()> {
+    let SynthesizeLawArgs {
+        law,
+        domain,
+        query,
+        top_k,
+        model,
+        coverage_framework,
+        out,
+    } = args;
+
     if let Some(reason) = rejects_forbidden_out_dir(&out) {
         bail!("{reason}");
     }
+
+    // Resolve coverage enrichment before any network/db work, mirroring the
+    // forbidden-directory guard's fail-fast: a typo'd framework name should
+    // error immediately, not after spending a retrieval + LLM call.
+    let sub_queries = match coverage_framework.as_deref() {
+        None => Vec::new(),
+        Some(key) => {
+            let framework = CoverageFramework::from_key(key).with_context(|| {
+                format!(
+                    "unknown --coverage-framework {key:?}; known: {}",
+                    CoverageFramework::known_keys().join(", ")
+                )
+            })?;
+            coverage_sub_queries(framework)
+        }
+    };
 
     let llm = Llm::from_env_with_options(&model, BackendOptions::default())
         .context("initializing the synthesis LLM from the environment")?;
@@ -222,7 +264,7 @@ pub(crate) async fn run_synthesize_law(
         law_id: law.clone(),
         domain,
         query,
-        sub_queries: Vec::new(),
+        sub_queries,
         model,
         generated,
         loop_config: LoopConfig {

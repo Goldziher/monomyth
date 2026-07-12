@@ -41,6 +41,7 @@
 
 mod antileak;
 mod candidate;
+mod enrich;
 mod error;
 mod judge;
 mod pipeline;
@@ -48,6 +49,7 @@ mod retrieval;
 
 pub use antileak::verify_no_verbatim;
 pub use candidate::{CandidateItem, CandidateLaw};
+pub use enrich::{CoverageFramework, coverage_sub_queries};
 pub use error::SynthesisError;
 pub use judge::{
     CriterionScore, DEFAULT_CRITERIA, JudgeVerdict, LawCriterion, judge_candidate, weighted_score,
