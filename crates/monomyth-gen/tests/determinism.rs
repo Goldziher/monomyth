@@ -134,3 +134,232 @@ fn explicit_golden_fork_chance_reproduces_the_golden() {
         "fork_chance {GOLDEN_FORK_CHANCE_PERMILLE} no longer reproduces the golden",
     );
 }
+
+// The remaining knobs below round out ADR-0015's Confirmation requirement: "a test
+// resolves a changed config value and asserts downstream RNG sub-streams outside the
+// owning pass are byte-identical (only the intended sub-stream's draws differ)". The
+// procedural pipeline runs `BackbonePass -> BeatPass -> MapPass -> CastPass ->
+// ItemsPass`, and each pass draws its own child seed from a root RNG seeded once from
+// the world seed (see `Generator::generate_structure`); child seeds are handed out in
+// pipeline order regardless of how many words an earlier pass consumes, so changing
+// one pass's *own* config knob can never shift another pass's sub-stream. That lets
+// each test below assert byte-identical output on the serialized facet(s) owned by
+// every *other* pass.
+
+/// A world generated from `seed` under `config`, for building override configs
+/// in the tests below.
+fn generated_world(seed: u64, config: &GenerationConfig) -> monomyth_core::World {
+    Generator::with_config(config)
+        .generate_structure(seed)
+        .expect("the configured pipeline generates a world")
+}
+
+/// A world generated from `seed` under the default config, serialized to JSON.
+fn default_serialized(seed: u64) -> String {
+    serde_json::to_string(&generated_world(seed, &GenerationConfig::default()))
+        .expect("a world serializes to JSON")
+}
+
+/// `beats_per_stage_min`/`beats_per_stage_max`, forced equal and above the default
+/// `1..=3` band, so every stage node splices exactly this many beats — guaranteed to
+/// change the narrative structure's node count relative to the default config.
+const BEATS_PER_STAGE_FIXED: usize = 5;
+
+#[test]
+fn beat_config_changes_structure_deterministically_and_leaves_world_content_untouched() {
+    let config = GenerationConfig {
+        beats_per_stage_min: BEATS_PER_STAGE_FIXED,
+        beats_per_stage_max: BEATS_PER_STAGE_FIXED,
+        ..GenerationConfig::default()
+    };
+
+    // Effect: forcing a fixed beat count outside the default 1..=3 band must change
+    // the serialized world relative to the default config.
+    let changed = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_ne!(
+        changed,
+        default_serialized(GOLDEN_SEED),
+        "beats_per_stage_min/max must be wired into BeatPass's draws",
+    );
+
+    // Determinism: the same (seed, config) reproduces byte-identical output.
+    let changed_again = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_eq!(
+        changed, changed_again,
+        "the same seed and beat config must reproduce byte-identical output",
+    );
+
+    // Isolation: BeatPass runs after BackbonePass and before MapPass/CastPass/
+    // ItemsPass. It only edits `world.story.structure` (via the narrative edit
+    // surface), so the location graph, cast, and item placements — all drawn from
+    // sub-streams handed out independently of BeatPass's own draw count — must stay
+    // byte-identical to the default-config run.
+    let default_world = generated_world(GOLDEN_SEED, &GenerationConfig::default());
+    let changed_world = generated_world(GOLDEN_SEED, &config);
+    assert_eq!(
+        serde_json::to_string(&changed_world.locations).expect("serializes"),
+        serde_json::to_string(&default_world.locations).expect("serializes"),
+        "beats_per_stage_min/max must not perturb the location graph",
+    );
+    assert_eq!(
+        serde_json::to_string(&changed_world.entities).expect("serializes"),
+        serde_json::to_string(&default_world.entities).expect("serializes"),
+        "beats_per_stage_min/max must not perturb the cast",
+    );
+    assert_eq!(
+        serde_json::to_string(&changed_world.items).expect("serializes"),
+        serde_json::to_string(&default_world.items).expect("serializes"),
+        "beats_per_stage_min/max must not perturb item placement",
+    );
+}
+
+/// `rooms_min`/`rooms_max`, forced equal and above the default `5..=9` band, so the
+/// map always contains exactly this many rooms — guaranteed to change the location
+/// graph relative to the default config.
+const ROOMS_FIXED: usize = 12;
+
+#[test]
+fn map_config_changes_locations_deterministically_and_leaves_the_story_spine_untouched() {
+    let config = GenerationConfig {
+        rooms_min: ROOMS_FIXED,
+        rooms_max: ROOMS_FIXED,
+        ..GenerationConfig::default()
+    };
+
+    // Effect: forcing a fixed room count outside the default 5..=9 band must change
+    // the serialized world relative to the default config.
+    let changed = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_ne!(
+        changed,
+        default_serialized(GOLDEN_SEED),
+        "rooms_min/rooms_max must be wired into MapPass's draws",
+    );
+
+    // Determinism: the same (seed, config) reproduces byte-identical output.
+    let changed_again = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_eq!(
+        changed, changed_again,
+        "the same seed and map config must reproduce byte-identical output",
+    );
+
+    // Isolation: MapPass runs after BackbonePass and BeatPass and only writes
+    // `world.locations` plus `world.player.location`. Neither earlier pass reads
+    // MapPass's config or output, so `world.story` (the narrative structure, plot,
+    // and quests BackbonePass/BeatPass built) must stay byte-identical to the
+    // default-config run. (CastPass/ItemsPass run after MapPass and *do* read the
+    // resulting room count, so `world.entities`/`world.items` are expected to
+    // differ here and are intentionally not asserted.)
+    let default_world = generated_world(GOLDEN_SEED, &GenerationConfig::default());
+    let changed_world = generated_world(GOLDEN_SEED, &config);
+    assert_eq!(
+        serde_json::to_string(&changed_world.story).expect("serializes"),
+        serde_json::to_string(&default_world.story).expect("serializes"),
+        "rooms_min/rooms_max must not perturb the story spine",
+    );
+}
+
+/// `items_min`/`items_max`, forced equal and above the default `2..=6` band, so
+/// exactly this many items are scattered — guaranteed to change item placement
+/// relative to the default config.
+const ITEMS_FIXED: usize = 10;
+
+#[test]
+fn items_config_changes_items_deterministically_and_leaves_upstream_facets_untouched() {
+    let config = GenerationConfig {
+        items_min: ITEMS_FIXED,
+        items_max: ITEMS_FIXED,
+        ..GenerationConfig::default()
+    };
+
+    // Effect: forcing a fixed item count outside the default 2..=6 band must change
+    // the serialized world relative to the default config.
+    let changed = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_ne!(
+        changed,
+        default_serialized(GOLDEN_SEED),
+        "items_min/items_max must be wired into ItemsPass's draws",
+    );
+
+    // Determinism: the same (seed, config) reproduces byte-identical output.
+    let changed_again = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_eq!(
+        changed, changed_again,
+        "the same seed and items config must reproduce byte-identical output",
+    );
+
+    // Isolation: ItemsPass is last in the pipeline (Backbone -> Beat -> Map -> Cast
+    // -> Items) and only writes `world.items` (plus each item id into its room's
+    // `Location::items`, folded into `world.locations` below). Nothing downstream
+    // reads its output, so the story spine, the location graph's own layout, and the
+    // cast — all built by earlier passes with independently seeded sub-streams —
+    // must stay byte-identical to the default-config run.
+    let default_world = generated_world(GOLDEN_SEED, &GenerationConfig::default());
+    let changed_world = generated_world(GOLDEN_SEED, &config);
+    assert_eq!(
+        serde_json::to_string(&changed_world.story).expect("serializes"),
+        serde_json::to_string(&default_world.story).expect("serializes"),
+        "items_min/items_max must not perturb the story spine",
+    );
+    assert_eq!(
+        serde_json::to_string(&changed_world.entities).expect("serializes"),
+        serde_json::to_string(&default_world.entities).expect("serializes"),
+        "items_min/items_max must not perturb the cast",
+    );
+}
+
+/// `max_extra_cast`, forced well above the default `3`. `CastPass` draws the number
+/// of supporting roles with `draw_range_inclusive(rng, 0, max_extra_cast)`, so this
+/// value is the draw's inclusive upper bound: widening it from 3 to 20 changes the
+/// draw's range and therefore the drawn count for seed 42, changing the cast — even
+/// though the 5-entry role pool caps how many roles are ultimately realized.
+const MAX_EXTRA_CAST_FIXED: usize = 20;
+
+#[test]
+fn cast_config_changes_cast_deterministically_and_leaves_the_map_and_spine_untouched() {
+    let config = GenerationConfig {
+        max_extra_cast: MAX_EXTRA_CAST_FIXED,
+        ..GenerationConfig::default()
+    };
+
+    // Effect: widening the extra-cast draw ceiling well past the default of 3 must
+    // change the serialized world relative to the default config.
+    let changed = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_ne!(
+        changed,
+        default_serialized(GOLDEN_SEED),
+        "max_extra_cast must be wired into CastPass's draws",
+    );
+
+    // Determinism: the same (seed, config) reproduces byte-identical output.
+    let changed_again = serde_json::to_string(&generated_world(GOLDEN_SEED, &config))
+        .expect("a world serializes to JSON");
+    assert_eq!(
+        changed, changed_again,
+        "the same seed and cast config must reproduce byte-identical output",
+    );
+
+    // Isolation: CastPass runs after BackbonePass/BeatPass/MapPass and writes
+    // `world.entities` plus each new entity's id into its room's
+    // `Location::entities` set — so `world.locations` itself is *not* a clean
+    // isolation claim (CastPass legitimately mutates it) and is deliberately not
+    // asserted here. What CastPass never touches is the story spine: it neither
+    // reads nor edits `world.story`, which BackbonePass/BeatPass already finished
+    // building, so that facet must stay byte-identical to the default-config run.
+    // (ItemsPass runs after CastPass and does not read the cast, so `world.items`
+    // is expected to be unaffected too, but is out of scope for this pass's
+    // isolation claim and left unasserted.)
+    let default_world = generated_world(GOLDEN_SEED, &GenerationConfig::default());
+    let changed_world = generated_world(GOLDEN_SEED, &config);
+    assert_eq!(
+        serde_json::to_string(&changed_world.story).expect("serializes"),
+        serde_json::to_string(&default_world.story).expect("serializes"),
+        "max_extra_cast must not perturb the story spine",
+    );
+}

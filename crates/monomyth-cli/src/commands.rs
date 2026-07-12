@@ -17,16 +17,18 @@ use monomyth_text::{render_intro, render_location, render_structure};
 use time::OffsetDateTime;
 use time::macros::format_description;
 
-/// Generate a world's structure from `seed`.
+/// Generate a world's structure from `seed` under the resolved generation `config`.
 ///
-/// Pure and deterministic: the same seed reproduces a byte-identical serialized
-/// world. Shared by `gen` and the seed path of `play`.
+/// Pure and deterministic: the same `(seed, config)` reproduces a byte-identical
+/// serialized world. Shared by `gen` and the seed path of `play`, so both honor the
+/// same configuration — a `play`-from-seed world matches the `gen`-from-seed world
+/// it replays, which `(seed, action-log)` replay depends on.
 ///
 /// # Errors
 ///
 /// Propagates [`monomyth_gen::GenError`] if the procedural pipeline fails.
-pub(crate) fn generate_world(seed: u64) -> Result<World> {
-    Generator::with_default_passes()
+pub(crate) fn generate_world(seed: u64, config: &GenerationConfig) -> Result<World> {
+    Generator::with_config(config)
         .generate_structure(seed)
         .context("generating world structure")
 }
@@ -48,6 +50,26 @@ fn generation_config(config: &MonomythConfig) -> GenerationConfig {
         items_max: *config.generation.items_max.get(),
         max_extra_cast: *config.generation.max_extra_cast.get(),
     }
+}
+
+/// Resolve the workspace configuration and project the generation knobs the
+/// `play` seed path consumes.
+///
+/// `play` exposes no generation flags, so there are no runtime overrides — the
+/// result is the file-and-default resolution `gen` would use for the same seed,
+/// which is what keeps a `play`-from-seed world identical to the `gen`-from-seed
+/// world it replays.
+///
+/// # Errors
+///
+/// Fails if a discovered config file cannot be read/parsed, or resolves to an
+/// out-of-range value.
+pub(crate) fn resolve_generation_config() -> Result<GenerationConfig> {
+    let config = ConfigResolver::discover()
+        .context("resolving configuration")?
+        .resolve()
+        .context("validating configuration")?;
+    Ok(generation_config(&config))
 }
 
 /// Handle `gen`: build structure, optionally fill content, render, and serialize.
@@ -73,7 +95,8 @@ pub(crate) async fn run_gen(
             content_model: model,
             ..RuntimeOverrides::default()
         })
-        .resolve();
+        .resolve()
+        .context("validating configuration")?;
     let generator = Generator::with_config(&generation_config(&config));
     let mut world = generator
         .generate_structure(seed)
@@ -188,13 +211,22 @@ pub(crate) fn run_edit(world_path: &Path, script_path: &Path, out: Option<PathBu
 }
 
 /// Build the world a `play` session runs against: load from `world_path` or
-/// generate from `seed`. Exactly one must be provided.
+/// generate from `seed` under the resolved generation `config`. Exactly one input
+/// must be provided.
+///
+/// The seed path routes through the same [`generate_world`] (and hence the same
+/// `config`) that `gen` uses, so regenerating a world from its seed reproduces the
+/// world `gen` produced — the `config` is not silently bypassed here.
 ///
 /// # Errors
 ///
 /// Fails if neither or both inputs are given, if the file cannot be read, or if
 /// the JSON cannot be deserialized into a [`World`].
-pub(crate) fn load_play_world(world_path: Option<&Path>, seed: Option<u64>) -> Result<World> {
+pub(crate) fn load_play_world(
+    world_path: Option<&Path>,
+    seed: Option<u64>,
+    config: &GenerationConfig,
+) -> Result<World> {
     match (world_path, seed) {
         (Some(path), None) => {
             let json = std::fs::read_to_string(path)
@@ -202,7 +234,7 @@ pub(crate) fn load_play_world(world_path: Option<&Path>, seed: Option<u64>) -> R
             World::from_json_checked(&json)
                 .with_context(|| format!("loading world from {}", path.display()))
         }
-        (None, Some(seed)) => generate_world(seed),
+        (None, Some(seed)) => generate_world(seed, config),
         (Some(_), Some(_)) => bail!("provide exactly one of --world or --seed, not both"),
         (None, None) => bail!("provide one of --world or --seed"),
     }
@@ -473,7 +505,7 @@ mod tests {
     use monomyth_core::NarrativeEdit;
 
     use monomyth_config::ConfigResolver;
-    use monomyth_gen::Generator;
+    use monomyth_gen::{GenerationConfig, Generator};
 
     use super::{
         apply_edit_script, build_ingest_input, content_checksum, generate_world, generation_config,
@@ -482,15 +514,19 @@ mod tests {
 
     #[test]
     fn resolved_default_config_generates_identically_to_default_passes() {
-        let config = ConfigResolver::defaults().resolve();
+        let config = ConfigResolver::defaults()
+            .resolve()
+            .expect("defaults validate");
         let via_config = serde_json::to_string(
-            &Generator::with_config(&generation_config(&config))
-                .generate_structure(42)
-                .expect("config-path generation succeeds"),
+            &generate_world(42, &generation_config(&config)).expect("gen ok"),
         )
         .expect("serialization succeeds");
-        let via_default = serde_json::to_string(&generate_world(42).expect("generation succeeds"))
-            .expect("serialization succeeds");
+        let via_default = serde_json::to_string(
+            &Generator::with_default_passes()
+                .generate_structure(42)
+                .expect("generation succeeds"),
+        )
+        .expect("serialization succeeds");
         assert_eq!(
             via_config, via_default,
             "resolved-default config must reproduce with_default_passes output",
@@ -498,8 +534,34 @@ mod tests {
     }
 
     #[test]
+    fn play_seed_path_honors_generation_config_not_hardcoded_defaults() {
+        // Force a room count outside the default 5..=9 band so the two worlds
+        // cannot coincide: this proves the play seed path routes the supplied
+        // config through generation, rather than silently regenerating with
+        // hardcoded defaults (the pre-remediation behavior).
+        let tweaked = GenerationConfig {
+            rooms_min: 12,
+            rooms_max: 12,
+            ..GenerationConfig::default()
+        };
+        let via_play = serde_json::to_string(
+            &load_play_world(None, Some(42), &tweaked).expect("seed path generates"),
+        )
+        .expect("serialization succeeds");
+        let via_default = serde_json::to_string(
+            &generate_world(42, &GenerationConfig::default()).expect("generation succeeds"),
+        )
+        .expect("serialization succeeds");
+        assert_ne!(
+            via_play, via_default,
+            "the play seed path must honor generation config, not fall back to defaults",
+        );
+    }
+
+    #[test]
     fn should_apply_a_valid_edit_script_to_the_structure() {
-        let mut world = generate_world(42).expect("generation succeeds");
+        let mut world =
+            generate_world(42, &GenerationConfig::default()).expect("generation succeeds");
         let root = world.story.structure.root();
         let outcomes = apply_edit_script(
             &mut world,
@@ -518,7 +580,8 @@ mod tests {
 
     #[test]
     fn should_reject_an_invalid_edit_script_and_leave_the_world_untouched() {
-        let mut world = generate_world(42).expect("generation succeeds");
+        let mut world =
+            generate_world(42, &GenerationConfig::default()).expect("generation succeeds");
         let root = world.story.structure.root();
         let before = serde_json::to_string(&world).expect("serialization succeeds");
         let result = apply_edit_script(&mut world, &[NarrativeEdit::RemoveBeat { node: root }]);
@@ -529,23 +592,32 @@ mod tests {
 
     #[test]
     fn should_generate_byte_identical_world_for_same_seed() {
-        let first = serde_json::to_string(&generate_world(42).expect("generation succeeds"))
-            .expect("serialization succeeds");
-        let second = serde_json::to_string(&generate_world(42).expect("generation succeeds"))
-            .expect("serialization succeeds");
+        let first = serde_json::to_string(
+            &generate_world(42, &GenerationConfig::default()).expect("generation succeeds"),
+        )
+        .expect("serialization succeeds");
+        let second = serde_json::to_string(
+            &generate_world(42, &GenerationConfig::default()).expect("generation succeeds"),
+        )
+        .expect("serialization succeeds");
         assert_eq!(first, second, "seed 42 must reproduce the same world");
     }
 
     #[test]
     fn should_error_when_neither_world_nor_seed_given() {
-        let error = load_play_world(None, None).expect_err("neither input is an error");
+        let error = load_play_world(None, None, &GenerationConfig::default())
+            .expect_err("neither input is an error");
         assert_eq!(error.to_string(), "provide one of --world or --seed");
     }
 
     #[test]
     fn should_error_when_both_world_and_seed_given() {
-        let error =
-            load_play_world(Some(Path::new("world.json")), Some(1)).expect_err("both is an error");
+        let error = load_play_world(
+            Some(Path::new("world.json")),
+            Some(1),
+            &GenerationConfig::default(),
+        )
+        .expect_err("both is an error");
         assert_eq!(
             error.to_string(),
             "provide exactly one of --world or --seed, not both"

@@ -11,7 +11,11 @@
 
 use serde::Deserialize;
 
+use crate::error::ConfigError;
 use crate::layered::{LayerSource, Layered};
+
+/// The inclusive upper bound for any permille-valued knob.
+const PERMILLE_MAX: u16 = 1000;
 
 /// The system default for `generation.fork_chance_permille`.
 ///
@@ -241,9 +245,61 @@ impl MonomythConfig {
         }
     }
 
+    /// Reject a resolved configuration whose values are out of range, before any of
+    /// them can reach a generation pass.
+    ///
+    /// Checks the permille bound and each `min <= max` bound. An inverted range
+    /// would otherwise panic or silently empty an RNG draw downstream, so this is
+    /// the config crate's system boundary per the input-validation rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::Invalid`] naming the first offending `section.key`.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        let permille = *self.generation.fork_chance_permille.get();
+        if permille > PERMILLE_MAX {
+            return Err(ConfigError::Invalid {
+                field: "generation.fork_chance_permille".to_owned(),
+                reason: format!("must be at most {PERMILLE_MAX}, got {permille}"),
+            });
+        }
+        Self::check_range(
+            "generation.beats_per_stage",
+            *self.generation.beats_per_stage_min.get(),
+            *self.generation.beats_per_stage_max.get(),
+        )?;
+        Self::check_range(
+            "generation.rooms",
+            *self.generation.rooms_min.get(),
+            *self.generation.rooms_max.get(),
+        )?;
+        Self::check_range(
+            "generation.items",
+            *self.generation.items_min.get(),
+            *self.generation.items_max.get(),
+        )?;
+        Ok(())
+    }
+
+    /// Reject an inverted `min`/`max` pair, naming the shared `stem` (the error
+    /// reports `<stem>_min`).
+    fn check_range(stem: &str, min: usize, max: usize) -> Result<(), ConfigError> {
+        if min > max {
+            return Err(ConfigError::Invalid {
+                field: format!("{stem}_min"),
+                reason: format!("must not exceed {stem}_max ({min} > {max})"),
+            });
+        }
+        Ok(())
+    }
+
     /// Fold one parsed configuration file into this resolved config at layer
     /// `from`. Each field's [`Layered::override_with`] enforces precedence, so the
     /// call order of layers does not matter — only their [`LayerSource`] rank.
+    ///
+    /// NOTE: every `Option<T>` field on a section needs a matching `override_with`
+    /// line here — there is no compiler-enforced exhaustiveness, so a new file field
+    /// added without a line here would silently be ignored from every file layer.
     pub(crate) fn apply_file(&mut self, file: &MonomythConfigFile, from: LayerSource) {
         self.generation
             .fork_chance_permille
@@ -295,6 +351,7 @@ mod tests {
         DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX,
         DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
     };
+    use crate::error::ConfigError;
     use crate::layered::LayerSource;
 
     #[test]
@@ -460,6 +517,97 @@ mod tests {
         assert!(
             result.is_err(),
             "deny_unknown_fields must reject a misspelled key"
+        );
+    }
+
+    #[test]
+    fn an_unknown_models_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> =
+            toml::from_str("[models]\ncontnet = \"gemini/x\"\n");
+        assert!(
+            result.is_err(),
+            "a misspelled [models] key must be rejected"
+        );
+    }
+
+    #[test]
+    fn an_unknown_synthesis_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> =
+            toml::from_str("[synthesis]\nmax_iteratons = 5\n");
+        assert!(
+            result.is_err(),
+            "a misspelled [synthesis] key must be rejected"
+        );
+    }
+
+    #[test]
+    fn a_stray_top_level_table_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> = toml::from_str("[retrieval]\ntop_k = 5\n");
+        assert!(
+            result.is_err(),
+            "an unknown top-level table must be rejected until its section lands"
+        );
+    }
+
+    #[test]
+    fn the_default_config_validates() {
+        MonomythConfig::default()
+            .validate()
+            .expect("the system default must be in range");
+    }
+
+    #[test]
+    fn a_permille_over_one_thousand_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[generation]\nfork_chance_permille = 1001\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("1001 permille is out of range");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "generation.fork_chance_permille"),
+            "the error must name the offending field, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_inverted_rooms_bound_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[generation]\nrooms_min = 9\nrooms_max = 5\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("rooms_min > rooms_max is invalid");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "generation.rooms_min"),
+            "the error must name generation.rooms_min, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_inverted_items_bound_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[generation]\nitems_min = 6\nitems_max = 2\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert!(
+            config.validate().is_err(),
+            "items_min > items_max is invalid"
+        );
+    }
+
+    #[test]
+    fn an_inverted_beats_bound_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[generation]\nbeats_per_stage_min = 3\nbeats_per_stage_max = 1\n")
+                .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert!(
+            config.validate().is_err(),
+            "beats_per_stage_min > beats_per_stage_max is invalid"
         );
     }
 }

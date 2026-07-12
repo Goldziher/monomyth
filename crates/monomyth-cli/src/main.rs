@@ -25,7 +25,8 @@ async fn main() -> Result<()> {
             commands::run_gen(seed, fill, out, cli.model, &cli.db).await
         }
         Command::Play { world, seed } => {
-            let world = commands::load_play_world(world.as_deref(), seed)?;
+            let config = commands::resolve_generation_config()?;
+            let world = commands::load_play_world(world.as_deref(), seed, &config)?;
             play::run_play(world)
         }
         Command::Edit { world, script, out } => commands::run_edit(&world, &script, out),

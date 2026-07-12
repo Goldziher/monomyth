@@ -144,3 +144,28 @@ loop's integer knobs, bound to `LoopConfig::default()` by a `monomyth-cli` test)
 documents the whole schema. Still deferred: `[retrieval]`/`[paths]`, the synthesis f64 bar thresholds,
 the extraction softmax temperature, a dedicated judge model (needs `draft_law`'s API widened), and the
 `schemars` JSON-Schema emission.
+
+## Remediation note (2026-07-12): review hardening
+
+A post-ship critical review found gaps that were closed before building the next workstream on this
+spine:
+
+- **`resolve()` is now fallible and validates.** `ConfigResolver::resolve(self) -> Result<MonomythConfig,
+  ConfigError>` runs `MonomythConfig::validate()` after every layer (including runtime overrides), so an
+  out-of-range value (a permille over `1000`, an inverted `min`/`max`) is rejected at the resolver
+  boundary — the Confirmation section's determinism-safety plus the input-validation rule — rather than
+  reaching a pass where it could panic or empty an RNG draw. The new `ConfigError::Invalid { field,
+  reason }` names the offending `section.key`, and both `Read`/`Parse` `Display` strings now interpolate
+  their `{source}` so a malformed `monomyth.toml` reports the underlying cause, not just the filename.
+- **`play` honors config.** The behavioral bug that mattered most: `gen --seed N` generated through
+  resolved config while `play --seed N` regenerated through hardcoded defaults, so a non-default
+  `[generation]` table made the two diverge and broke `(seed, action-log)` replay. `generate_world` and
+  `load_play_world` now take the projected `GenerationConfig`, and both `gen` and `play` route through it.
+  A `monomyth-cli` regression test forces a room count outside the default band and asserts the `play`
+  seed path no longer falls back to defaults.
+- **Each `[generation]` knob is now determinism-guarded**, not just `fork_chance_permille` — per-knob
+  tests in `monomyth-gen/tests/determinism.rs` assert a changed value perturbs its owning pass and leaves
+  unrelated facets byte-identical, as the Confirmation section requires.
+- **`discover()` is testable.** A path-injected `discover_from(deployment, user, project)` core (the
+  public `discover()` supplies the real env-/CWD-derived paths) is exercised by tests for merge order, the
+  missing-file skip, and a surfaced parse error, without mutating process-global state.

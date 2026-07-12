@@ -274,7 +274,8 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
             synthesis_per_query_top_k: top_k,
             ..RuntimeOverrides::default()
         })
-        .resolve();
+        .resolve()
+        .context("validating configuration")?;
     let model = config.model_for(ModelRole::Synthesis).to_owned();
 
     let llm = Llm::from_env_with_options(&model, BackendOptions::default())
@@ -478,7 +479,9 @@ mod tests {
         use monomyth_config::ConfigResolver;
         use monomyth_synthesis::LoopConfig;
 
-        let config = ConfigResolver::defaults().resolve();
+        let config = ConfigResolver::defaults()
+            .resolve()
+            .expect("defaults validate");
         let loop_default = LoopConfig::default();
         assert_eq!(
             *config.synthesis.max_iterations.get(),

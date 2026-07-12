@@ -1,7 +1,7 @@
 //! Layered TOML configuration for the monomyth workspace (ADR-0015).
 //!
 //! Every tunable that was a hardcoded `const` is migrated here as a
-//! [`Layered<T>`] value resolved from four override layers —
+//! [`Layered<T>`] value resolved from five override layers —
 //! [`SystemDefault`](LayerSource::SystemDefault) (the compiled default, equal to
 //! the old constant) < [`DeploymentDefault`](LayerSource::DeploymentDefault) <
 //! [`ProjectOverride`](LayerSource::ProjectOverride) (`./monomyth.toml`) <
@@ -20,14 +20,18 @@
 //! ```
 //! use monomyth_config::ConfigResolver;
 //!
+//! # fn main() -> Result<(), monomyth_config::ConfigError> {
 //! // The deterministic, filesystem-free entry point (used by tests).
-//! let config = ConfigResolver::defaults().resolve();
+//! let config = ConfigResolver::defaults().resolve()?;
 //! assert_eq!(*config.generation.fork_chance_permille.get(), 500);
+//! # Ok(())
+//! # }
 //! ```
 //!
-//! This is the first slice of the spine: it carries `generation.fork_chance_permille`
-//! end to end. Later slices add the `[models]`, `[retrieval]`, `[synthesis]`,
-//! `[paths]`, and `[knowledge]` sections the same way.
+//! Carried today: the `[generation]` (fork probability + beat/map/item/cast bounds),
+//! `[models]` (per-task routing), and `[synthesis]` (judge-loop knobs) sections.
+//! Later slices add the `[retrieval]`, `[paths]`, and `[knowledge]` sections the
+//! same way.
 
 #![forbid(unsafe_code)]
 
