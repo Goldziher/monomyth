@@ -58,6 +58,7 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
+use serde::Serialize;
 use serde_json::Value;
 use xberg::ChunkingConfig;
 
@@ -145,6 +146,40 @@ impl IngestInput {
     }
 }
 
+/// Runtime knob for best-effort keyword extraction at ingest time.
+///
+/// Interim home: this is a small runtime setter on [`Knowledge`] rather than a
+/// `monomyth.toml` section, pending config wiring in a later slice. Defaults to
+/// **disabled**, so default behavior — and every existing cassette/golden — is
+/// byte-for-byte unchanged; a caller opts in via
+/// [`Knowledge::with_keyword_enrichment`].
+///
+/// The `config` field (and hence `xberg::KeywordConfig`, which only exists
+/// when `xberg/keywords` is compiled) is only present when the `rag-keywords`
+/// feature is enabled. With the feature off, `enabled` can still be set but
+/// extraction is compiled out entirely, so ingest always proceeds with empty
+/// keywords.
+#[derive(Debug, Clone, Default)]
+pub struct KeywordEnrichment {
+    /// Whether ingest should attempt keyword extraction.
+    pub enabled: bool,
+    /// Extraction configuration, forwarded to `xberg::keywords::extract_keywords`.
+    #[cfg(feature = "rag-keywords")]
+    pub config: xberg::KeywordConfig,
+}
+
+impl KeywordEnrichment {
+    /// Enrichment enabled with the default [`xberg::KeywordConfig`].
+    #[must_use]
+    #[cfg(feature = "rag-keywords")]
+    pub fn enabled() -> Self {
+        Self {
+            enabled: true,
+            config: xberg::KeywordConfig::default(),
+        }
+    }
+}
+
 /// A retrieval request against the knowledge layer.
 #[derive(Debug, Clone)]
 pub struct KnowledgeQuery {
@@ -191,7 +226,7 @@ impl KnowledgeQuery {
 ///
 /// A passage from a reference query is licensed for priors only and must never
 /// be shown verbatim; check [`Passage::is_surfaceable`] before rendering.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Passage {
     /// The chunk text.
     pub text: String,
@@ -229,6 +264,7 @@ pub struct Knowledge {
     embedder: Arc<dyn Embedder>,
     ledger: Ledger,
     chunking: ChunkingConfig,
+    keyword_enrichment: KeywordEnrichment,
 }
 
 impl fmt::Debug for Knowledge {
@@ -262,6 +298,7 @@ impl Knowledge {
             embedder: Arc::new(embedder),
             ledger: Ledger::load_embedded()?,
             chunking: semantic_chunking(),
+            keyword_enrichment: KeywordEnrichment::default(),
         };
         knowledge.ensure_collection(SHIP_COLLECTION).await?;
         knowledge.ensure_collection(REFERENCE_COLLECTION).await?;
@@ -283,7 +320,20 @@ impl Knowledge {
             embedder,
             ledger,
             chunking: ChunkingConfig::default(),
+            keyword_enrichment: KeywordEnrichment::default(),
         }
+    }
+
+    /// Return `self` with keyword enrichment reconfigured.
+    ///
+    /// Defaults to disabled (see [`KeywordEnrichment`]); a caller opts in with
+    /// [`KeywordEnrichment::enabled`] or a custom [`xberg::KeywordConfig`].
+    /// Extraction only runs when the `rag-keywords` feature is compiled in —
+    /// enabling this knob without the feature has no effect.
+    #[must_use]
+    pub fn with_keyword_enrichment(mut self, keyword_enrichment: KeywordEnrichment) -> Self {
+        self.keyword_enrichment = keyword_enrichment;
+        self
     }
 
     /// Ingest `input` under the ledger-declared source `source_id` into the
@@ -346,6 +396,38 @@ impl Knowledge {
             .await
     }
 
+    /// Best-effort keyword extraction for `text`, run only when enrichment is
+    /// enabled and the `rag-keywords` feature is compiled in. Extraction is
+    /// never fatal to an ingest: a failure is logged and treated as "no
+    /// keywords" rather than propagated, and the feature-off / disabled case
+    /// returns empty without attempting extraction at all — so default
+    /// behavior (and every existing cassette/golden) is byte-for-byte
+    /// unchanged.
+    #[cfg_attr(not(feature = "rag-keywords"), allow(unused_variables))]
+    fn extract_keywords_best_effort(&self, text: &str, source_id: &str) -> Vec<String> {
+        if !self.keyword_enrichment.enabled {
+            return Vec::new();
+        }
+        #[cfg(feature = "rag-keywords")]
+        {
+            match crate::rag::pipeline::extract_keywords(text, &self.keyword_enrichment.config) {
+                Ok(keywords) => keywords,
+                Err(error) => {
+                    tracing::warn!(
+                        source_id,
+                        error = %error,
+                        "best-effort keyword extraction failed at ingest; proceeding with no keywords"
+                    );
+                    Vec::new()
+                }
+            }
+        }
+        #[cfg(not(feature = "rag-keywords"))]
+        {
+            Vec::new()
+        }
+    }
+
     /// Look up `source_id` in the ledger or fail with
     /// [`KnowledgeError::UndeclaredSource`]. Shared by both ingest gates so an
     /// undeclared source is refused identically before the namespace check.
@@ -369,12 +451,14 @@ impl Knowledge {
         input: IngestInput,
     ) -> Result<DocumentId, KnowledgeError> {
         let metadata = ingest_metadata(source_id, entry, &input);
+        let keywords = self.extract_keywords_best_effort(&input.full_text, source_id);
 
         let request = IngestRequest {
             full_text: input.full_text,
             title: input.title,
             source_uri: input.source_uri,
             metadata,
+            keywords,
             ..IngestRequest::default()
         };
 
@@ -1032,6 +1116,97 @@ mod tests {
                 .iter()
                 .all(|passage| passage.namespace == Namespace::Reference),
             "hybrid reference retrieval must stay in the reference namespace",
+        );
+    }
+
+    /// The small ship corpus shared by the two keyword-enrichment tests below,
+    /// so both exercise the exact same ingest content.
+    #[cfg(feature = "rag-keywords")]
+    const KEYWORD_TEST_CORPUS: &str = "The hero departs the ordinary world, crosses the threshold into the \
+         unknown, faces trials with the aid of allies and mentors, and returns \
+         transformed, bringing the boon home to the ordinary world.";
+
+    /// WS-C #49: populating `doc.keywords` at ingest must never perturb the
+    /// surfaceable (ship) retrieval path — it stays on plain vector search,
+    /// unfiltered and unordered by keyword overlap. Ingest the identical ship
+    /// corpus into two stores, one with keyword enrichment enabled and one
+    /// disabled, run the identical surfaceable query against both, and assert
+    /// the returned passages serialize to byte-identical JSON.
+    #[tokio::test]
+    #[cfg(feature = "rag-keywords")]
+    async fn keyword_enrichment_does_not_perturb_surfaceable_retrieval() {
+        let enriched = test_knowledge().with_keyword_enrichment(KeywordEnrichment::enabled());
+        let plain = test_knowledge();
+
+        for knowledge in [&enriched, &plain] {
+            knowledge
+                .ingest("polti", IngestInput::new(KEYWORD_TEST_CORPUS))
+                .await
+                .expect("ship source ingests");
+        }
+
+        let query = || KnowledgeQuery::surfaceable("a hero returns transformed", 5);
+        let enriched_passages = enriched
+            .retrieve(query())
+            .await
+            .expect("surfaceable retrieval succeeds against the enriched store");
+        let plain_passages = plain
+            .retrieve(query())
+            .await
+            .expect("surfaceable retrieval succeeds against the plain store");
+
+        let enriched_json =
+            serde_json::to_string(&enriched_passages).expect("passages serialize to JSON");
+        let plain_json =
+            serde_json::to_string(&plain_passages).expect("passages serialize to JSON");
+
+        assert_eq!(
+            enriched_json, plain_json,
+            "keyword enrichment at ingest must not perturb the surfaceable retrieval path: \
+             the ship query must return byte-identical passages whether or not \
+             `doc.keywords` was populated during ingest"
+        );
+    }
+
+    /// Companion to the byte-identity guard above: proves enrichment is not a
+    /// silent no-op. Without this assertion, the byte-identity test could pass
+    /// vacuously if keyword extraction always produced an empty vector (e.g. a
+    /// wiring bug that never calls `extract_keywords` at all). Ingests the same
+    /// corpus on the *reference* path (never surfaced, so this is purely an
+    /// internal check) with enrichment enabled and inspects the stored
+    /// document's `keywords` via a direct reference-collection retrieve, whose
+    /// `RetrievedChunk::document` carries the full `DocumentRecord` (including
+    /// `keywords`) when `include_document` is set.
+    #[tokio::test]
+    #[cfg(feature = "rag-keywords")]
+    async fn keyword_enrichment_populates_keywords_when_enabled() {
+        let knowledge = test_knowledge().with_keyword_enrichment(KeywordEnrichment::enabled());
+        knowledge
+            .ingest_reference("perseus", IngestInput::new(KEYWORD_TEST_CORPUS))
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let query = RetrieveQuery {
+            query_text: Some("a hero returns transformed".to_owned()),
+            include_content: true,
+            include_document: true,
+            ..RetrieveQuery::vector(5)
+        };
+        let chunks = knowledge
+            .run_retrieve(REFERENCE_COLLECTION, query)
+            .await
+            .expect("direct reference retrieval succeeds");
+
+        assert!(!chunks.is_empty(), "expected at least one retrieved chunk");
+        let keywords = chunks
+            .into_iter()
+            .find_map(|chunk| chunk.document.map(|document| document.keywords))
+            .expect("retrieved chunk must carry its parent document with keywords");
+
+        assert!(
+            !keywords.is_empty(),
+            "keyword enrichment must actually populate `doc.keywords` when enabled, \
+             not silently no-op"
         );
     }
 
