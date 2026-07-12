@@ -54,7 +54,10 @@ use xberg_rag::pipeline::{
     CoreEmbedder, Embedder, IngestRequest, RagPipelineConfig, ingest_document,
     retrieve as pipeline_retrieve,
 };
-use xberg_rag::{CollectionSpec, DocumentId, Filter, FilterField, RetrieveQuery, RetrievedChunk};
+use xberg_rag::{
+    CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveMode, RetrieveQuery,
+    RetrievedChunk,
+};
 
 #[cfg(feature = "acquire")]
 pub use crate::acquire::{
@@ -71,6 +74,13 @@ pub use crate::ledger::{
 /// Collections are created at this dimension; a test embedder must emit vectors
 /// of this width to match.
 pub const EMBEDDING_DIM: u32 = 768;
+
+/// Over-fetch factor for reference retrieval: the reference path requests
+/// `top_k * REFERENCE_OVERFETCH` candidates so near-duplicate chunks can be
+/// dropped before the final `top_k` is taken. A single long source chunked with
+/// overlap otherwise returns several near-identical passages, starving the
+/// distillation of *distinct* grounding.
+const REFERENCE_OVERFETCH: u32 = 3;
 
 /// The store name registered for the knowledge vector store.
 const STORE_NAME: &str = "monomyth";
@@ -386,35 +396,95 @@ impl Knowledge {
     /// [`KnowledgeError::MissingMetadata`] if a stored chunk lacks the licensing
     /// metadata every ingest writes.
     pub async fn retrieve(&self, query: KnowledgeQuery) -> Result<Vec<Passage>, KnowledgeError> {
-        let (collection, filter) = if query.surfaceable {
-            (SHIP_COLLECTION, Some(ship_filter()))
+        if query.surfaceable {
+            self.retrieve_surfaceable(&query.text, query.top_k).await
         } else {
-            (REFERENCE_COLLECTION, None)
-        };
+            self.retrieve_reference(&query.text, query.top_k).await
+        }
+    }
 
-        self.ensure_collection(collection).await?;
-
-        let retrieve_query = RetrieveQuery {
-            query_text: Some(query.text),
-            filter,
+    /// The surfaceable (ship) retrieval path: ship collection + ship filter, plain
+    /// vector search. Deliberately left byte-for-byte unchanged so recorded
+    /// content-fill fixtures (which key on the exact grounding a query returns)
+    /// stay valid.
+    async fn retrieve_surfaceable(
+        &self,
+        text: &str,
+        top_k: u32,
+    ) -> Result<Vec<Passage>, KnowledgeError> {
+        self.ensure_collection(SHIP_COLLECTION).await?;
+        let query = RetrieveQuery {
+            query_text: Some(text.to_owned()),
+            filter: Some(ship_filter()),
             include_content: true,
             include_document: true,
-            ..RetrieveQuery::vector(query.top_k)
+            ..RetrieveQuery::vector(top_k)
+        };
+        let chunks = self
+            .run_retrieve(SHIP_COLLECTION, query)
+            .await
+            .map_err(|error| KnowledgeError::store("retrieving chunks", error))?;
+        chunks
+            .into_iter()
+            .map(|chunk| passage_from_chunk(chunk, SHIP_COLLECTION))
+            .collect()
+    }
+
+    /// The reference (priors-only) retrieval path: hybrid search (vector +
+    /// full-text RRF) for relevance, over-fetch + near-duplicate dedup for
+    /// *distinct* coverage. Falls back to vector search on a store that does not
+    /// implement hybrid (the in-memory test store returns
+    /// [`RagError::UnsupportedMode`]), so behaviour degrades gracefully rather
+    /// than erroring.
+    async fn retrieve_reference(
+        &self,
+        text: &str,
+        top_k: u32,
+    ) -> Result<Vec<Passage>, KnowledgeError> {
+        self.ensure_collection(REFERENCE_COLLECTION).await?;
+        let fetch_k = top_k.saturating_mul(REFERENCE_OVERFETCH).max(top_k);
+        let build = |mode| RetrieveQuery {
+            mode,
+            query_text: Some(text.to_owned()),
+            filter: None,
+            include_content: true,
+            include_document: true,
+            ..RetrieveQuery::vector(fetch_k)
         };
 
-        let chunks = pipeline_retrieve(
+        let chunks = match self
+            .run_retrieve(REFERENCE_COLLECTION, build(RetrieveMode::Hybrid))
+            .await
+        {
+            Ok(chunks) => chunks,
+            Err(RagError::UnsupportedMode { .. }) => self
+                .run_retrieve(REFERENCE_COLLECTION, build(RetrieveMode::Vector))
+                .await
+                .map_err(|error| KnowledgeError::store("retrieving chunks", error))?,
+            Err(error) => return Err(KnowledgeError::store("retrieving chunks", error)),
+        };
+
+        dedup_chunks(chunks, top_k as usize)
+            .into_iter()
+            .map(|chunk| passage_from_chunk(chunk, REFERENCE_COLLECTION))
+            .collect()
+    }
+
+    /// Run a prepared retrieval against `collection`, returning the raw chunks.
+    /// Error mapping is left to the caller so the reference path can inspect a
+    /// [`RagError::UnsupportedMode`] and fall back to vector search.
+    async fn run_retrieve(
+        &self,
+        collection: &str,
+        query: RetrieveQuery,
+    ) -> Result<Vec<RetrievedChunk>, RagError> {
+        pipeline_retrieve(
             Arc::clone(&self.store),
             collection,
-            retrieve_query,
+            query,
             Some(self.embedder.as_ref()),
         )
         .await
-        .map_err(|error| KnowledgeError::store("retrieving chunks", error))?;
-
-        chunks
-            .into_iter()
-            .map(|chunk| passage_from_chunk(chunk, collection))
-            .collect()
     }
 
     /// The embedded license ledger, for callers (e.g. the acquisition pipeline) that need to
@@ -488,6 +558,34 @@ fn semantic_chunking() -> ChunkingConfig {
 
 /// Build a [`Passage`] from a retrieved chunk, reading licensing provenance from
 /// the parent document's metadata.
+/// Drop chunks whose normalized text repeats an earlier (higher-ranked) chunk,
+/// then keep at most `limit`. Chunks arrive in descending relevance order, so the
+/// first occurrence — the most relevant — is the copy retained.
+fn dedup_chunks(chunks: Vec<RetrievedChunk>, limit: usize) -> Vec<RetrievedChunk> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut kept = Vec::with_capacity(limit.min(chunks.len()));
+    for chunk in chunks {
+        let key = normalize_for_dedup(chunk.content.as_deref().unwrap_or_default());
+        if seen.insert(key) {
+            kept.push(chunk);
+            if kept.len() >= limit {
+                break;
+            }
+        }
+    }
+    kept
+}
+
+/// Normalize chunk text for duplicate detection: collapse every whitespace run to
+/// a single space, trim, and lowercase. Catches the exact / whitespace-only-different
+/// chunks a single overlapping source otherwise yields.
+fn normalize_for_dedup(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn passage_from_chunk(chunk: RetrievedChunk, collection: &str) -> Result<Passage, KnowledgeError> {
     let metadata = chunk
         .document
@@ -620,6 +718,58 @@ mod tests {
         let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
         let ledger = Ledger::load_embedded().expect("embedded manifest parses");
         Knowledge::with(store, embedder, ledger)
+    }
+
+    /// Build a retrieved chunk carrying `content` at `score`, for exercising the
+    /// pure dedup helper without a live store.
+    fn retrieved_chunk(content: &str, score: f32) -> RetrievedChunk {
+        RetrievedChunk {
+            id: xberg_rag::ChunkId(format!("chunk-{score}")),
+            document_id: DocumentId("doc".to_owned()),
+            ordinal: 0,
+            external_id: None,
+            content: Some(content.to_owned()),
+            score,
+            primary_score: xberg_rag::PrimaryScore::Vector(score),
+            chunk_metadata: Value::Null,
+            document: None,
+        }
+    }
+
+    #[test]
+    fn normalize_for_dedup_collapses_whitespace_and_case() {
+        assert_eq!(
+            normalize_for_dedup("The  Hero\n Returns"),
+            normalize_for_dedup("the hero returns"),
+            "case and whitespace differences must normalize to the same key"
+        );
+        assert_ne!(
+            normalize_for_dedup("the hero returns"),
+            normalize_for_dedup("the hero departs"),
+            "genuinely different text must not collapse"
+        );
+    }
+
+    #[test]
+    fn dedup_chunks_drops_repeats_keeps_first_and_honors_limit() {
+        // Highest-ranked first; the second "alpha" is a duplicate of the first.
+        let chunks = vec![
+            retrieved_chunk("Alpha passage.", 0.9),
+            retrieved_chunk("Beta passage.", 0.8),
+            retrieved_chunk("alpha   passage.", 0.7),
+            retrieved_chunk("Gamma passage.", 0.6),
+        ];
+
+        let kept = dedup_chunks(chunks, 2);
+
+        assert_eq!(kept.len(), 2, "limit is honored after dedup");
+        assert_eq!(
+            kept.iter()
+                .map(|chunk| chunk.content.clone().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["Alpha passage.".to_owned(), "Beta passage.".to_owned()],
+            "the duplicate alpha is dropped and the highest-ranked copies are kept in order",
+        );
     }
 
     #[tokio::test]
