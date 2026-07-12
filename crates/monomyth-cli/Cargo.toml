@@ -23,11 +23,16 @@ monomyth-extract = { workspace = true }
 monomyth-gen = { workspace = true }
 monomyth-knowledge = { workspace = true, features = ["acquire"] }
 monomyth-llm = { workspace = true }
+monomyth-synthesis = { workspace = true }
 monomyth-text = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["formatting", "macros"] }
 tokio = { workspace = true }
+
+[dev-dependencies]
+monomyth-frameworks = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

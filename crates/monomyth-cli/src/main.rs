@@ -6,12 +6,13 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::cli::{Cli, Command, CorpusCommand};
+use crate::cli::{Cli, Command, CorpusCommand, SynthesizeCommand};
 
 mod cli;
 mod commands;
 mod evaluate;
 mod play;
+mod synthesize;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,5 +53,17 @@ async fn main() -> Result<()> {
             benchmarks_dir,
             out,
         } => evaluate::run_finetune_export(&work, &benchmarks_dir, out),
+        Command::Synthesize { command } => match command {
+            SynthesizeCommand::Law {
+                law,
+                domain,
+                query,
+                top_k,
+                model,
+                out,
+            } => {
+                synthesize::run_synthesize_law(law, domain, query, top_k, model, out, &cli.db).await
+            }
+        },
     }
 }

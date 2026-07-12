@@ -17,6 +17,17 @@ const DEFAULT_TOP_K: u32 = 5;
 const DEFAULT_BENCHMARKS_DIR: &str = "./artifacts/benchmarks";
 /// Default extraction strategy for `eval`.
 const DEFAULT_EXTRACTOR: &str = "rag-softmax";
+/// Default `provider/model` routing string for the law-synthesis LLM pass.
+///
+/// Distillation quality matters more than latency/cost here, so this defaults to
+/// a PRO-tier model — distinct from [`DEFAULT_MODEL`], which favors the cheaper
+/// default content-fill pass.
+const DEFAULT_SYNTHESIS_MODEL: &str = "gemini/gemini-3.1-pro-preview";
+/// Default directory a drafted candidate law is written into for human review.
+///
+/// Deliberately outside `artifacts/`: a candidate here is PRE-REVIEW and must
+/// never be mistaken for a committed, ship-safe law artifact (ADR-0016).
+const DEFAULT_CANDIDATES_DIR: &str = "./synthesis/candidates";
 
 /// monomyth: an adventure generation engine, composed into a playable text slice.
 #[derive(Debug, Parser)]
@@ -141,6 +152,43 @@ pub(crate) enum Command {
         /// Write the JSONL here instead of to stdout.
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+
+    /// Draft a pre-review candidate law artifact from reference-namespace priors (ADR-0016).
+    Synthesize {
+        #[command(subcommand)]
+        command: SynthesizeCommand,
+    },
+}
+
+/// `synthesize` subcommands.
+#[derive(Debug, Subcommand)]
+pub(crate) enum SynthesizeCommand {
+    /// Draft one candidate law and write it to synthesis/candidates/ for human review.
+    Law {
+        /// Machine-readable law id to stamp (e.g. `"three_act"`). Never seen by the model.
+        #[arg(long)]
+        law: String,
+
+        /// Corpus domain (e.g. "myth", "folklore").
+        #[arg(long)]
+        domain: String,
+
+        /// Retrieval query issued against the reference collection.
+        #[arg(long)]
+        query: String,
+
+        /// Max reference passages to retrieve as grounding.
+        #[arg(long, default_value_t = DEFAULT_TOP_K)]
+        top_k: u32,
+
+        /// provider/model routing string for the synthesis LLM.
+        #[arg(long, default_value = DEFAULT_SYNTHESIS_MODEL)]
+        model: String,
+
+        /// Directory to write the candidate into (must NOT be under artifacts/).
+        #[arg(long, default_value = DEFAULT_CANDIDATES_DIR)]
+        out: PathBuf,
     },
 }
 

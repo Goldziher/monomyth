@@ -17,6 +17,9 @@
 # LLM provider secrets (copied from xberg-io) — never commit
 /.env
 
+# ADR-0016 pre-review synthesis candidates; promoted into artifacts/laws/ by hand
+/synthesis/
+
 # OS
 .DS_Store
 
