@@ -40,6 +40,13 @@ pub(crate) fn generate_world(seed: u64) -> Result<World> {
 fn generation_config(config: &MonomythConfig) -> GenerationConfig {
     GenerationConfig {
         fork_chance_permille: *config.generation.fork_chance_permille.get(),
+        beats_per_stage_min: *config.generation.beats_per_stage_min.get(),
+        beats_per_stage_max: *config.generation.beats_per_stage_max.get(),
+        rooms_min: *config.generation.rooms_min.get(),
+        rooms_max: *config.generation.rooms_max.get(),
+        items_min: *config.generation.items_min.get(),
+        items_max: *config.generation.items_max.get(),
+        max_extra_cast: *config.generation.max_extra_cast.get(),
     }
 }
 

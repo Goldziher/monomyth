@@ -15,15 +15,45 @@ const MIN_ITEMS: usize = 2;
 /// The most items scattered across the world.
 const MAX_ITEMS: usize = 6;
 
+/// Tunable knobs for item placement.
+///
+/// `items_min..=items_max` items are scattered across the world, drawn once
+/// from the pass's sub-stream. The invariant `min <= max` must hold;
+/// [`draw_range_inclusive`] debug-asserts it.
+#[derive(Debug, Clone, Copy)]
+pub struct ItemsConfig {
+    /// The fewest items scattered across the world (must be `<= items_max`).
+    pub items_min: usize,
+    /// The most items scattered across the world (must be `>= items_min`).
+    pub items_max: usize,
+}
+
+impl Default for ItemsConfig {
+    fn default() -> Self {
+        Self {
+            items_min: MIN_ITEMS,
+            items_max: MAX_ITEMS,
+        }
+    }
+}
+
 /// Places items into rooms across the location graph.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct ItemsPass;
+pub struct ItemsPass {
+    config: ItemsConfig,
+}
 
 impl ItemsPass {
-    /// Construct the items pass.
+    /// Construct the items pass with the default [`ItemsConfig`].
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construct the items pass with an explicit configuration.
+    #[must_use]
+    pub fn with_config(config: ItemsConfig) -> Self {
+        Self { config }
     }
 }
 
@@ -38,7 +68,7 @@ impl ProceduralPass for ItemsPass {
             return Err(GenError::NoLocations { pass: self.name() });
         }
 
-        let item_count = draw_range_inclusive(rng, MIN_ITEMS, MAX_ITEMS);
+        let item_count = draw_range_inclusive(rng, self.config.items_min, self.config.items_max);
         for index in 0..item_count {
             let portable = draw_bool(rng);
             let room = rooms[draw_range_inclusive(rng, 0, rooms.len() - 1)];

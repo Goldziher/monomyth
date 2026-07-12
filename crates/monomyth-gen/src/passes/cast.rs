@@ -31,15 +31,41 @@ const EXTRA_ROLE_POOL: [ProppRole; 5] = [
 /// The most supporting roles added on top of the base cast.
 const MAX_EXTRA_CAST: usize = 3;
 
+/// Tunable knobs for cast generation.
+///
+/// `0..=max_extra_cast` supporting roles are added on top of the base
+/// hero/villain cast, drawn once from the pass's sub-stream.
+#[derive(Debug, Clone, Copy)]
+pub struct CastConfig {
+    /// The most supporting roles added on top of the base cast.
+    pub max_extra_cast: usize,
+}
+
+impl Default for CastConfig {
+    fn default() -> Self {
+        Self {
+            max_extra_cast: MAX_EXTRA_CAST,
+        }
+    }
+}
+
 /// Builds the cast of role-bearing entities and places them in rooms.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct CastPass;
+pub struct CastPass {
+    config: CastConfig,
+}
 
 impl CastPass {
-    /// Construct the cast pass.
+    /// Construct the cast pass with the default [`CastConfig`].
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construct the cast pass with an explicit configuration.
+    #[must_use]
+    pub fn with_config(config: CastConfig) -> Self {
+        Self { config }
     }
 }
 
@@ -54,7 +80,7 @@ impl ProceduralPass for CastPass {
             return Err(GenError::NoLocations { pass: self.name() });
         }
 
-        let extra_count = draw_range_inclusive(rng, 0, MAX_EXTRA_CAST);
+        let extra_count = draw_range_inclusive(rng, 0, self.config.max_extra_cast);
         let roles = BASE_ROLES
             .iter()
             .copied()

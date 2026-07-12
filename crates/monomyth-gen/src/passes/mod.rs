@@ -13,6 +13,6 @@ mod map;
 
 pub use backbone::{BackbonePass, NarrativeConfig, PlotChoice};
 pub use beat::{BeatConfig, BeatPass};
-pub use cast::CastPass;
-pub use items::ItemsPass;
-pub use map::{MAX_ROOMS, MIN_ROOMS, MapPass};
+pub use cast::{CastConfig, CastPass};
+pub use items::{ItemsConfig, ItemsPass};
+pub use map::{MAX_ROOMS, MIN_ROOMS, MapConfig, MapPass};

@@ -4,7 +4,8 @@
 //! This is the config spine (ADR-0015). Each knob appears three times: an
 //! `Option`-typed field on the file struct, a `Layered<T>` field on the resolved
 //! struct, and one line in [`MonomythConfig::apply_file`]. It currently carries
-//! `generation.fork_chance_permille` and the `[models]` table (per-task model
+//! the `[generation]` table (the macro fork probability plus the beat, map,
+//! item, and cast procedural bounds) and the `[models]` table (per-task model
 //! routing); later slices add `[retrieval]`, `[synthesis]`, `[paths]`, and
 //! `[knowledge]` the same way.
 
@@ -21,6 +22,24 @@ use crate::layered::{LayerSource, Layered};
 /// is byte-identical to `Generator::with_default_passes()`). `monomyth-config` does
 /// not depend on `monomyth-gen`, so the value cannot simply be imported.
 const DEFAULT_FORK_CHANCE_PERMILLE: u16 = 500;
+
+/// The system default for `generation.beats_per_stage_min`.
+///
+/// Duplicates `monomyth-gen`'s `BeatConfig` default; see
+/// [`DEFAULT_FORK_CHANCE_PERMILLE`] for why the duplication is deliberate.
+const DEFAULT_BEATS_PER_STAGE_MIN: usize = 1;
+/// The system default for `generation.beats_per_stage_max`.
+const DEFAULT_BEATS_PER_STAGE_MAX: usize = 3;
+/// The system default for `generation.rooms_min`.
+const DEFAULT_ROOMS_MIN: usize = 5;
+/// The system default for `generation.rooms_max`.
+const DEFAULT_ROOMS_MAX: usize = 9;
+/// The system default for `generation.items_min`.
+const DEFAULT_ITEMS_MIN: usize = 2;
+/// The system default for `generation.items_max`.
+const DEFAULT_ITEMS_MAX: usize = 6;
+/// The system default for `generation.max_extra_cast`.
+const DEFAULT_MAX_EXTRA_CAST: usize = 3;
 
 /// The system-default `provider/model` routing string for the per-slot content
 /// pass. Gemini Flash is the cheaper, faster tier suited to content fill.
@@ -68,6 +87,27 @@ pub struct GenerationSection {
     /// Probability, in permille (`0..=1000`), that a run of optional narrative
     /// stages forks into a player choice. Absent → the system default.
     pub fork_chance_permille: Option<u16>,
+    /// The fewest beats spliced onto each stage node's spine. Absent → the
+    /// system default.
+    pub beats_per_stage_min: Option<usize>,
+    /// The most beats spliced onto each stage node's spine. Absent → the
+    /// system default.
+    pub beats_per_stage_max: Option<usize>,
+    /// The fewest rooms a generated world may contain. Absent → the system
+    /// default.
+    pub rooms_min: Option<usize>,
+    /// The most rooms a generated world may contain. Absent → the system
+    /// default.
+    pub rooms_max: Option<usize>,
+    /// The fewest items scattered across the world. Absent → the system
+    /// default.
+    pub items_min: Option<usize>,
+    /// The most items scattered across the world. Absent → the system
+    /// default.
+    pub items_max: Option<usize>,
+    /// The most supporting roles added on top of the base cast. Absent → the
+    /// system default.
+    pub max_extra_cast: Option<usize>,
 }
 
 /// The `[models]` table as it appears on disk. Each value is a `provider/model`
@@ -97,6 +137,20 @@ pub struct MonomythConfig {
 pub struct GenerationSettings {
     /// Resolved optional-stage fork probability, in permille (`0..=1000`).
     pub fork_chance_permille: Layered<u16>,
+    /// Resolved fewest beats spliced onto each stage node's spine.
+    pub beats_per_stage_min: Layered<usize>,
+    /// Resolved most beats spliced onto each stage node's spine.
+    pub beats_per_stage_max: Layered<usize>,
+    /// Resolved fewest rooms a generated world may contain.
+    pub rooms_min: Layered<usize>,
+    /// Resolved most rooms a generated world may contain.
+    pub rooms_max: Layered<usize>,
+    /// Resolved fewest items scattered across the world.
+    pub items_min: Layered<usize>,
+    /// Resolved most items scattered across the world.
+    pub items_max: Layered<usize>,
+    /// Resolved most supporting roles added on top of the base cast.
+    pub max_extra_cast: Layered<usize>,
 }
 
 /// Resolved per-task model routing.
@@ -113,6 +167,13 @@ impl Default for MonomythConfig {
         Self {
             generation: GenerationSettings {
                 fork_chance_permille: Layered::system_default(DEFAULT_FORK_CHANCE_PERMILLE),
+                beats_per_stage_min: Layered::system_default(DEFAULT_BEATS_PER_STAGE_MIN),
+                beats_per_stage_max: Layered::system_default(DEFAULT_BEATS_PER_STAGE_MAX),
+                rooms_min: Layered::system_default(DEFAULT_ROOMS_MIN),
+                rooms_max: Layered::system_default(DEFAULT_ROOMS_MAX),
+                items_min: Layered::system_default(DEFAULT_ITEMS_MIN),
+                items_max: Layered::system_default(DEFAULT_ITEMS_MAX),
+                max_extra_cast: Layered::system_default(DEFAULT_MAX_EXTRA_CAST),
             },
             models: ModelsSettings {
                 content: Layered::system_default(DEFAULT_CONTENT_MODEL.to_owned()),
@@ -139,6 +200,27 @@ impl MonomythConfig {
         self.generation
             .fork_chance_permille
             .override_with(file.generation.fork_chance_permille, from);
+        self.generation
+            .beats_per_stage_min
+            .override_with(file.generation.beats_per_stage_min, from);
+        self.generation
+            .beats_per_stage_max
+            .override_with(file.generation.beats_per_stage_max, from);
+        self.generation
+            .rooms_min
+            .override_with(file.generation.rooms_min, from);
+        self.generation
+            .rooms_max
+            .override_with(file.generation.rooms_max, from);
+        self.generation
+            .items_min
+            .override_with(file.generation.items_min, from);
+        self.generation
+            .items_max
+            .override_with(file.generation.items_max, from);
+        self.generation
+            .max_extra_cast
+            .override_with(file.generation.max_extra_cast, from);
         self.models
             .content
             .override_with(file.models.content.clone(), from);
@@ -151,8 +233,10 @@ impl MonomythConfig {
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_CONTENT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE, DEFAULT_SYNTHESIS_MODEL, ModelRole,
-        MonomythConfig, MonomythConfigFile,
+        DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_CONTENT_MODEL,
+        DEFAULT_FORK_CHANCE_PERMILLE, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN, DEFAULT_MAX_EXTRA_CAST,
+        DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig,
+        MonomythConfigFile,
     };
     use crate::layered::LayerSource;
 
@@ -188,6 +272,56 @@ mod tests {
         assert_eq!(*config.generation.fork_chance_permille.get(), 250);
         assert_eq!(
             config.generation.fork_chance_permille.source(),
+            LayerSource::ProjectOverride
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_procedural_bounds() {
+        let config = MonomythConfig::default();
+        assert_eq!(
+            *config.generation.beats_per_stage_min.get(),
+            DEFAULT_BEATS_PER_STAGE_MIN
+        );
+        assert_eq!(
+            *config.generation.beats_per_stage_max.get(),
+            DEFAULT_BEATS_PER_STAGE_MAX
+        );
+        assert_eq!(*config.generation.rooms_min.get(), DEFAULT_ROOMS_MIN);
+        assert_eq!(*config.generation.rooms_max.get(), DEFAULT_ROOMS_MAX);
+        assert_eq!(*config.generation.items_min.get(), DEFAULT_ITEMS_MIN);
+        assert_eq!(*config.generation.items_max.get(), DEFAULT_ITEMS_MAX);
+        assert_eq!(
+            *config.generation.max_extra_cast.get(),
+            DEFAULT_MAX_EXTRA_CAST
+        );
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_every_procedural_bound_at_its_layer() {
+        let file: MonomythConfigFile = toml::from_str(
+            "[generation]\n\
+             beats_per_stage_min = 2\n\
+             beats_per_stage_max = 4\n\
+             rooms_min = 6\n\
+             rooms_max = 10\n\
+             items_min = 3\n\
+             items_max = 7\n\
+             max_extra_cast = 5\n",
+        )
+        .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+
+        assert_eq!(*config.generation.beats_per_stage_min.get(), 2);
+        assert_eq!(*config.generation.beats_per_stage_max.get(), 4);
+        assert_eq!(*config.generation.rooms_min.get(), 6);
+        assert_eq!(*config.generation.rooms_max.get(), 10);
+        assert_eq!(*config.generation.items_min.get(), 3);
+        assert_eq!(*config.generation.items_max.get(), 7);
+        assert_eq!(*config.generation.max_extra_cast.get(), 5);
+        assert_eq!(
+            config.generation.rooms_min.source(),
             LayerSource::ProjectOverride
         );
     }

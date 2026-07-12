@@ -119,6 +119,7 @@ fn explicit_golden_fork_chance_reproduces_the_golden() {
     // fork probability is caught here as well as in `golden_hash_is_stable`.
     let config = GenerationConfig {
         fork_chance_permille: GOLDEN_FORK_CHANCE_PERMILLE,
+        ..GenerationConfig::default()
     };
     let world = Generator::with_config(&config)
         .generate_structure(GOLDEN_SEED)

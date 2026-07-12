@@ -58,8 +58,8 @@ pub use content_passes::{
 pub use error::GenError;
 pub use pass::ProceduralPass;
 pub use passes::{
-    BackbonePass, BeatConfig, BeatPass, CastPass, ItemsPass, MAX_ROOMS, MIN_ROOMS, MapPass,
-    NarrativeConfig, PlotChoice,
+    BackbonePass, BeatConfig, BeatPass, CastConfig, CastPass, ItemsConfig, ItemsPass, MAX_ROOMS,
+    MIN_ROOMS, MapConfig, MapPass, NarrativeConfig, PlotChoice,
 };
 
 /// A generator with two ordered pipelines: the deterministic procedural passes
@@ -134,10 +134,21 @@ impl Generator {
                     plot: PlotChoice::Seeded,
                     fork_chance_permille: config.fork_chance_permille,
                 })),
-                Box::new(BeatPass::new()),
-                Box::new(MapPass::new()),
-                Box::new(CastPass::new()),
-                Box::new(ItemsPass::new()),
+                Box::new(BeatPass::with_config(BeatConfig {
+                    beats_per_stage_min: config.beats_per_stage_min,
+                    beats_per_stage_max: config.beats_per_stage_max,
+                })),
+                Box::new(MapPass::with_config(MapConfig {
+                    rooms_min: config.rooms_min,
+                    rooms_max: config.rooms_max,
+                })),
+                Box::new(CastPass::with_config(CastConfig {
+                    max_extra_cast: config.max_extra_cast,
+                })),
+                Box::new(ItemsPass::with_config(ItemsConfig {
+                    items_min: config.items_min,
+                    items_max: config.items_max,
+                })),
             ],
             vec![
                 Box::new(TitleContentPass::new()),

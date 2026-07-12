@@ -32,15 +32,45 @@ const DIRECTION_ORDER: [Direction; 6] = [
     Direction::Down,
 ];
 
+/// Tunable knobs for map generation.
+///
+/// A world contains `rooms_min..=rooms_max` rooms, drawn once from the pass's
+/// sub-stream. The invariant `min <= max` must hold; [`draw_range_inclusive`]
+/// debug-asserts it.
+#[derive(Debug, Clone, Copy)]
+pub struct MapConfig {
+    /// The fewest rooms a generated world may contain (must be `<= rooms_max`).
+    pub rooms_min: usize,
+    /// The most rooms a generated world may contain (must be `>= rooms_min`).
+    pub rooms_max: usize,
+}
+
+impl Default for MapConfig {
+    fn default() -> Self {
+        Self {
+            rooms_min: MIN_ROOMS,
+            rooms_max: MAX_ROOMS,
+        }
+    }
+}
+
 /// Builds the connected location graph and sets the player's start room.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct MapPass;
+pub struct MapPass {
+    config: MapConfig,
+}
 
 impl MapPass {
-    /// Construct the map pass.
+    /// Construct the map pass with the default [`MapConfig`].
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construct the map pass with an explicit configuration.
+    #[must_use]
+    pub fn with_config(config: MapConfig) -> Self {
+        Self { config }
     }
 }
 
@@ -67,7 +97,7 @@ impl ProceduralPass for MapPass {
     }
 
     fn apply(&self, world: &mut World, rng: &mut ChaCha8Rng) -> Result<(), GenError> {
-        let count = draw_range_inclusive(rng, MIN_ROOMS, MAX_ROOMS);
+        let count = draw_range_inclusive(rng, self.config.rooms_min, self.config.rooms_max);
 
         let mut ids = Vec::with_capacity(count);
         for index in 0..count {
