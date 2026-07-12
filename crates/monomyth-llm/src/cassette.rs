@@ -475,7 +475,7 @@ mod tests {
         ]);
 
         {
-            let recorder = RecordingBackend::new(live, "anthropic/claude-sonnet-4", &path);
+            let recorder = RecordingBackend::new(live, "test/stub-model", &path);
             let (first, first_usage) = recorder
                 .complete_json("forge a hero", "hero", &json!({}))
                 .await
@@ -520,7 +520,7 @@ mod tests {
         ]);
 
         {
-            let recorder = RecordingBackend::new(live, "anthropic/claude-sonnet-4", &path);
+            let recorder = RecordingBackend::new(live, "test/stub-model", &path);
             recorder
                 .complete_json("same prompt", "hero", &json!({}))
                 .await
@@ -568,7 +568,7 @@ mod tests {
     async fn should_error_loudly_on_an_unrecorded_prompt() {
         let cassette = Cassette {
             version: 1,
-            model: "anthropic/claude-sonnet-4".to_owned(),
+            model: "test/stub-model".to_owned(),
             recorded_at: "unknown".to_owned(),
             interactions: vec![Interaction {
                 key: interaction_key("hero", "recorded prompt"),
@@ -612,7 +612,7 @@ mod tests {
         let live = FakeLiveBackend::new(vec![(json!({"name": "Gilgamesh"}), None)]);
 
         {
-            let recorder = RecordingBackend::new(live, "anthropic/claude-sonnet-4", &path);
+            let recorder = RecordingBackend::new(live, "test/stub-model", &path);
             recorder
                 .complete_json("forge a hero", "hero", &json!({}))
                 .await
@@ -651,7 +651,7 @@ mod tests {
     fn should_pretty_print_a_cassette_with_sorted_keys_and_trailing_newline() {
         let cassette = Cassette {
             version: 1,
-            model: "anthropic/claude-sonnet-4".to_owned(),
+            model: "test/stub-model".to_owned(),
             recorded_at: "unknown".to_owned(),
             interactions: vec![Interaction {
                 key: "abc".to_owned(),

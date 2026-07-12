@@ -19,7 +19,7 @@
 //! }
 //!
 //! # async fn run() -> Result<(), monomyth_llm::LlmError> {
-//! let llm = Llm::from_env("anthropic/claude-sonnet-4-20250514")?;
+//! let llm = Llm::from_env("anthropic/claude-sonnet-5")?;
 //! let omen = llm.generate::<Omen>("Foretell the hero's departure.", "omen").await?;
 //! println!("{}", omen.value.text);
 //! # Ok(())

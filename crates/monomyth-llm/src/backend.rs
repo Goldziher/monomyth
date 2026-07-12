@@ -149,7 +149,7 @@ impl fmt::Debug for XbergBackend {
 
 impl XbergBackend {
     /// Construct a backend targeting `model` — a `"provider/model"` routing
-    /// string (e.g. `"anthropic/claude-sonnet-4-20250514"`). The provider API
+    /// string (e.g. `"anthropic/claude-sonnet-5"`). The provider API
     /// key is read from the environment at call time. Transport knobs are set
     /// from [`BackendOptions::default`] (a 60s timeout, 2 max retries).
     ///

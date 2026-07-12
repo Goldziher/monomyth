@@ -5,10 +5,11 @@
 //! binary; this test relies on the variable already being present):
 //!
 //! ```sh
-//! OPENAI_API_KEY=sk-... cargo test -p monomyth-llm --test live -- --ignored
+//! GEMINI_API_KEY=... cargo test -p monomyth-llm --test live -- --ignored
 //! ```
 //!
-//! Model: `openai/gpt-4o-mini` — a cheap, widely-available structured-output model.
+//! Model: `gemini/gemini-3.5-flash` — the project's configured provider/tier for
+//! cheap structured-output calls.
 
 use monomyth_llm::Llm;
 use schemars::JsonSchema;
@@ -23,7 +24,7 @@ struct Greeting {
 #[tokio::test]
 #[ignore = "requires a live provider API key in the environment"]
 async fn generates_a_trivial_value_against_a_live_model() {
-    let llm = Llm::from_env("openai/gpt-4o-mini").expect("model string is non-empty");
+    let llm = Llm::from_env("gemini/gemini-3.5-flash").expect("model string is non-empty");
 
     let greeting = llm
         .generate::<Greeting>(

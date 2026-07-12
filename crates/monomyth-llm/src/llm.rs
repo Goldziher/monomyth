@@ -68,7 +68,7 @@ impl Llm {
     /// ```
     /// use monomyth_llm::Llm;
     ///
-    /// let llm = Llm::from_env("anthropic/claude-sonnet-4-20250514")?;
+    /// let llm = Llm::from_env("anthropic/claude-sonnet-5")?;
     /// assert!(Llm::from_env("").is_err());
     /// # Ok::<(), monomyth_llm::LlmError>(())
     /// ```
@@ -92,7 +92,7 @@ impl Llm {
     /// use monomyth_llm::{BackendOptions, Llm};
     ///
     /// let llm = Llm::from_env_with_options(
-    ///     "anthropic/claude-sonnet-4-20250514",
+    ///     "anthropic/claude-sonnet-5",
     ///     BackendOptions::default(),
     /// )?;
     /// # Ok::<(), monomyth_llm::LlmError>(())
