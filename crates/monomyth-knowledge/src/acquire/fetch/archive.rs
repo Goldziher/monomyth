@@ -20,7 +20,7 @@ use serde::Deserialize;
 
 use crate::acquire::error::AcquireError;
 use crate::acquire::fetch::FetchedWork;
-use crate::acquire::http::{self, CacheMode};
+use crate::acquire::http::{self, FetchContext};
 
 /// The archive.org item metadata response, narrowed to what this fetcher uses.
 #[derive(Debug, Deserialize)]
@@ -44,14 +44,13 @@ struct FileEntry {
 /// file request fails, or [`AcquireError::InvalidInput`] if no matching text
 /// file is found in the item's metadata.
 pub(crate) async fn fetch(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     identifier: &str,
     filename: Option<&str>,
     retrieved: &str,
-    cache_mode: CacheMode,
 ) -> Result<FetchedWork, AcquireError> {
     let metadata_url = format!("https://archive.org/metadata/{identifier}");
-    let metadata: Metadata = http::get_json(client, &metadata_url, cache_mode).await?;
+    let metadata: Metadata = http::get_json(ctx, &metadata_url).await?;
 
     let resolved_filename =
         pick_text_file(&metadata, filename).ok_or_else(|| AcquireError::InvalidInput {
@@ -60,7 +59,7 @@ pub(crate) async fn fetch(
         })?;
 
     let download_url = format!("https://archive.org/download/{identifier}/{resolved_filename}");
-    let (text, raw_bytes) = http::get_text(client, &download_url, cache_mode).await?;
+    let (text, raw_bytes) = http::get_text(ctx, &download_url).await?;
     let checksum = http::sha256_prefixed(&raw_bytes);
 
     Ok(FetchedWork {

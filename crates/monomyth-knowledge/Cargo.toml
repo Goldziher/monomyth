@@ -8,9 +8,17 @@ publish.workspace = true
 authors.workspace = true
 
 [features]
-acquire = ["dep:regex", "dep:reqwest", "dep:sha2", "dep:time", "dep:tokio"]
+acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time", "dep:tokio"]
+# Reserved cloud object-storage backends for the acquisition blob store
+# (ADR-0012). Declared but not wired to any call site this session — a local
+# build must not pull a cloud SDK, so these stay opt-in behind their own
+# features rather than folded into `acquire`.
+acquire-s3 = ["acquire", "opendal/services-s3"]
+acquire-gcs = ["acquire", "opendal/services-gcs"]
+acquire-azblob = ["acquire", "opendal/services-azblob"]
 
 [dependencies]
+opendal = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true, default-features = false, features = ["rustls", "gzip", "json"] }
 serde = { workspace = true }
@@ -18,12 +26,13 @@ serde_json = { workspace = true }
 sha2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 time = { workspace = true, optional = true, features = ["formatting", "macros", "parsing"] }
-tokio = { workspace = true, optional = true, features = ["time", "fs"] }
+tokio = { workspace = true, optional = true, features = ["time"] }
 xberg = { workspace = true }
 xberg-rag = { workspace = true, features = ["vector-store", "sqlite", "pipeline", "pipeline-embeddings"] }
 
 [dev-dependencies]
 async-trait = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

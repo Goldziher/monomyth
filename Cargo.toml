@@ -26,6 +26,7 @@ monomyth-gen = { path = "crates/monomyth-gen" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
 monomyth-llm = { path = "crates/monomyth-llm" }
 monomyth-text = { path = "crates/monomyth-text" }
+opendal = { version = "0.58.0", default-features = false, features = ["services-fs"] }
 rand = "0.10.2"
 rand_chacha = "0.10.0"
 regex = "1.13.0"
@@ -35,6 +36,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"
 slotmap = { version = "1.1.1", features = ["serde"] }
+tempfile = "3"
 thiserror = "2.0.18"
 time = "0.3.53"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

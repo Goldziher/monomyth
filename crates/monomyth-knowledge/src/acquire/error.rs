@@ -29,14 +29,15 @@ pub enum AcquireError {
         source: serde_json::Error,
     },
 
-    /// Reading from or writing to the on-disk fetch cache failed.
+    /// Reading from or writing to the corpus blob store failed.
     #[error("cache IO failed for {path}")]
     Cache {
-        /// The cache file path involved.
+        /// The blob store key (or, for a construction failure, the operator
+        /// root) involved.
         path: String,
-        /// The underlying IO error.
+        /// The underlying `opendal` error.
         #[source]
-        source: std::io::Error,
+        source: opendal::Error,
     },
 
     /// A response body exceeded the maximum accepted size, guarding against an

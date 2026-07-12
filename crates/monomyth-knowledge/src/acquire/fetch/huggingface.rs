@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::acquire::error::AcquireError;
 use crate::acquire::fetch::FetchedWork;
-use crate::acquire::http::{self, CacheMode};
+use crate::acquire::http::{self, FetchContext};
 
 /// Hard cap on rows requested per page; the datasets-server API rejects
 /// larger page sizes, so caller-supplied lengths are clamped rather than
@@ -63,12 +63,11 @@ pub(crate) fn clamp_page_length(requested: u32) -> u32 {
 /// fails, or [`AcquireError::InvalidInput`] if a row is missing the
 /// configured `text_column`.
 pub(crate) async fn fetch_rows(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     spec: &DatasetSpec,
     limit: usize,
     requested_page_length: u32,
     retrieved: &str,
-    cache_mode: CacheMode,
 ) -> Result<Vec<FetchedWork>, AcquireError> {
     let page_length = clamp_page_length(requested_page_length);
     let mut offset: u32 = 0;
@@ -79,7 +78,7 @@ pub(crate) async fn fetch_rows(
             break;
         }
         let url = page_url(spec, offset, page_length);
-        let page: RowsPage = http::get_json(client, &url, cache_mode).await?;
+        let page: RowsPage = http::get_json(ctx, &url).await?;
         let fetched_row_count = page.rows.len();
 
         for envelope in page.rows {

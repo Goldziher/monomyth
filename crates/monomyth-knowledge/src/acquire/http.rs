@@ -1,27 +1,22 @@
 //! Cached, retrying HTTP GET for corpus acquisition.
 //!
-//! Ports the retired Python prototype's `http.py`: a polite `User-Agent`, an
-//! on-disk raw-bytes cache keyed by a hash of the URL (so re-runs are
-//! idempotent and offline-capable), retry with backoff, and a 30s timeout.
-//! Gzip is handled transparently by reqwest's `gzip` feature rather than
-//! hand-rolled decompression.
+//! Ports the retired Python prototype's `http.py`: a polite `User-Agent`, a
+//! raw-bytes cache keyed by a hash of the URL (so re-runs are idempotent and
+//! offline-capable) fronted by [`super::storage::BlobStore`] (ADR-0012),
+//! retry with backoff, and a 30s timeout. Gzip is handled transparently by
+//! reqwest's `gzip` feature rather than hand-rolled decompression.
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 
 use crate::acquire::error::AcquireError;
+use crate::acquire::storage;
 
 /// Identifies this pipeline to remote servers as a polite, identifiable client.
 const USER_AGENT: &str = "monomyth-corpus/0.1 (+https://github.com/monomyth; research/indexing)";
-
-/// Directory the on-disk fetch cache lives under, relative to the current
-/// working directory — the same convention as the CLI's default `--db` path
-/// (`./monomyth.db`).
-const CACHE_DIR: &str = "corpus/raw";
 
 /// Request timeout for every attempt.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -59,7 +54,7 @@ pub(crate) enum CacheMode {
 }
 
 /// Lowercase-hex-encode `bytes` into `out`, appending in place.
-fn write_hex(out: &mut String, bytes: &[u8]) {
+pub(crate) fn write_hex(out: &mut String, bytes: &[u8]) {
     for byte in bytes {
         let _ = write!(out, "{byte:02x}");
     }
@@ -78,15 +73,19 @@ pub(crate) fn sha256_prefixed(bytes: &[u8]) -> String {
     out
 }
 
-/// The on-disk cache path for `url`: `corpus/raw/<sha256(url)[:20]>.bin`.
-fn cache_path(url: &str) -> PathBuf {
+/// Hash `bytes` with SHA-256 and truncate to the first 20 lowercase-hex
+/// characters — the cache-key hash segment shared by
+/// [`super::storage::cache_key`] so blob-store keys stay byte-for-byte stable
+/// with the hash scheme this module has always used.
+#[must_use]
+pub(crate) fn sha256_hex20(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(url.as_bytes());
+    hasher.update(bytes);
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(digest.len() * 2);
     write_hex(&mut hex, &digest);
     hex.truncate(20);
-    Path::new(CACHE_DIR).join(format!("{hex}.bin"))
+    hex
 }
 
 /// Backoff duration before the attempt after `attempt` (1-indexed).
@@ -94,30 +93,53 @@ fn backoff(attempt: u32) -> Duration {
     Duration::from_secs_f64(BACKOFF_BASE_SECONDS * f64::from(attempt))
 }
 
+/// Everything a cached HTTP fetch needs: the transport client, the blob
+/// store, which trust prefix this fetch's namespace maps to, and whether
+/// caching is enabled for this call. Bundled so fetcher call sites take one
+/// parameter instead of four.
+#[derive(Debug)]
+pub(crate) struct FetchContext<'a> {
+    client: &'a reqwest::Client,
+    store: &'a storage::BlobStore,
+    prefix: storage::StoragePrefix,
+    cache_mode: CacheMode,
+}
+
+impl<'a> FetchContext<'a> {
+    /// Bundle a fetch's transport, storage, trust prefix, and cache mode.
+    pub(crate) fn new(
+        client: &'a reqwest::Client,
+        store: &'a storage::BlobStore,
+        prefix: storage::StoragePrefix,
+        cache_mode: CacheMode,
+    ) -> Self {
+        Self {
+            client,
+            store,
+            prefix,
+            cache_mode,
+        }
+    }
+}
+
 /// GET `url` as raw bytes, retrying with backoff, and consulting/populating
-/// the on-disk cache per `cache_mode`.
+/// `ctx`'s blob store per `ctx.cache_mode`.
 ///
 /// # Errors
 ///
 /// Returns [`AcquireError::Http`] if every attempt fails, or
 /// [`AcquireError::Cache`] if reading or writing the cache fails.
-pub(crate) async fn get_bytes(
-    client: &reqwest::Client,
-    url: &str,
-    cache_mode: CacheMode,
-) -> Result<Vec<u8>, AcquireError> {
-    let path = cache_path(url);
-
-    if cache_mode == CacheMode::Enabled
-        && let Some(cached) = read_cache(&path).await?
+pub(crate) async fn get_bytes(ctx: &FetchContext<'_>, url: &str) -> Result<Vec<u8>, AcquireError> {
+    if ctx.cache_mode == CacheMode::Enabled
+        && let Some(cached) = ctx.store.read(ctx.prefix, url).await?
     {
         return Ok(cached);
     }
 
-    let bytes = fetch_with_retry(client, url).await?;
+    let bytes = fetch_with_retry(ctx.client, url).await?;
 
-    if cache_mode == CacheMode::Enabled {
-        write_cache(&path, &bytes).await?;
+    if ctx.cache_mode == CacheMode::Enabled {
+        ctx.store.write(ctx.prefix, url, &bytes).await?;
     }
 
     Ok(bytes)
@@ -130,11 +152,10 @@ pub(crate) async fn get_bytes(
 /// Returns [`AcquireError::Http`]/[`AcquireError::Cache`] as [`get_bytes`], or
 /// [`AcquireError::Json`] if the cached/fetched bytes do not parse as `T`.
 pub(crate) async fn get_json<T: DeserializeOwned>(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     url: &str,
-    cache_mode: CacheMode,
 ) -> Result<T, AcquireError> {
-    let bytes = get_bytes(client, url, cache_mode).await?;
+    let bytes = get_bytes(ctx, url).await?;
     serde_json::from_slice(&bytes).map_err(|error| AcquireError::Json {
         url: url.to_owned(),
         source: error,
@@ -155,11 +176,10 @@ pub(crate) async fn get_json<T: DeserializeOwned>(
 ///
 /// Returns [`AcquireError::Http`]/[`AcquireError::Cache`] as [`get_bytes`].
 pub(crate) async fn get_text(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     url: &str,
-    cache_mode: CacheMode,
 ) -> Result<(String, Vec<u8>), AcquireError> {
-    let bytes = get_bytes(client, url, cache_mode).await?;
+    let bytes = get_bytes(ctx, url).await?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
     Ok((text, bytes))
 }
@@ -267,36 +287,6 @@ async fn attempt_once(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, At
     Ok(body)
 }
 
-/// Read `path` from the on-disk cache, if present.
-async fn read_cache(path: &Path) -> Result<Option<Vec<u8>>, AcquireError> {
-    match tokio::fs::read(path).await {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(AcquireError::Cache {
-            path: path.display().to_string(),
-            source: error,
-        }),
-    }
-}
-
-/// Write `bytes` to `path`, creating the parent cache directory if needed.
-async fn write_cache(path: &Path, bytes: &[u8]) -> Result<(), AcquireError> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| AcquireError::Cache {
-                path: parent.display().to_string(),
-                source: error,
-            })?;
-    }
-    tokio::fs::write(path, bytes)
-        .await
-        .map_err(|error| AcquireError::Cache {
-            path: path.display().to_string(),
-            source: error,
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,30 +304,6 @@ mod tests {
         assert_eq!(
             sha256_prefixed(b"hello"),
             "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        );
-    }
-
-    #[test]
-    fn cache_path_is_deterministic_and_hash_derived() {
-        let first = cache_path("https://example.org/a.txt");
-        let second = cache_path("https://example.org/a.txt");
-        assert_eq!(first, second, "the same URL must hash to the same path");
-
-        let different = cache_path("https://example.org/b.txt");
-        assert_ne!(first, different, "different URLs must hash differently");
-
-        assert_eq!(
-            first.extension().and_then(|extension| extension.to_str()),
-            Some("bin")
-        );
-        let file_name = first
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("cache path has a UTF-8 file name");
-        assert_eq!(
-            file_name.len(),
-            "00000000000000000000.bin".len(),
-            "the hash prefix must be exactly 20 hex chars"
         );
     }
 

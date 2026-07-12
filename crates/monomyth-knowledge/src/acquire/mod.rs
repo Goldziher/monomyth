@@ -22,6 +22,7 @@ mod normalize;
 pub use error::AcquireError;
 pub use fetch::FetchedWork;
 mod http;
+mod storage;
 
 #[cfg(test)]
 use crate::ledger::Ledger;
@@ -143,6 +144,7 @@ pub async fn build_corpus(
             source,
         })
     })?;
+    let store = storage::BlobStore::local().map_err(KnowledgeError::from)?;
 
     let mut report = BuildReport::default();
     for entry in knowledge.ledger().entries() {
@@ -156,7 +158,7 @@ pub async fn build_corpus(
         let outcome = match classify_entry(entry) {
             EntryDisposition::Filtered(reason) => SourceOutcome::FilteredOut { reason },
             EntryDisposition::Dispatchable => {
-                build_one_source(knowledge, &client, entry, opts.limit, retrieved).await
+                build_one_source(knowledge, &client, &store, entry, opts.limit, retrieved).await
             }
         };
         report.sources.push(SourceReport {
@@ -230,11 +232,12 @@ fn dispatchable_entries<'ledger>(
 async fn build_one_source(
     knowledge: &Knowledge,
     client: &reqwest::Client,
+    store: &storage::BlobStore,
     entry: &SourceEntry,
     limit: Option<usize>,
     retrieved: &str,
 ) -> SourceOutcome {
-    let works = match fetch_for_source(client, entry, limit, retrieved).await {
+    let works = match fetch_for_source(client, store, entry, limit, retrieved).await {
         Ok(works) => works,
         Err(DispatchOutcome::NoFetcher { reason }) => return SourceOutcome::NoFetcher { reason },
         Err(DispatchOutcome::Error(error)) => {
@@ -288,17 +291,22 @@ impl From<AcquireError> for DispatchOutcome {
 /// [`DispatchOutcome::NoFetcher`].
 async fn fetch_for_source(
     client: &reqwest::Client,
+    store: &storage::BlobStore,
     entry: &SourceEntry,
     limit: Option<usize>,
     retrieved: &str,
 ) -> Result<Vec<FetchedWork>, DispatchOutcome> {
-    let cache_mode = CacheMode::Enabled;
+    let ctx = http::FetchContext::new(
+        client,
+        store,
+        storage::StoragePrefix::from(entry.namespace),
+        CacheMode::Enabled,
+    );
     match entry.id.as_str() {
         "polti" => {
             let work = fetch_first_gutendex_search(
-                client,
+                &ctx,
                 SearchBy::Query("polti dramatic situations".to_owned()),
-                cache_mode,
                 retrieved,
             )
             .await?;
@@ -306,9 +314,8 @@ async fn fetch_for_source(
         }
         "pg_key_works" => {
             let work = fetch_first_gutendex_search(
-                client,
+                &ctx,
                 SearchBy::Topic("mythology".to_owned()),
-                cache_mode,
                 retrieved,
             )
             .await?;
@@ -317,12 +324,12 @@ async fn fetch_for_source(
         "child_ballads" => {
             let url = entry.url.as_deref().unwrap_or_default();
             let pg_id = gutendex::parse_ebook_id(url)?;
-            let work = gutendex::fetch(client, pg_id, None, None, retrieved, cache_mode).await?;
+            let work = gutendex::fetch(&ctx, pg_id, None, None, retrieved).await?;
             Ok(vec![work])
         }
         "gutenberg_english" => {
             fetch_huggingface(
-                client,
+                &ctx,
                 DatasetSpec {
                     dataset: "sedthh/gutenberg_english".to_owned(),
                     config: "default".to_owned(),
@@ -331,13 +338,12 @@ async fn fetch_for_source(
                 },
                 limit,
                 retrieved,
-                cache_mode,
             )
             .await
         }
         "pg19" => {
             fetch_huggingface(
-                client,
+                &ctx,
                 DatasetSpec {
                     dataset: "deepmind/pg19".to_owned(),
                     config: "default".to_owned(),
@@ -346,7 +352,6 @@ async fn fetch_for_source(
                 },
                 limit,
                 retrieved,
-                cache_mode,
             )
             .await
         }
@@ -378,12 +383,11 @@ async fn fetch_for_source(
 /// our quality proxy for an unattended "key work" pick — stays load-bearing
 /// even if Gutendex's own ordering ever changes.
 async fn fetch_first_gutendex_search(
-    client: &reqwest::Client,
+    ctx: &http::FetchContext<'_>,
     by: SearchBy,
-    cache_mode: CacheMode,
     retrieved: &str,
 ) -> Result<FetchedWork, DispatchOutcome> {
-    let candidates = gutendex::search(client, &by, cache_mode).await?;
+    let candidates = gutendex::search(ctx, &by).await?;
     let candidate = candidates
         .into_iter()
         .filter(|candidate| candidate.text_url.is_some())
@@ -393,12 +397,11 @@ async fn fetch_first_gutendex_search(
         })?;
     let title = titled_with_authors(&candidate.title, &candidate.authors);
     let work = gutendex::fetch(
-        client,
+        ctx,
         candidate.pg_id,
         candidate.text_url.as_deref(),
         Some(title),
         retrieved,
-        cache_mode,
     )
     .await?;
     Ok(work)
@@ -417,20 +420,18 @@ fn titled_with_authors(title: &str, authors: &[String]) -> String {
 /// Fetch rows from a `HuggingFace` dataset source, applying the caller's
 /// `limit` or [`DEFAULT_HUGGINGFACE_LIMIT`].
 async fn fetch_huggingface(
-    client: &reqwest::Client,
+    ctx: &http::FetchContext<'_>,
     spec: DatasetSpec,
     limit: Option<usize>,
     retrieved: &str,
-    cache_mode: CacheMode,
 ) -> Result<Vec<FetchedWork>, DispatchOutcome> {
     let effective_limit = limit.unwrap_or(DEFAULT_HUGGINGFACE_LIMIT);
     let works = huggingface::fetch_rows(
-        client,
+        ctx,
         &spec,
         effective_limit,
         huggingface::clamp_page_length(100),
         retrieved,
-        cache_mode,
     )
     .await?;
     Ok(works)

@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::acquire::error::AcquireError;
 use crate::acquire::fetch::FetchedWork;
-use crate::acquire::http::{self, CacheMode};
+use crate::acquire::http::{self, FetchContext};
 
 /// Hard cap on paginated Gutendex search requests, so a pathological result
 /// set cannot loop indefinitely.
@@ -80,9 +80,8 @@ struct AuthorRow {
 /// Returns [`AcquireError::Http`]/[`AcquireError::Json`] if a page request
 /// fails or fails to decode.
 pub(crate) async fn search(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     by: &SearchBy,
-    cache_mode: CacheMode,
 ) -> Result<Vec<Candidate>, AcquireError> {
     let mut url = Some(first_page_url(by));
     let mut candidates = Vec::new();
@@ -92,7 +91,7 @@ pub(crate) async fn search(
         if pages_fetched >= MAX_SEARCH_PAGES {
             break;
         }
-        let page: BooksPage = http::get_json(client, &page_url, cache_mode).await?;
+        let page: BooksPage = http::get_json(ctx, &page_url).await?;
         pages_fetched += 1;
 
         candidates.extend(page.results.into_iter().filter_map(|row| {
@@ -154,18 +153,17 @@ fn plain_text_url(formats: &std::collections::BTreeMap<String, String>) -> Optio
 ///
 /// Returns [`AcquireError::Http`] if the download fails after retries.
 pub(crate) async fn fetch(
-    client: &reqwest::Client,
+    ctx: &FetchContext<'_>,
     pg_id: u64,
     text_url: Option<&str>,
     title: Option<String>,
     retrieved: &str,
-    cache_mode: CacheMode,
 ) -> Result<FetchedWork, AcquireError> {
     let url = text_url.map_or_else(
         || format!("https://www.gutenberg.org/cache/epub/{pg_id}/pg{pg_id}.txt"),
         str::to_owned,
     );
-    let (text, raw_bytes) = http::get_text(client, &url, cache_mode).await?;
+    let (text, raw_bytes) = http::get_text(ctx, &url).await?;
     let checksum = http::sha256_prefixed(&raw_bytes);
 
     Ok(FetchedWork {
