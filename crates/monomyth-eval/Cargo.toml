@@ -8,6 +8,12 @@ license.workspace = true
 publish.workspace = true
 authors.workspace = true
 
+[features]
+# The prose-level embedding-cosine axis (SemanticReport / EvalReport). Off by
+# default so the crate's default surface stays the pure, deterministic scoring
+# core; it adds no dependency — the scorer takes embedding vectors directly.
+semantic = []
+
 [dependencies]
 monomyth-core = { workspace = true }
 monomyth-frameworks = { workspace = true }

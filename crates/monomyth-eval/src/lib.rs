@@ -33,9 +33,24 @@ mod metrics;
 mod report;
 pub mod util;
 
+#[cfg(feature = "semantic")]
+mod eval_report;
+#[cfg(feature = "semantic")]
+mod semantic;
+
 pub use alignment::AlignmentScorer;
 pub use benchmark::{Benchmark, BenchmarkError};
 pub use dist::Dist;
 pub use export::{TrainingExample, stage_training_examples, to_jsonl};
 pub use metrics::{DistScore, cross_entropy, histogram_intersection, kendall_tau, top1_accuracy};
 pub use report::{Alignment, Report, Scorer, report_fingerprint};
+
+// The prose-level semantic axis (WS-B): an embedding-cosine complement to the
+// deterministic structural score above, kept behind a default-off feature so the
+// crate's default surface stays pure and no embedding dependency is pulled in.
+// `report_fingerprint` never observes this axis, so the golden is unchanged with
+// the feature on or off.
+#[cfg(feature = "semantic")]
+pub use eval_report::EvalReport;
+#[cfg(feature = "semantic")]
+pub use semantic::{SemanticReport, cosine_similarity, score_semantic};
