@@ -92,6 +92,9 @@ struct ReviewContext {
     /// overlap) the reviewer can hold up against the judge's score. Present only
     /// when the run targeted a coverage framework.
     pre_score: Option<PreScore>,
+    /// Names of items the model marked as not derivable from the grounding — an
+    /// honest abstention the reviewer should scrutinize before promoting.
+    abstained_phases: Vec<String>,
     /// Token usage for the distillation call, when the backend reported one.
     usage: Option<monomyth_llm::Usage>,
     /// The reference passages retrieved as grounding, in retrieval order.
@@ -169,6 +172,13 @@ fn write_candidate(
         iterations: drafted.iterations,
         verdict: drafted.verdict.clone(),
         pre_score: drafted.pre_score.clone(),
+        abstained_phases: drafted
+            .candidate
+            .items
+            .iter()
+            .filter(|item| !item.derivable)
+            .map(|item| item.name.clone())
+            .collect(),
         usage: drafted.usage.clone(),
         passages: drafted
             .passages

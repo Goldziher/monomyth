@@ -47,4 +47,48 @@ pub struct CandidateItem {
     /// A one-sentence, abstract structural description — general vocabulary
     /// only, never a quotation or close paraphrase of a reference passage.
     pub description: String,
+    /// Whether this item's structure was actually derivable from the grounding.
+    ///
+    /// The model sets this to `false` — an honest "could not derive from
+    /// grounding" abstention — when it can name a structurally-expected phase
+    /// that the grounding does not support, in preference to inventing content.
+    /// The judge rewards this over a fabricated phase. Defaults to `true`, so an
+    /// output that omits the field (or an older fixture) parses as derivable.
+    #[serde(default = "derivable_default")]
+    pub derivable: bool,
+}
+
+/// The default for [`CandidateItem::derivable`]: an item is derivable unless the
+/// model explicitly abstains. A free function because `#[serde(default = …)]`
+/// needs a path, and `bool::default()` is `false` (the wrong polarity here).
+fn derivable_default() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CandidateItem;
+
+    #[test]
+    fn an_item_omitting_derivable_deserializes_as_derivable() {
+        let item: CandidateItem =
+            serde_json::from_str(r#"{"name": "Departure", "description": "The hero leaves."}"#)
+                .expect("valid candidate item JSON");
+        assert!(
+            item.derivable,
+            "an omitted derivable field must default to true, not bool::default() false"
+        );
+    }
+
+    #[test]
+    fn an_item_may_explicitly_abstain() {
+        let item: CandidateItem = serde_json::from_str(
+            r#"{"name": "Apotheosis", "description": "A godhead phase.", "derivable": false}"#,
+        )
+        .expect("valid candidate item JSON");
+        assert!(
+            !item.derivable,
+            "an explicit derivable:false must be honored"
+        );
+    }
 }

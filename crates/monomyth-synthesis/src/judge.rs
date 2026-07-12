@@ -80,6 +80,15 @@ pub const DEFAULT_CRITERIA: &[LawCriterion] = &[
                         order of a dozen distinct macro-phases, not a handful.",
         weight: 0.6,
     },
+    LawCriterion {
+        name: "Honest abstention",
+        instructions: "An item explicitly marked [NOT DERIVABLE FROM GROUNDING] is an HONEST \
+                        abstention for a structurally-expected phase the grounding does not \
+                        support, and is CORRECT behaviour: score it high. Reward naming a gap \
+                        over inventing an unsupported phase. Penalize a fabricated phase the \
+                        grounding does not imply; never penalize an honest abstention marker.",
+        weight: 0.6,
+    },
 ];
 
 /// The judge's score for one [`LawCriterion`], on a 0-100 scale.
@@ -151,6 +160,9 @@ fn build_judge_prompt(
          report any named structural phases you judge absent or underdeveloped in the candidate \
          relative to the grounding (`missing_phases`), and concrete instructions for improving \
          the candidate on its next draft (`instructions`).\n\n\
+         An item tagged [NOT DERIVABLE FROM GROUNDING] is an honest abstention — the author \
+         naming a structurally-expected phase the grounding does not support, rather than \
+         inventing one. Treat it as correct, not as a defect.\n\n\
          Criteria:\n",
     );
     for criterion in criteria {
@@ -161,7 +173,16 @@ fn build_judge_prompt(
     let _ = writeln!(prompt, "Title: {}", candidate.title);
     for (index, item) in candidate.items.iter().enumerate() {
         let position = index + 1;
-        let _ = writeln!(prompt, "{position}. {}: {}", item.name, item.description);
+        let marker = if item.derivable {
+            ""
+        } else {
+            " [NOT DERIVABLE FROM GROUNDING]"
+        };
+        let _ = writeln!(
+            prompt,
+            "{position}. {}: {}{marker}",
+            item.name, item.description
+        );
     }
 
     prompt.push_str("\nGrounding passages (priors only, never to be reproduced):\n");
@@ -296,5 +317,44 @@ mod tests {
         };
 
         assert!((weighted_score(&verdict, TEST_CRITERIA) - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn judge_prompt_flags_only_the_abstaining_item() {
+        use super::{DEFAULT_CRITERIA, build_judge_prompt};
+        use crate::candidate::{CandidateItem, CandidateLaw};
+
+        let candidate = CandidateLaw {
+            title: "Arc".to_owned(),
+            items: vec![
+                CandidateItem {
+                    name: "Departure".to_owned(),
+                    description: "The hero leaves the ordinary world.".to_owned(),
+                    derivable: true,
+                },
+                CandidateItem {
+                    name: "Apotheosis".to_owned(),
+                    description: "A godhead phase the sources do not support.".to_owned(),
+                    derivable: false,
+                },
+            ],
+        };
+        let prompt = build_judge_prompt(&candidate, &[], DEFAULT_CRITERIA);
+
+        assert!(
+            prompt.contains(
+                "Apotheosis: A godhead phase the sources do not support. \
+                             [NOT DERIVABLE FROM GROUNDING]"
+            ),
+            "the abstaining item must be tagged for the judge"
+        );
+        assert!(
+            prompt.contains("Departure: The hero leaves the ordinary world.\n"),
+            "the derivable item must NOT carry the abstention tag"
+        );
+        assert!(
+            prompt.contains("Honest abstention"),
+            "the abstention criterion must be shown to the judge"
+        );
     }
 }

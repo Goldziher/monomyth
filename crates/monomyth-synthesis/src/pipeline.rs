@@ -415,6 +415,11 @@ fn build_distillation_prompt(passages: &[Passage]) -> String {
          separating a beat into two phases, list them as two items. When the material supports \
          it, target macro-tier granularity: on the order of a dozen or more distinct phases, not \
          a handful.\n\n\
+         Honesty over invention: if a structurally-expected phase belongs to the arc but the \
+         grounding does not support it, include it and set its `derivable` field to false (an \
+         honest abstention) rather than fabricating supporting detail. Never invent a phase the \
+         passages do not imply just to fill the arc; an explicit abstention is preferred to a \
+         confident fabrication.\n\n\
          Strict rules:\n\
          - Do NOT quote any passage.\n\
          - Do NOT closely paraphrase any passage's wording or sentence structure.\n\
@@ -449,7 +454,16 @@ fn build_refine_prompt(
     let _ = writeln!(prompt, "Title: {}", candidate.title);
     for (index, item) in candidate.items.iter().enumerate() {
         let position = index + 1;
-        let _ = writeln!(prompt, "{position}. {}: {}", item.name, item.description);
+        let marker = if item.derivable {
+            ""
+        } else {
+            " [NOT DERIVABLE FROM GROUNDING]"
+        };
+        let _ = writeln!(
+            prompt,
+            "{position}. {}: {}{marker}",
+            item.name, item.description
+        );
     }
 
     prompt.push_str("\nThe evaluator found these structural phases missing or underdeveloped:\n");
@@ -465,7 +479,9 @@ fn build_refine_prompt(
     prompt.push_str(
         "\nExpand and refine the candidate to add the missing phases (in correct narrative order \
          relative to the existing items) and address the instructions, while keeping every \
-         existing item that the evaluator did not flag as a problem.\n\n\
+         existing item that the evaluator did not flag as a problem. If a missing phase belongs \
+         to the arc but the grounding does not support it, add it with `derivable` set to false \
+         (an honest abstention) rather than inventing supporting detail.\n\n\
          Strict rules (unchanged from the original draft):\n\
          - Do NOT quote any passage.\n\
          - Do NOT closely paraphrase any passage's wording or sentence structure.\n\
@@ -549,14 +565,23 @@ fn stamp_artifact(
         .items
         .iter()
         .enumerate()
-        .map(|(index, item)| LawItem {
-            // `index` is bounded by `candidate.items.len()`, which in practice
-            // is a handful of taxonomy entries; a `u16` overflow here would
-            // require an implausibly large candidate.
-            id: u16::try_from(index + 1).unwrap_or(u16::MAX),
-            name: item.name.clone(),
-            description: item.description.clone(),
-            fields: std::collections::BTreeMap::new(),
+        .map(|(index, item)| {
+            // Surface an honest "could not derive" abstention to the reviewer via
+            // the extensible fields map (ids stay contiguous 1..=n). Only the
+            // abstaining items carry the flag; a derivable item omits it.
+            let mut fields = std::collections::BTreeMap::new();
+            if !item.derivable {
+                fields.insert("derivable".to_owned(), serde_json::Value::Bool(false));
+            }
+            LawItem {
+                // `index` is bounded by `candidate.items.len()`, which in
+                // practice is a handful of taxonomy entries; a `u16` overflow
+                // here would require an implausibly large candidate.
+                id: u16::try_from(index + 1).unwrap_or(u16::MAX),
+                name: item.name.clone(),
+                description: item.description.clone(),
+                fields,
+            }
         })
         .collect();
 
