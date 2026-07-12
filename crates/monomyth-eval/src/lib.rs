@@ -34,6 +34,8 @@ mod report;
 pub mod util;
 
 #[cfg(feature = "semantic")]
+mod baseline;
+#[cfg(feature = "semantic")]
 mod eval_report;
 #[cfg(feature = "semantic")]
 mod semantic;
@@ -50,6 +52,8 @@ pub use report::{Alignment, Report, Scorer, report_fingerprint};
 // crate's default surface stays pure and no embedding dependency is pulled in.
 // `report_fingerprint` never observes this axis, so the golden is unchanged with
 // the feature on or off.
+#[cfg(feature = "semantic")]
+pub use baseline::{Baseline, BaselineComparison};
 #[cfg(feature = "semantic")]
 pub use eval_report::EvalReport;
 #[cfg(feature = "semantic")]
