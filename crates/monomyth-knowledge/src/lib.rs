@@ -403,6 +403,25 @@ impl Knowledge {
         }
     }
 
+    /// Embed each string in `texts` into a dense vector, one per input, in order.
+    ///
+    /// Exposes the layer's own embedder for callers that need to score text
+    /// similarity *outside* retrieval — notably the semantic evaluation axis,
+    /// which compares candidate text against grounding by embedding cosine. It
+    /// uses the query-side embedding path (the same prefix
+    /// [`retrieve`](Self::retrieve) applies to a query), so a returned vector is
+    /// directly comparable to the vectors retrieval scores against.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KnowledgeError::Store`] if the underlying embedder fails.
+    pub async fn embed_texts(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, KnowledgeError> {
+        self.embedder
+            .embed_query(texts)
+            .await
+            .map_err(|error| KnowledgeError::store("embedding texts", error))
+    }
+
     /// The surfaceable (ship) retrieval path: ship collection + ship filter, plain
     /// vector search. Deliberately left byte-for-byte unchanged so recorded
     /// content-fill fixtures (which key on the exact grounding a query returns)
@@ -794,6 +813,30 @@ mod tests {
         let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
         let ledger = Ledger::load_embedded().expect("embedded manifest parses");
         Knowledge::with(store, embedder, ledger)
+    }
+
+    #[tokio::test]
+    async fn embed_texts_returns_one_vector_per_input_in_order() {
+        let knowledge = test_knowledge();
+        let vectors = knowledge
+            .embed_texts(vec!["a hero departs".to_owned(), "the return".to_owned()])
+            .await
+            .expect("embedding succeeds");
+
+        assert_eq!(vectors.len(), 2, "one vector per input");
+        assert_eq!(vectors[0].len(), EMBEDDING_DIM as usize);
+        assert_eq!(vectors[1].len(), EMBEDDING_DIM as usize);
+        assert_ne!(
+            vectors[0], vectors[1],
+            "distinct inputs must embed to distinct vectors"
+        );
+
+        // Deterministic: the same input embeds to the same vector.
+        let again = knowledge
+            .embed_texts(vec!["a hero departs".to_owned()])
+            .await
+            .expect("embedding succeeds");
+        assert_eq!(again[0], vectors[0], "embedding must be deterministic");
     }
 
     /// Build a retrieved chunk carrying `content` at `score`, for exercising the
