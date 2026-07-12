@@ -36,6 +36,7 @@
 
 #![forbid(unsafe_code)]
 
+mod config;
 mod content;
 mod content_passes;
 mod error;
@@ -49,6 +50,7 @@ use monomyth_core::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+pub use config::GenerationConfig;
 pub use content::{ContentConfig, ContentContext, ContentPass, NamedProse, TextProse};
 pub use content_passes::{
     EntityContentPass, ItemContentPass, LocationContentPass, TitleContentPass,
@@ -112,9 +114,26 @@ impl Generator {
     /// [`ItemContentPass`] — fills the prose slots the procedural passes left empty.
     #[must_use]
     pub fn with_default_passes() -> Self {
+        Self::with_config(&GenerationConfig::default())
+    }
+
+    /// Build a generator with the standard pipelines, parameterizing the passes
+    /// that read configuration from `config`.
+    ///
+    /// Identical to [`with_default_passes`](Self::with_default_passes) except the
+    /// [`BackbonePass`] is built from `config` (its fork probability) rather than
+    /// its own default. With `config == &GenerationConfig::default()` the output is
+    /// byte-identical to `with_default_passes`, so an unconfigured run never drifts
+    /// the determinism golden — this equivalence is pinned by a test in
+    /// `tests/determinism.rs`.
+    #[must_use]
+    pub fn with_config(config: &GenerationConfig) -> Self {
         Self::with_pipelines(
             vec![
-                Box::new(BackbonePass::new()),
+                Box::new(BackbonePass::with_config(NarrativeConfig {
+                    plot: PlotChoice::Seeded,
+                    fork_chance_permille: config.fork_chance_permille,
+                })),
                 Box::new(BeatPass::new()),
                 Box::new(MapPass::new()),
                 Box::new(CastPass::new()),

@@ -8,8 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use monomyth_config::{ConfigResolver, MonomythConfig};
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
-use monomyth_gen::{ContentConfig, ContentContext, Generator};
+use monomyth_gen::{ContentConfig, ContentContext, GenerationConfig, Generator};
 use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
 use monomyth_llm::{BackendOptions, Llm};
 use monomyth_text::{render_intro, render_location, render_structure};
@@ -30,6 +31,18 @@ pub(crate) fn generate_world(seed: u64) -> Result<World> {
         .context("generating world structure")
 }
 
+/// Project the resolved workspace configuration onto the flat
+/// [`GenerationConfig`] the procedural generator consumes.
+///
+/// This is the one place the layered `monomyth-config` types cross into
+/// `monomyth-gen`, keeping the generator free of any config-crate dependency. It
+/// grows a field per knob as generation constants migrate to configuration.
+fn generation_config(config: &MonomythConfig) -> GenerationConfig {
+    GenerationConfig {
+        fork_chance_permille: *config.generation.fork_chance_permille.get(),
+    }
+}
+
 /// Handle `gen`: build structure, optionally fill content, render, and serialize.
 ///
 /// The serialized world always leaves this command recoverable by `play`: it is
@@ -47,7 +60,10 @@ pub(crate) async fn run_gen(
     model: &str,
     db: &Path,
 ) -> Result<()> {
-    let generator = Generator::with_default_passes();
+    let config = ConfigResolver::discover()
+        .context("resolving configuration")?
+        .resolve();
+    let generator = Generator::with_config(&generation_config(&config));
     let mut world = generator
         .generate_structure(seed)
         .context("generating world structure")?;
@@ -444,10 +460,34 @@ mod tests {
 
     use monomyth_core::NarrativeEdit;
 
+    use monomyth_config::ConfigResolver;
+    use monomyth_gen::Generator;
+
     use super::{
-        apply_edit_script, build_ingest_input, content_checksum, generate_world, load_play_world,
-        resolve_text,
+        apply_edit_script, build_ingest_input, content_checksum, generate_world, generation_config,
+        load_play_world, resolve_text,
     };
+
+    #[test]
+    fn resolved_default_config_generates_identically_to_default_passes() {
+        // The cross-crate anti-drift ratchet: monomyth-config's system-default
+        // fork probability, threaded through the generator, must reproduce
+        // `with_default_passes` output byte-for-byte. If the config crate's default
+        // ever diverges from monomyth-gen's, this fails.
+        let config = ConfigResolver::defaults().resolve();
+        let via_config = serde_json::to_string(
+            &Generator::with_config(&generation_config(&config))
+                .generate_structure(42)
+                .expect("config-path generation succeeds"),
+        )
+        .expect("serialization succeeds");
+        let via_default = serde_json::to_string(&generate_world(42).expect("generation succeeds"))
+            .expect("serialization succeeds");
+        assert_eq!(
+            via_config, via_default,
+            "resolved-default config must reproduce with_default_passes output",
+        );
+    }
 
     #[test]
     fn should_apply_a_valid_edit_script_to_the_structure() {

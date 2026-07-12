@@ -16,7 +16,9 @@ authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 anyhow = "1"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
+dirs = "6"
 dotenvy = "0.15"
+monomyth-config = { path = "crates/monomyth-config" }
 monomyth-contracts = { path = "crates/monomyth-contracts" }
 monomyth-core = { path = "crates/monomyth-core" }
 monomyth-eval = { path = "crates/monomyth-eval" }
@@ -41,6 +43,7 @@ tempfile = "3"
 thiserror = "2.0.18"
 time = "0.3.53"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 xberg = { path = "../xberg-io/xberg/crates/xberg" }

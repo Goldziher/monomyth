@@ -5,10 +5,16 @@
 //! (different seeds diverge), and stability (a pinned golden hash catches
 //! unintended output drift).
 
-use monomyth_gen::Generator;
+use monomyth_gen::{GenerationConfig, Generator};
 
 /// The seed the golden hash is pinned against.
 const GOLDEN_SEED: u64 = 42;
+
+/// The fork probability (permille) the golden hash was pinned against — the
+/// `with_default_passes` / `NarrativeConfig::default` value. Fed explicitly through
+/// [`Generator::with_config`] below to pin the config-threading plumbing to the
+/// golden, independently of `GenerationConfig::default`.
+const GOLDEN_FORK_CHANCE_PERMILLE: u16 = 500;
 
 /// FNV-1a 64-bit offset basis.
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -83,5 +89,47 @@ fn golden_hash_is_stable() {
     assert_eq!(
         hash, GOLDEN_SEED_42_FNV1A,
         "generator output drifted; if intentional, update GOLDEN_SEED_42_FNV1A to {hash:#018x}",
+    );
+}
+
+#[test]
+fn config_default_path_matches_default_passes() {
+    // `with_default_passes` delegates to `with_config(&GenerationConfig::default())`,
+    // so the resolved-default config path must reproduce the golden exactly. This
+    // is the anti-drift ratchet: no config-threading change may alter an
+    // unconfigured run's output.
+    let world = Generator::with_config(&GenerationConfig::default())
+        .generate_structure(GOLDEN_SEED)
+        .expect("the default-config pipeline generates a world");
+    let hash = fnv1a(
+        serde_json::to_string(&world)
+            .expect("serializes")
+            .as_bytes(),
+    );
+    assert_eq!(
+        hash, GOLDEN_SEED_42_FNV1A,
+        "the GenerationConfig::default() path drifted from the golden",
+    );
+}
+
+#[test]
+fn explicit_golden_fork_chance_reproduces_the_golden() {
+    // Pin the semantic binding "fork_chance 500 -> golden" with an explicitly
+    // constructed config (not `::default()`), so a change to the shipped default
+    // fork probability is caught here as well as in `golden_hash_is_stable`.
+    let config = GenerationConfig {
+        fork_chance_permille: GOLDEN_FORK_CHANCE_PERMILLE,
+    };
+    let world = Generator::with_config(&config)
+        .generate_structure(GOLDEN_SEED)
+        .expect("the explicit-config pipeline generates a world");
+    let hash = fnv1a(
+        serde_json::to_string(&world)
+            .expect("serializes")
+            .as_bytes(),
+    );
+    assert_eq!(
+        hash, GOLDEN_SEED_42_FNV1A,
+        "fork_chance {GOLDEN_FORK_CHANCE_PERMILLE} no longer reproduces the golden",
     );
 }
