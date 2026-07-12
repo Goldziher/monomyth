@@ -117,11 +117,10 @@ pub struct DraftRequest {
     /// works from `query` alone, and gains targeted queries as the judge
     /// names missing phases.
     pub sub_queries: Vec<String>,
-    /// Maximum number of reference passages to retrieve as grounding.
-    pub top_k: u32,
     /// A provenance label for the model that produced the candidate (e.g.
-    /// `"anthropic/claude-sonnet-4-20250514"`), recorded in
-    /// [`LawSynthesis::model`].
+    /// `"anthropic/claude-sonnet-5"`), recorded in [`LawSynthesis::model`].
+    /// The caller supplies it; the CLI resolves it from its configured default
+    /// rather than hardcoding a model here.
     pub model: String,
     /// An ISO 8601 date supplied by the caller and recorded verbatim in
     /// [`LawSynthesis::generated`]. The crate reads no wall clock, so

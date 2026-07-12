@@ -8,11 +8,22 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 /// Default `provider/model` routing string for the content pass.
-const DEFAULT_MODEL: &str = "openai/gpt-4o-mini";
+///
+/// Gemini is the project's configured provider (`GEMINI_API_KEY`); Flash is the
+/// cheaper, faster tier suited to per-slot content fill, distinct from the
+/// PRO-tier [`DEFAULT_SYNTHESIS_MODEL`] used for distillation.
+const DEFAULT_MODEL: &str = "gemini/gemini-3.5-flash";
 /// Default on-disk path for the knowledge vector store.
 const DEFAULT_DB: &str = "./monomyth.db";
 /// Default number of passages a `retrieve` returns.
 const DEFAULT_TOP_K: u32 = 5;
+/// Default per-query passage count for `synthesize law`.
+///
+/// Mirrors `monomyth_synthesis::LoopConfig::per_query_top_k`'s own default (8),
+/// which is what the synthesis loop actually reads — distinct from the smaller
+/// [`DEFAULT_TOP_K`] used by the one-shot `retrieve`, since coverage comes from
+/// unioning many stage queries rather than over-fetching on any single one.
+const DEFAULT_SYNTHESIS_TOP_K: u32 = 8;
 /// Default directory holding the benchmark registry (`index.json`) and fixtures.
 const DEFAULT_BENCHMARKS_DIR: &str = "./artifacts/benchmarks";
 /// Default extraction strategy for `eval`.
@@ -197,8 +208,9 @@ pub(crate) enum SynthesizeCommand {
         #[arg(long)]
         query: String,
 
-        /// Max reference passages to retrieve as grounding.
-        #[arg(long, default_value_t = DEFAULT_TOP_K)]
+        /// Reference passages retrieved per coverage query (maps to the
+        /// synthesis loop's `per_query_top_k`).
+        #[arg(long, default_value_t = DEFAULT_SYNTHESIS_TOP_K)]
         top_k: u32,
 
         /// provider/model routing string for the synthesis LLM.

@@ -13,7 +13,7 @@
 use monomyth_knowledge::Passage;
 use monomyth_llm::{Generated, Llm};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::candidate::CandidateLaw;
 use crate::error::SynthesisError;
@@ -83,7 +83,7 @@ pub const DEFAULT_CRITERIA: &[LawCriterion] = &[
 ];
 
 /// The judge's score for one [`LawCriterion`], on a 0-100 scale.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CriterionScore {
     /// The criterion name this score applies to (matched against
     /// [`LawCriterion::name`] by [`weighted_score`]).
@@ -95,7 +95,7 @@ pub struct CriterionScore {
 }
 
 /// The judge's full assessment of one candidate law.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct JudgeVerdict {
     /// Per-criterion scores; see [`weighted_score`] for how these combine.
     pub criteria: Vec<CriterionScore>,

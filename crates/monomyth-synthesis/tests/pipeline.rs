@@ -249,8 +249,10 @@ fn base_request() -> DraftRequest {
         domain: "myth".to_owned(),
         query: "a plea to a powerful protector".to_owned(),
         sub_queries: Vec::new(),
-        top_k: 5,
-        model: "anthropic/claude-sonnet-4-20250514".to_owned(),
+        // A synthetic provenance label: this offline test uses a CannedBackend,
+        // so the model string is never routed — only stamped. Hardcoding a real
+        // model id here would date the test and imply a routing that never happens.
+        model: "test/stub-model".to_owned(),
         generated: "2026-07-11".to_owned(),
         loop_config: LoopConfig::default(),
     }

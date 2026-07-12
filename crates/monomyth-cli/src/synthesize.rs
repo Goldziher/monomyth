@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
-use monomyth_synthesis::{DraftRequest, DraftedLaw, LoopConfig, draft_law};
+use monomyth_synthesis::{DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, draft_law};
 use serde::Serialize;
 use time::OffsetDateTime;
 use time::macros::format_description;
@@ -76,6 +76,15 @@ struct ReviewContext {
     query: String,
     /// The sha256 hex digest of the candidate's canonical JSON.
     candidate_sha256: String,
+    /// The best-scoring candidate's weighted judge score (0-100).
+    final_score: f64,
+    /// How many judge/refine iterations ran before the loop stopped.
+    iterations: u32,
+    /// The judge's full verdict for the best candidate, when a judge call
+    /// succeeded — its per-criterion scores, named missing phases, and
+    /// improvement instructions, so the reviewer sees the machine's own
+    /// assessment beside the sources.
+    verdict: Option<JudgeVerdict>,
     /// Token usage for the distillation call, when the backend reported one.
     usage: Option<monomyth_llm::Usage>,
     /// The reference passages retrieved as grounding, in retrieval order.
@@ -86,12 +95,19 @@ struct ReviewContext {
 ///
 /// A `fn` rather than inline `eprintln!` calls so a test can assert the key
 /// phrases survive edits to this message.
-fn review_required_banner(law_id: &str, artifact_path: &Path, context_path: &Path) -> String {
+fn review_required_banner(
+    law_id: &str,
+    artifact_path: &Path,
+    context_path: &Path,
+    final_score: f64,
+    iterations: u32,
+) -> String {
     format!(
         "REVIEW REQUIRED: wrote a PRE-REVIEW candidate for law {law_id:?}.\n\
          This candidate will NOT load (monomyth_frameworks::load_law refuses an empty \
          synthesis.reviewed_by) until a human reviews it.\n\
          \n\
+         Judge score: {final_score:.0}/100 after {iterations} iteration(s)\n\
          Candidate artifact:  {}\n\
          Review context:      {}\n\
          \n\
@@ -142,6 +158,9 @@ fn write_candidate(
         generated: drafted.artifact.synthesis.generated.clone(),
         query: query.to_owned(),
         candidate_sha256: drafted.candidate_sha256.clone(),
+        final_score: drafted.final_score,
+        iterations: drafted.iterations,
+        verdict: drafted.verdict.clone(),
         usage: drafted.usage.clone(),
         passages: drafted
             .passages
@@ -204,10 +223,12 @@ pub(crate) async fn run_synthesize_law(
         domain,
         query,
         sub_queries: Vec::new(),
-        top_k,
         model,
         generated,
-        loop_config: LoopConfig::default(),
+        loop_config: LoopConfig {
+            per_query_top_k: top_k,
+            ..LoopConfig::default()
+        },
     };
     let drafted = draft_law(&knowledge, &llm, &request)
         .await
@@ -218,7 +239,13 @@ pub(crate) async fn run_synthesize_law(
 
     eprintln!(
         "{}",
-        review_required_banner(&law, &artifact_path, &context_path)
+        review_required_banner(
+            &law,
+            &artifact_path,
+            &context_path,
+            drafted.final_score,
+            drafted.iterations,
+        )
     );
     println!("{}", artifact_path.display());
     Ok(())
@@ -295,7 +322,7 @@ mod tests {
             tier_note: "test fixture".to_owned(),
             synthesis: LawSynthesis {
                 reference_source_ids: vec!["some_reference_source".to_owned()],
-                model: "gemini/gemini-3.1-pro-preview".to_owned(),
+                model: "test/stub-model".to_owned(),
                 generated: "2026-07-12".to_owned(),
                 reviewed_by: String::new(),
                 candidate_sha256: Some("deadbeef".to_owned()),
@@ -347,6 +374,14 @@ mod tests {
             context_json.contains("a sample query"),
             "context file must record the grounding query for the reviewer"
         );
+        assert!(
+            context_json.contains("\"final_score\": 90.0"),
+            "context file must record the judge's final score for the reviewer"
+        );
+        assert!(
+            context_json.contains("\"iterations\": 1"),
+            "context file must record the judge iteration count for the reviewer"
+        );
 
         let artifact_json =
             std::fs::read_to_string(&artifact_path).expect("artifact file reads back");
@@ -371,6 +406,8 @@ mod tests {
             "sample_law",
             Path::new("./synthesis/candidates/sample_law.json"),
             Path::new("./synthesis/candidates/sample_law.context.json"),
+            82.0,
+            2,
         );
         assert!(
             banner.contains("reviewed_by"),
@@ -381,5 +418,9 @@ mod tests {
             "banner must mention artifacts/laws"
         );
         assert!(banner.contains("REVIEW REQUIRED"));
+        assert!(
+            banner.contains("Judge score: 82/100 after 2 iteration(s)"),
+            "banner must surface the judge score and iteration count"
+        );
     }
 }
