@@ -7,7 +7,7 @@
 //! stay deterministic and free of lossy `as` casts.
 
 use monomyth_core::{Weight, World};
-use rand::RngCore;
+use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::error::GenError;
@@ -66,7 +66,7 @@ pub(crate) fn draw_chance(rng: &mut ChaCha8Rng, permille: u16) -> bool {
 
 /// Draw an index into `weights` proportional to each entry's relative share.
 ///
-/// Consumes exactly one RNG stream word (`ChaCha8Rng::next_u64` via `RngCore`)
+/// Consumes exactly one RNG stream word (`ChaCha8Rng::next_u64` via `Rng`)
 /// unconditionally — including when `weights` is empty or all-zero — so a
 /// caller's stream position never depends on how many weights it was passed or
 /// their values. This is why the draw happens before the zero-total check rather

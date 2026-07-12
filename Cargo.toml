@@ -1,4 +1,5 @@
-# xberg / xberg-rag / liter-llm are declared at their crates.io versions in the crates that use them
+# xberg / xberg-rag are consumed from the local xberg-io checkout via path dependencies.
+# liter-llm (xberg's transitive dep) is pinned to the matching local checkout via the patch below.
 [workspace]
 resolver = "3"
 members = ["crates/*"]
@@ -25,20 +26,20 @@ monomyth-gen = { path = "crates/monomyth-gen" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
 monomyth-llm = { path = "crates/monomyth-llm" }
 monomyth-text = { path = "crates/monomyth-text" }
-rand = "0.9.2"
-rand_chacha = "0.9.0"
+rand = "0.10.2"
+rand_chacha = "0.10.0"
 regex = "1.13.0"
 reqwest = { version = "0.13.4", default-features = false }
 schemars = "1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"
-slotmap = { version = "1.0.7", features = ["serde"] }
+slotmap = { version = "1.1.1", features = ["serde"] }
 thiserror = "2.0.18"
 time = "0.3.53"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-xberg = "1.0.0-rc.14"
-xberg-rag = "1.0.0-rc.14"
+xberg = { path = "../xberg-io/xberg/crates/xberg" }
+xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -51,6 +52,4 @@ pedantic = { level = "deny", priority = -1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 
 [patch.crates-io]
-xberg = { path = "../xberg-io/xberg/crates/xberg" }
-xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }
 liter-llm = { path = "../xberg-io/liter-llm/crates/liter-llm" }

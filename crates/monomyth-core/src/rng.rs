@@ -13,7 +13,7 @@
 //! This is the *procedural* stream. The content (LLM) phase is quarantined and
 //! never touches it.
 
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 

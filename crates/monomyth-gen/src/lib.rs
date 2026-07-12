@@ -46,7 +46,7 @@ use monomyth_core::{
     Content, ContentKind, ContentPrompt, LocationId, NarrativeStructure, Player, RngState,
     SCHEMA_VERSION, Story, World, WorldMeta, WorldState,
 };
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
