@@ -1,0 +1,13 @@
+# cargo-audit configuration. Kept in sync with `deny.toml`'s `[advisories] ignore`.
+#
+# cargo-audit is the strict advisory gate (it fails on any vulnerability, unlike cargo-deny
+# which rates some as informational notes). Only advisories that are provably unreachable in
+# every shipped build are ignored here — everything else must still block CI.
+[advisories]
+ignore = [
+    # rsa "Marvin Attack" timing side-channel (5.9 medium, no upstream fix). Reachable ONLY via
+    # the reserved acquire-s3/gcs/azblob cloud features (opendal cloud services → reqsign → rsa);
+    # never compiled into the default or `--features acquire` build. Revisit before any cloud
+    # acquire feature is wired up. See adrs/0012-opendal-corpus-blob-storage.md.
+    "RUSTSEC-2023-0071",
+]

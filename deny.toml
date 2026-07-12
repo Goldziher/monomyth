@@ -22,5 +22,15 @@ allow = [
 multiple-versions = "warn"
 
 [advisories]
+version = 2
 yanked = "deny"
-ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2025-0119"]
+ignore = [
+    # Unmaintained transitive deps pulled through xberg's tokenizers/hf-hub/indicatif chain.
+    "RUSTSEC-2024-0436", # paste — no longer maintained
+    "RUSTSEC-2025-0119", # number_prefix — unmaintained
+    # NOTE: the rsa "Marvin Attack" advisory (RUSTSEC-2023-0071) is deliberately NOT listed here.
+    # cargo-deny's feature-aware graph resolves the reserved acquire-s3/gcs/azblob cloud features
+    # as off, so rsa never enters the graph it checks ("no crate matched" if listed). It reaches
+    # the raw Cargo.lock only, where `cargo audit` (the stricter gate) sees it — so it is ignored
+    # in `.cargo/audit.toml` instead, with the same reachability justification.
+]

@@ -68,6 +68,13 @@ stands. It does **not** affect ADR-0011 (the vector store).
   it.
 - Neutral, because storage cost is not a design constraint here (per the deployment brief), so the
   choice optimizes for one code path and trust separation, not footprint.
+- Bad, because the reserved `acquire-s3`/`acquire-gcs`/`acquire-azblob` sub-features make OpenDAL's
+  cloud-service crates resolvable, which drags a known advisory (RUSTSEC-2023-0071, the `rsa` "Marvin
+  Attack" timing side-channel, 5.9 medium, no upstream fix) into `Cargo.lock` via `reqsign`. It is
+  **never compiled** into the default or `--features acquire` build (`cargo-deny`'s feature-aware
+  graph does not surface it; only `cargo audit`, which scans the raw lockfile, does), so it is ignored
+  in `.cargo/audit.toml` with a reachability note. This must be revisited before any cloud acquire
+  sub-feature is actually wired to a live bucket — at which point a non-`rsa` signer is a prerequisite.
 
 ### Confirmation
 
