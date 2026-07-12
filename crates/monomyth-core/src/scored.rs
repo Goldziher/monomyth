@@ -10,8 +10,10 @@
 //! load-bearing for stable, snapshot-testable serialization (a hard project
 //! invariant: deterministic collections, never `Hash*`).
 //!
-//! This module is purely additive for Phase S0: no existing field is changed to
-//! use these types yet, and `SCHEMA_VERSION` is not bumped.
+//! These types are load-bearing in the schema as of `SCHEMA_VERSION` 4: the six
+//! framework-typed fields (`NarrativeNode.functions`/`.motifs`/`.situation`/
+//! `.stage`, `Story.plot`, `Entity.role`/`.archetype`, `Quest.situation`) carry
+//! `ScoredSet`/`ScoredOne` distributions rather than bare categorical tags.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -114,9 +116,11 @@ impl<T: Ord> From<BTreeSet<T>> for ScoredSet<T> {
 ///
 /// A candidate equal to `primary` in `alternatives` would be redundant (it
 /// already has an implicit primary status) and contradictory (is it the label or
-/// a competitor?). This phase enforces the invariant locally, in
-/// [`insert_alternative`](Self::insert_alternative); wiring it into
-/// `World::validate` is a later phase.
+/// a competitor?). The invariant is enforced in two places: locally at
+/// construction in [`insert_alternative`](Self::insert_alternative), and at the
+/// deserialize/load boundary by [`World::validate`](crate::World::validate) (via
+/// [`primary_duplicated_in_alternatives`](Self::primary_duplicated_in_alternatives)),
+/// which a derived [`Deserialize`] bypasses.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScoredOne<T: Ord> {
     primary: T,
