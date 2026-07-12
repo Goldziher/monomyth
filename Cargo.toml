@@ -25,6 +25,7 @@ monomyth-frameworks = { path = "crates/monomyth-frameworks" }
 monomyth-gen = { path = "crates/monomyth-gen" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
 monomyth-llm = { path = "crates/monomyth-llm" }
+monomyth-synthesis = { path = "crates/monomyth-synthesis" }
 monomyth-text = { path = "crates/monomyth-text" }
 opendal = { version = "0.58.0", default-features = false, features = ["services-fs"] }
 rand = "0.10.2"

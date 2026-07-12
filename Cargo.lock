@@ -2902,6 +2902,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-synthesis"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "monomyth-frameworks",
+ "monomyth-knowledge",
+ "monomyth-llm",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror",
+ "tokio",
+ "xberg-rag",
+]
+
+[[package]]
 name = "monomyth-text"
 version = "0.1.0"
 dependencies = [
