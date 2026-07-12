@@ -7,12 +7,6 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-/// Default `provider/model` routing string for the content pass.
-///
-/// Gemini is the project's configured provider (`GEMINI_API_KEY`); Flash is the
-/// cheaper, faster tier suited to per-slot content fill, distinct from the
-/// PRO-tier [`DEFAULT_SYNTHESIS_MODEL`] used for distillation.
-const DEFAULT_MODEL: &str = "gemini/gemini-3.5-flash";
 /// Default on-disk path for the knowledge vector store.
 const DEFAULT_DB: &str = "./monomyth.db";
 /// Default number of passages a `retrieve` returns.
@@ -28,12 +22,6 @@ const DEFAULT_SYNTHESIS_TOP_K: u32 = 8;
 const DEFAULT_BENCHMARKS_DIR: &str = "./artifacts/benchmarks";
 /// Default extraction strategy for `eval`.
 const DEFAULT_EXTRACTOR: &str = "rag-softmax";
-/// Default `provider/model` routing string for the law-synthesis LLM pass.
-///
-/// Distillation quality matters more than latency/cost here, so this defaults to
-/// a PRO-tier model — distinct from [`DEFAULT_MODEL`], which favors the cheaper
-/// default content-fill pass.
-const DEFAULT_SYNTHESIS_MODEL: &str = "gemini/gemini-3.1-pro-preview";
 /// Default directory a drafted candidate law is written into for human review.
 ///
 /// Deliberately outside `artifacts/`: a candidate here is PRE-REVIEW and must
@@ -44,9 +32,10 @@ const DEFAULT_CANDIDATES_DIR: &str = "./synthesis/candidates";
 #[derive(Debug, Parser)]
 #[command(name = "monomyth", version, about)]
 pub(crate) struct Cli {
-    /// `provider/model` routing string passed to the LLM content pass.
-    #[arg(long, global = true, default_value = DEFAULT_MODEL)]
-    pub(crate) model: String,
+    /// `provider/model` routing string for the LLM content pass. Overrides the
+    /// configured `models.content` default when set.
+    #[arg(long, global = true)]
+    pub(crate) model: Option<String>,
 
     /// Path to the knowledge vector store used by ingest, retrieve, and `--fill`.
     #[arg(long, global = true, default_value = DEFAULT_DB)]
@@ -213,9 +202,10 @@ pub(crate) enum SynthesizeCommand {
         #[arg(long, default_value_t = DEFAULT_SYNTHESIS_TOP_K)]
         top_k: u32,
 
-        /// provider/model routing string for the synthesis LLM.
-        #[arg(long, default_value = DEFAULT_SYNTHESIS_MODEL)]
-        model: String,
+        /// provider/model routing string for the synthesis LLM. Overrides the
+        /// configured `models.synthesis` default when set.
+        #[arg(long)]
+        model: Option<String>,
 
         /// Seed coverage sub-queries from a framework taxonomy (e.g.
         /// "campbell"), so initial retrieval spans the whole arc. Opt-in;

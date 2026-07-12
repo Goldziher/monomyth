@@ -22,10 +22,14 @@ const DEPLOYMENT_CONFIG_DIR_ENV: &str = "MONOMYTH_CONFIG_DIR";
 
 /// Runtime overrides, i.e. values supplied on the command line. Each present field
 /// becomes a [`LayerSource::RuntimeOverride`] and beats every file layer.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RuntimeOverrides {
     /// Overrides `generation.fork_chance_permille` when present.
     pub fork_chance_permille: Option<u16>,
+    /// Overrides `models.content` when present (the global `--model` flag).
+    pub content_model: Option<String>,
+    /// Overrides `models.synthesis` when present (the `synthesize law --model` flag).
+    pub synthesis_model: Option<String>,
 }
 
 /// Accumulates the layered configuration and yields the resolved [`MonomythConfig`].
@@ -79,6 +83,14 @@ impl ConfigResolver {
             .generation
             .fork_chance_permille
             .override_with(overrides.fork_chance_permille, LayerSource::RuntimeOverride);
+        self.config
+            .models
+            .content
+            .override_with(overrides.content_model, LayerSource::RuntimeOverride);
+        self.config
+            .models
+            .synthesis
+            .override_with(overrides.synthesis_model, LayerSource::RuntimeOverride);
         self
     }
 
@@ -131,6 +143,7 @@ mod tests {
         let config = ConfigResolver::defaults()
             .with_runtime(RuntimeOverrides {
                 fork_chance_permille: Some(750),
+                ..RuntimeOverrides::default()
             })
             .resolve();
         assert_eq!(*config.generation.fork_chance_permille.get(), 750);
@@ -150,5 +163,24 @@ mod tests {
             config.generation.fork_chance_permille.source(),
             LayerSource::SystemDefault
         );
+    }
+
+    #[test]
+    fn a_runtime_model_override_wins_over_the_default() {
+        use crate::schema::ModelRole;
+
+        let config = ConfigResolver::defaults()
+            .with_runtime(RuntimeOverrides {
+                content_model: Some("openai/gpt-5".to_owned()),
+                ..RuntimeOverrides::default()
+            })
+            .resolve();
+        assert_eq!(config.model_for(ModelRole::Content), "openai/gpt-5");
+        assert_eq!(
+            config.models.content.source(),
+            LayerSource::RuntimeOverride,
+            "the flag advances the content model to the runtime layer",
+        );
+        assert_eq!(config.models.synthesis.source(), LayerSource::SystemDefault);
     }
 }

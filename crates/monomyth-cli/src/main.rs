@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Gen { seed, fill, out } => {
-            commands::run_gen(seed, fill, out, &cli.model, &cli.db).await
+            commands::run_gen(seed, fill, out, cli.model, &cli.db).await
         }
         Command::Play { world, seed } => {
             let world = commands::load_play_world(world.as_deref(), seed)?;

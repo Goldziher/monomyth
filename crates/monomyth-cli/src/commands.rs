@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use monomyth_config::{ConfigResolver, MonomythConfig};
+use monomyth_config::{ConfigResolver, ModelRole, MonomythConfig, RuntimeOverrides};
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
 use monomyth_gen::{ContentConfig, ContentContext, GenerationConfig, Generator};
 use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
@@ -57,11 +57,15 @@ pub(crate) async fn run_gen(
     seed: u64,
     fill: bool,
     out: Option<PathBuf>,
-    model: &str,
+    model: Option<String>,
     db: &Path,
 ) -> Result<()> {
     let config = ConfigResolver::discover()
         .context("resolving configuration")?
+        .with_runtime(RuntimeOverrides {
+            content_model: model,
+            ..RuntimeOverrides::default()
+        })
         .resolve();
     let generator = Generator::with_config(&generation_config(&config));
     let mut world = generator
@@ -69,7 +73,8 @@ pub(crate) async fn run_gen(
         .context("generating world structure")?;
 
     if fill {
-        let llm = Llm::from_env_with_options(model, BackendOptions::default())
+        let content_model = config.model_for(ModelRole::Content);
+        let llm = Llm::from_env_with_options(content_model, BackendOptions::default())
             .context("initializing the LLM from the environment")?;
         let knowledge = Knowledge::open(db)
             .await
@@ -77,7 +82,7 @@ pub(crate) async fn run_gen(
         let context = ContentContext {
             llm: &llm,
             knowledge: &knowledge,
-            model,
+            model: content_model,
             config: &ContentConfig::default(),
         };
         generator
@@ -470,10 +475,6 @@ mod tests {
 
     #[test]
     fn resolved_default_config_generates_identically_to_default_passes() {
-        // The cross-crate anti-drift ratchet: monomyth-config's system-default
-        // fork probability, threaded through the generator, must reproduce
-        // `with_default_passes` output byte-for-byte. If the config crate's default
-        // ever diverges from monomyth-gen's, this fails.
         let config = ConfigResolver::defaults().resolve();
         let via_config = serde_json::to_string(
             &Generator::with_config(&generation_config(&config))

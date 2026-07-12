@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use monomyth_config::{ConfigResolver, ModelRole, RuntimeOverrides};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
 use monomyth_synthesis::{
@@ -212,8 +213,9 @@ pub(crate) struct SynthesizeLawArgs {
     /// Reference passages retrieved per coverage query (the loop's
     /// `per_query_top_k`).
     pub(crate) top_k: u32,
-    /// `provider/model` routing string for the synthesis LLM.
-    pub(crate) model: String,
+    /// `provider/model` routing string for the synthesis LLM. `None` resolves the
+    /// configured `models.synthesis` default; `Some` is a runtime override.
+    pub(crate) model: Option<String>,
     /// Optional framework whose taxonomy seeds coverage sub-queries.
     pub(crate) coverage_framework: Option<String>,
     /// Directory to write the candidate into (must not be under `artifacts/`).
@@ -263,6 +265,15 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
             coverage_sub_queries(framework)
         }
     };
+
+    let config = ConfigResolver::discover()
+        .context("resolving configuration")?
+        .with_runtime(RuntimeOverrides {
+            synthesis_model: model,
+            ..RuntimeOverrides::default()
+        })
+        .resolve();
+    let model = config.model_for(ModelRole::Synthesis).to_owned();
 
     let llm = Llm::from_env_with_options(&model, BackendOptions::default())
         .context("initializing the synthesis LLM from the environment")?;
