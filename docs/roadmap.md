@@ -69,10 +69,17 @@ ordering with the "generation grounding first" near-term-focus decision.
   (Laurasian/Gondwanan two-arc, binary-opposition mediation, trifunctional faction casting, Doty
   dimensions) into `artifacts/laws/`.
 - **1g. Harden synthesis (grantflow-informed).** Follow-ups distilled from the grantflow RAG service
-  (ADR-0024/0025): framework-vocabulary query enrichment; a deterministic pre-score fast-path plus
-  "could-not-derive" markers for the judge; a synthesis quality-baseline benchmark under ADR-0023;
-  robust hybrid retrieval (FTS5-escaped lexical arm); and `monomyth-llm` ergonomics (named prompt
-  templates + identifiers, per-task model selection + thinking budgets, structured tracing).
+  (ADR-0024/0025). **Landed:** framework-vocabulary query enrichment (opt-in `--coverage-framework`,
+  seeding one coverage sub-query per Campbell stage); a deterministic advisory pre-score (phase
+  coverage / ordering / grounding overlap, recorded in the review trail, never a gate); honest
+  "could-not-derive" abstention markers (`CandidateItem::derivable`, a rewarding judge criterion);
+  and the CLI judge trail (`final_score`/`iterations`/`verdict` in the `.context.json`, a banner
+  score line). A live judge-gated run over the broader corpus lifted the Campbell macro-law from 4
+  coarse phases to 17 arc-spanning phases (judge 92/100, first iteration; four honest abstentions).
+  **Remaining:** a synthesis quality-baseline benchmark under ADR-0023; robust hybrid retrieval
+  (FTS5-escaped lexical arm); full TOML-file configuration (the `monomyth-config` spine, routing
+  per-task model selection); and the rest of `monomyth-llm` ergonomics (named prompt templates +
+  identifiers, thinking budgets, structured tracing).
 
 **Exit criteria:** build a small ship corpus, generate a world with layered config overrides, confirm
 grounded content-fill; reference-ingest a myth-theory source and confirm it stays reference-only.

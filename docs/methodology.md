@@ -63,23 +63,33 @@ The **synthesize** step is not a single LLM call — a single distillation pass 
 supporting a dozen macro-phases flattens into three or four coarse buckets). `draft_law` instead runs
 a **retrieve → distill → judge → refine → gate → stamp** loop:
 
-1. **Retrieve** multi-query reference grounding (ADR-0025): the seed query plus, mid-loop, the phases
-   the judge names missing, unioned and deduplicated for whole-arc coverage.
-2. **Distill** an initial candidate with an exhaustiveness-demanding prompt.
+1. **Retrieve** multi-query reference grounding (ADR-0025): the seed query, optional
+   framework-vocabulary coverage queries (one per taxonomy stage — e.g. Campbell's seventeen —
+   seeded up front so the grounding spans the whole arc by construction), plus, mid-loop, the phases
+   the judge names missing, all unioned and deduplicated.
+2. **Distill** an initial candidate with an exhaustiveness-demanding prompt that also instructs
+   *honesty over invention*: rather than fabricate a structurally-expected phase the grounding does
+   not support, the model may include it and mark it `derivable: false` (an explicit abstention).
 3. **Judge** the candidate with a second LLM call against weighted criteria (exhaustiveness, source
-   grounding, abstraction, ordering, tier fit), yielding a score and a list of missing phases.
+   grounding, abstraction, ordering, tier fit, and honest abstention — a marked gap is rewarded over
+   a fabricated phase), yielding a score and a list of missing phases. Alongside it, a **deterministic
+   advisory pre-score** (phase coverage vs the targeted framework, ordering monotonicity, grounding
+   overlap) is computed with no LLM call — recorded for the reviewer as an independent second opinion,
+   never mixed into the judge's score and never used to accept or reject.
 4. **Refine** while the weighted score is below a rising bar — retrieve grounding for the missing
    phases and re-draft — keeping the best-scoring candidate across iterations (ADR-0024).
 5. **Gate** the best candidate through the machine-checked anti-leak shingle check (a fourth
    enforcement layer atop ADR-0005's three — see [Licensing gate](#licensing-gate)); a verbatim
    overlap refuses the candidate outright.
-6. **Stamp** a pre-review `LawArtifact` and write it plus a `.context.json` grounding sidecar (and the
-   judge trail) for the reviewer.
+6. **Stamp** a pre-review `LawArtifact` and write it plus a `.context.json` sidecar carrying the
+   grounding, the judge trail (`final_score`, `iterations`, the full verdict), the advisory pre-score,
+   and the honestly-abstained phase names for the reviewer.
 
-The CLI entry point is `monomyth synthesize law --law <id> --domain <d> --query <q>`, which refuses any
-`--out` under `artifacts/` and prints a REVIEW-REQUIRED banner with the promotion steps. The judge
-raises the floor on completeness; **human review remains the ceiling**, and the empty `reviewed_by` is
-what makes that non-optional.
+The CLI entry point is `monomyth synthesize law --law <id> --domain <d> --query <q>`, with an opt-in
+`--coverage-framework <name>` (e.g. `campbell`) that seeds the coverage queries. It refuses any `--out`
+under `artifacts/` and prints a REVIEW-REQUIRED banner — now including a `Judge score: N/100 after K
+iteration(s)` line — with the promotion steps. The judge raises the floor on completeness; **human
+review remains the ceiling**, and the empty `reviewed_by` is what makes that non-optional.
 
 ## Inspect-download mode
 
