@@ -4,14 +4,12 @@ use async_trait::async_trait;
 use monomyth_core::{Provenance, World};
 
 use crate::content::{
-    ContentContext, ContentPass, GROUNDING_TOP_K, TextProse, build_prompt, ground, grounding_note,
+    ContentContext, ContentPass, TextProse, build_prompt, ground, grounding_note,
 };
 use crate::error::GenError;
 
 /// The schema name passed to the LLM for the title generation call.
 const TITLE_SCHEMA: &str = "world_title";
-/// The writing task handed to the model for the world title.
-const TITLE_INSTRUCTION: &str = "Write a short, evocative title for a mythic adventure world.";
 
 /// Fills [`World::meta`](monomyth_core::WorldMeta)'s `title` slot.
 #[derive(Debug, Default, Clone, Copy)]
@@ -33,8 +31,8 @@ impl ContentPass for TitleContentPass {
 
     async fn apply(&self, world: &mut World, context: &ContentContext<'_>) -> Result<(), GenError> {
         let hint = world.meta.title.prompt().hint.clone();
-        let passages = ground(context, &hint, GROUNDING_TOP_K).await?;
-        let prompt = build_prompt(TITLE_INSTRUCTION, &hint, &passages);
+        let passages = ground(context, &hint, context.config.grounding_top_k).await?;
+        let prompt = build_prompt(&context.config.title_instruction, &hint, &passages);
         let generated = context
             .llm
             .generate::<TextProse>(&prompt, TITLE_SCHEMA)

@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
-use monomyth_gen::{ContentContext, Generator};
+use monomyth_gen::{ContentConfig, ContentContext, Generator};
 use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
-use monomyth_llm::Llm;
+use monomyth_llm::{BackendOptions, Llm};
 use monomyth_text::{render_intro, render_location, render_structure};
 use time::OffsetDateTime;
 use time::macros::format_description;
@@ -53,7 +53,8 @@ pub(crate) async fn run_gen(
         .context("generating world structure")?;
 
     if fill {
-        let llm = Llm::from_env(model).context("initializing the LLM from the environment")?;
+        let llm = Llm::from_env_with_options(model, BackendOptions::default())
+            .context("initializing the LLM from the environment")?;
         let knowledge = Knowledge::open(db)
             .await
             .context("opening the knowledge store")?;
@@ -61,6 +62,7 @@ pub(crate) async fn run_gen(
             llm: &llm,
             knowledge: &knowledge,
             model,
+            config: &ContentConfig::default(),
         };
         generator
             .fill_content(&mut world, &context)

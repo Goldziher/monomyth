@@ -59,4 +59,18 @@ pub enum GenError {
     /// A ship-safe grounding retrieval in the content phase failed.
     #[error("content grounding retrieval failed")]
     Knowledge(#[from] monomyth_knowledge::KnowledgeError),
+
+    /// A content pass failed; `pass` names which one so a multi-pass failure can
+    /// be attributed to its source without inspecting the underlying error.
+    ///
+    /// The source is boxed to keep this enum from growing to the size of its
+    /// largest variant purely to hold a recursive `GenError`.
+    #[error("content pass `{pass}` failed")]
+    ContentPass {
+        /// The name of the pass that failed (see [`ContentPass::name`](crate::ContentPass::name)).
+        pass: &'static str,
+        /// The underlying failure.
+        #[source]
+        source: Box<GenError>,
+    },
 }

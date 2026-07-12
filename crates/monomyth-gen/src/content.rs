@@ -23,15 +23,9 @@ use monomyth_core::World;
 use monomyth_knowledge::{Knowledge, KnowledgeQuery, Passage};
 use monomyth_llm::Llm;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::error::GenError;
-
-/// Number of ship-safe passages retrieved to ground each content slot.
-///
-/// A named constant so the grounding breadth is tunable in one place rather than
-/// scattered as a literal across the passes.
-pub(crate) const GROUNDING_TOP_K: u32 = 4;
 
 /// The dependencies a [`ContentPass`] draws on, borrowed for the duration of a run.
 ///
@@ -47,6 +41,50 @@ pub struct ContentContext<'a> {
     pub knowledge: &'a Knowledge,
     /// The model label recorded in provenance (matches how `llm` was configured).
     pub model: &'a str,
+    /// The tuning surface for grounding breadth and pass instructions.
+    pub config: &'a ContentConfig,
+}
+
+/// Tunable knobs for the content phase: grounding breadth and the per-pass
+/// writing instructions handed to the LLM.
+///
+/// [`Default`] reproduces the behavior every pass had before this type existed,
+/// so constructing a [`ContentContext`] with `ContentConfig::default()` is a
+/// no-op migration.
+#[derive(Clone, Debug)]
+pub struct ContentConfig {
+    /// Number of ship-safe passages retrieved to ground each content slot.
+    pub grounding_top_k: u32,
+    /// The writing task handed to the model for the world title.
+    pub title_instruction: String,
+    /// The writing task handed to the model for a location.
+    pub location_instruction: String,
+    /// The writing task handed to the model for an entity.
+    pub entity_instruction: String,
+    /// The writing task handed to the model for an item.
+    pub item_instruction: String,
+}
+
+impl Default for ContentConfig {
+    fn default() -> Self {
+        Self {
+            grounding_top_k: 4,
+            title_instruction: "Write a short, evocative title for a mythic adventure world."
+                .to_owned(),
+            location_instruction:
+                "Write the proper name and a vivid one-paragraph description for a location in a \
+                 mythic world."
+                    .to_owned(),
+            entity_instruction:
+                "Write the proper name and a vivid one-paragraph description for a character or \
+                 being in a mythic world, true to its dramatic role."
+                    .to_owned(),
+            item_instruction:
+                "Write the proper name and a vivid one-paragraph description for an object in a \
+                 mythic world."
+                    .to_owned(),
+        }
+    }
 }
 
 /// One ordered stage of content generation: it fills [`Content`] slots with prose.
@@ -77,8 +115,10 @@ pub trait ContentPass: std::fmt::Debug + Send + Sync {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NamedProse {
     /// The subject's proper name (short).
+    #[serde(deserialize_with = "non_blank")]
     pub name: String,
     /// The subject's descriptive paragraph.
+    #[serde(deserialize_with = "non_blank")]
     pub description: String,
 }
 
@@ -87,7 +127,27 @@ pub struct NamedProse {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TextProse {
     /// The generated text.
+    #[serde(deserialize_with = "non_blank")]
     pub text: String,
+}
+
+/// Deserialize a `String`, rejecting one that is empty or whitespace-only.
+///
+/// A blank field is model output the schema alone can't rule out (an empty
+/// string is still valid JSON), so this turns it into a deserialization error
+/// instead — which feeds the same JSON-repair retry loop in
+/// [`Llm::generate`](monomyth_llm::Llm::generate) that a malformed field does.
+fn non_blank<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if value.trim().is_empty() {
+        return Err(serde::de::Error::custom(
+            "expected a non-blank string, got an empty or whitespace-only value",
+        ));
+    }
+    Ok(value)
 }
 
 /// Retrieve ship-safe grounding passages for `query_hint`.
@@ -111,12 +171,22 @@ pub(crate) async fn ground(
     Ok(passages)
 }
 
+/// The maximum number of characters of a single grounding passage included in a
+/// prompt.
+///
+/// Retrieval is best-effort and passage length is not otherwise bounded, so an
+/// oversized passage could dominate — or blow — the prompt budget. Truncating
+/// per-passage keeps a single outlier from crowding out the instruction, hint,
+/// and the other grounding passages.
+const MAX_PASSAGE_CHARS: usize = 2000;
+
 /// Format the grounding passages and the slot `hint` into an LLM prompt.
 ///
 /// `instruction` states the writing task (e.g. "Write the title of a world"); the
 /// slot hint locates it in the surrounding structure; the passages are offered as
 /// ship-safe source material. An empty passage set simply omits the grounding
-/// block — the model still has the instruction and hint.
+/// block — the model still has the instruction and hint. Each passage's text is
+/// capped at [`MAX_PASSAGE_CHARS`] (short passages are unaffected).
 pub(crate) fn build_prompt(instruction: &str, hint: &str, passages: &[Passage]) -> String {
     let mut prompt = String::new();
     let _ = writeln!(
@@ -136,7 +206,8 @@ pub(crate) fn build_prompt(instruction: &str, hint: &str, passages: &[Passage]) 
             "\nGrounding passages (ship-safe source material you may draw on):"
         );
         for passage in passages {
-            let _ = writeln!(prompt, "- [{}] {}", passage.source_id, passage.text);
+            let text: String = passage.text.chars().take(MAX_PASSAGE_CHARS).collect();
+            let _ = writeln!(prompt, "- [{}] {text}", passage.source_id);
         }
     }
     let _ = writeln!(
@@ -160,5 +231,73 @@ pub(crate) fn grounding_note(pass: &str, passages: &[Passage]) -> String {
     } else {
         let joined = sources.into_iter().collect::<Vec<_>>().join(", ");
         format!("{pass}; grounded by {joined}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{ContentConfig, NamedProse};
+
+    #[test]
+    fn should_reject_a_blank_name_field() {
+        let result = serde_json::from_value::<NamedProse>(json!({
+            "name": "",
+            "description": "x",
+        }));
+        assert!(
+            result.is_err(),
+            "an empty name must fail deserialization, got {result:?}",
+        );
+    }
+
+    #[test]
+    fn should_reject_a_whitespace_only_description_field() {
+        let result = serde_json::from_value::<NamedProse>(json!({
+            "name": "x",
+            "description": "   ",
+        }));
+        assert!(
+            result.is_err(),
+            "a whitespace-only description must fail deserialization, got {result:?}",
+        );
+    }
+
+    #[test]
+    fn should_accept_a_non_blank_named_prose() {
+        let result = serde_json::from_value::<NamedProse>(json!({
+            "name": "Riverwatch",
+            "description": "A windswept keep.",
+        }));
+        assert!(
+            result.is_ok(),
+            "non-blank fields must deserialize, got {result:?}",
+        );
+    }
+
+    #[test]
+    fn default_content_config_reproduces_the_original_instruction_literals() {
+        let config = ContentConfig::default();
+        assert_eq!(config.grounding_top_k, 4);
+        assert_eq!(
+            config.title_instruction,
+            "Write a short, evocative title for a mythic adventure world.",
+        );
+        assert_eq!(
+            config.location_instruction,
+            "Write the proper name and a vivid one-paragraph description for a location in a \
+             mythic world.",
+        );
+        assert_eq!(
+            config.entity_instruction,
+            "Write the proper name and a vivid one-paragraph description for a character or being \
+             in a mythic world, true to its dramatic role.",
+        );
+        assert_eq!(
+            config.item_instruction,
+            "Write the proper name and a vivid one-paragraph description for an object in a \
+             mythic world.",
+        );
     }
 }

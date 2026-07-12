@@ -1,0 +1,244 @@
+{
+  "interactions": [
+    {
+      "key": "5e4680baf347402a",
+      "prompt_sha": "6204e847d5401c8c1ccb34a71776d2e396369f76702c51de74e2a3bf33894fcf",
+      "response": {
+        "text": "Between Two Sovereign Poles"
+      },
+      "schema_name": "world_title",
+      "usage": {
+        "completion_tokens": 9,
+        "prompt_tokens": 90,
+        "total_tokens": 99
+      }
+    },
+    {
+      "key": "b751d37c5f42d359",
+      "prompt_sha": "40663b6a7671307c665e223494c0211e2a426a0df20695dc812ae704fbb62e9c",
+      "response": {
+        "description": "Deep within the high court of the ancient arbiter lies this vast, echoing chamber where the desperate come to implore a silent Power in authority. At the room's exact center, a raised obsidian platform serves as the station for the Mediator, who stands perpetually balanced between two towering poles of burning, polarized light. The air is thick with the scent of solemn incense and the heavy, electric hum of cosmic judgment, as petitioners kneel in the shadow of the great dais, hoping their pleas will bridge the immense gulf between the law and their survival.",
+        "name": "The Threshold of the Suppliant"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 126,
+        "prompt_tokens": 121,
+        "total_tokens": 247
+      }
+    },
+    {
+      "key": "b00328408801ab13",
+      "prompt_sha": "37b178d8ef8af86e7cb33b85e2a2b5dfed68b75393bb230e364691e74f972fdf",
+      "response": {
+        "description": "This cavernous, high-arched audience chamber is dominated by two towering monoliths of obsidian and white marble, representing the polarized extremes of absolute justice and absolute mercy. Between these two monumental pillars stands a raised, narrow dais where the Intercessor, a faceless brass automaton, waits to relay the pleas of desperate suppliants to the unseen Arbiters above. The air here is heavy with the scent of burning frankincense and the quiet, echoing murmurs of long-dead petitioners, their desperate prayers etched into the very flagstones beneath your feet. To stand in the center of this hall is to feel the crushing weight of supreme authority, suspended forever between condemnation and salvation.",
+        "name": "The Hall of the Intercessor"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 153,
+        "prompt_tokens": 121,
+        "total_tokens": 274
+      }
+    },
+    {
+      "key": "8d11019358d0c5dd",
+      "prompt_sha": "14f72da026dc4f14b7af83e1f13580e8763bd4926716bbc81ae6afdcfa13011d",
+      "response": {
+        "description": "Beneath a vaulted ceiling of weeping stone, this grand hall is defined by two monumental pillars of opposing obsidian and alabaster that flank a central, raised dais. Here, the mediator stands as a thin line of compromise between these two absolute poles of power. At the foot of the dais lies a cold, worn flagstone where countless suppliants have knelt, their desperate pleas rising toward the shadow of a silent, towering authority that looms at the far end of the hall. The air is thick with the scent of burning myrrh and the heavy, crushing tension of unresolved judgment.",
+        "name": "The Chamber of the Intercessor"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 132,
+        "prompt_tokens": 121,
+        "total_tokens": 253
+      }
+    },
+    {
+      "key": "b8e039fdacf3c1eb",
+      "prompt_sha": "6ff42da4c7677fbb16f6c287bb10f37f4688f2b13119bac749b8daf3e1ca70cb",
+      "response": {
+        "description": "In this cavernous, high-vaulted sanctuary, two colossal pillars of contrasting obsidian and white marble rise to meet the shadows, representing the unyielding poles of cosmic law. Between these towering monoliths stands a raised dais of weathered stone, the precise point where the mediator must stand to balance the opposing forces. Here, the air is heavy with the silent echoes of countless suppliants who have stood in the dim light, imploring the silent Power in authority that slumbers in the high rafters. Every whisper in this chamber is magnified, carrying the desperate weight of those seeking intercession between two irreconcilable worlds.",
+        "name": "The Hall of the Dual Pillars"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 121,
+        "total_tokens": 261
+      }
+    },
+    {
+      "key": "6b0e6d023f37e891",
+      "prompt_sha": "29fe5d125c381a0486553d7c37f369a48d78648fa12ad145d2d6b42227f8d4aa",
+      "response": {
+        "description": "Within this high-domed chamber, two massive, opposing pillars of white marble and black obsidian rise toward an unseen ceiling, representing the polarized forces of judgment. Between these twin poles stands a raised dais of cold stone, the traditional station of the Mediator who once brokered peace between warring factions. In the dim, echoing silence of the hall, a solitary kneeling bench remains positioned before the towering, empty throne of the reigning Power, worn smooth by the knees of countless suppliants who came to implore mercy from the ultimate authority.",
+        "name": "The Hall of Solemn Mediation"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 123,
+        "prompt_tokens": 121,
+        "total_tokens": 244
+      }
+    },
+    {
+      "key": "6193d1b2cba7defb",
+      "prompt_sha": "bee213a4f145e6f798691eaf93809c91333420b303d7bba6321a4ce1a8918bb3",
+      "response": {
+        "description": "Inside the Medial Transept, the air hums with a violent, suspended tension, caught precisely between two titanic, opposing pillars of primordial energy—one a column of blinding, calcified law, the other a swirling vortex of weeping chaos. Here, on a narrow stone dais suspended over the yawning abyss between these poles, the Suppliant must stand to implore the silent, veiled Arbiter who sits enthroned at the chamber's apex. Runes of desperate mediation glow faintly along the floor, channeling the agonizing friction of the two extremes into a fragile, ringing silence where every whispered plea carries the weight of a world's survival.",
+        "name": "The Medial Transept"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 148,
+        "prompt_tokens": 121,
+        "total_tokens": 269
+      }
+    },
+    {
+      "key": "431e18edb37a587d",
+      "prompt_sha": "b41d3709be5f1137d8c091bffc0c90c524f9742f6830812566a33f670a36fbfc",
+      "response": {
+        "description": "Within this towering, vaulted sanctuary, two colossal pillars of polarized obsidian and alabaster rise like frozen titans, representing the twin poles of absolute judgment. Between these monumental columns stands a dais of worn sandstone, where the Mediator once brokered peace between mortals and the divine. High above, carved into the sheer rock face, looms the empty throne of the Power in Authority, casting a long, intimidating shadow over the low-lying altar where suppliants once knelt to implore mercy. Wisps of ancient incense still drift through the silent air, carrying the faint, echoing whispers of unresolved pleas.",
+        "name": "The Court of the Twin Poles"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 134,
+        "prompt_tokens": 121,
+        "total_tokens": 255
+      }
+    },
+    {
+      "key": "139c4e2c784c7da3",
+      "prompt_sha": "2a1d6d0d9873e933a3495a0298a04302df03a145c559b5d16810496ffd744cbe",
+      "response": {
+        "description": "Under a soaring, rib-vaulted ceiling of obsidian, this immense chamber is dominated by two massive, humming pillars of raw lodestone—the twin poles of absolute decree—between which a single elevated dais rests. Here, the Intercessor stands as mediator, bathed in a flickering, electrostatic twilight where opposing currents meet. Below the dais, a worn path carved into the flagstones leads to the foot of a towering, shadow-cloaked throne where the cold Power in authority sits, unmoving. It is a place of desperate appeals and heavy silence, where the breath of every suppliant is weighed against the terrible, silent tension of the two poles, waiting for the mediator to either bridge the chasm or let the opposing forces collide.",
+        "name": "The Hall of the Intercessor"
+      },
+      "schema_name": "location_prose",
+      "usage": {
+        "completion_tokens": 165,
+        "prompt_tokens": 121,
+        "total_tokens": 286
+      }
+    },
+    {
+      "key": "504d9145ffea1fa1",
+      "prompt_sha": "c9decadb72c65e3c7106c067ad9ac8f46766f09a2d63e70e174a39b6edd567bf",
+      "response": {
+        "description": "Born to the borderlands where the Sky-Lords of Aethel meet the deep-dwelling Iron Kings, Kaelen stands as the fragile thread preventing total annihilation. He is a tragic suppliant who must constantly implore these ruthless, opposing powers for clemency on behalf of the mortal realm. Clad in the neutral grey vestments of the Threshold, his eyes bear the heavy exhaustion of one who perpetually negotiates with gods, standing squarely between two unyielding poles of absolute authority with nothing but his desperate eloquence to stay their wrath.",
+        "name": "Kaelen the Mediator"
+      },
+      "schema_name": "entity_prose",
+      "usage": {
+        "completion_tokens": 126,
+        "prompt_tokens": 115,
+        "total_tokens": 241
+      }
+    },
+    {
+      "key": "87c79dfdad3ab957",
+      "prompt_sha": "9b3f0b6c4b3e800757c70951fa89549387df458244b78cf32874967299775441",
+      "response": {
+        "description": "Archon Vaelis stands as the absolute and merciless mediator between the dying mortal realm and the silent heavens, holding the scales of fate with a cold, unyielding grip. To the desperate suppliants who crawl to the steps of his obsidian dais, he is the sole Power in authority capable of granting salvation, yet he exploits his position between these two cosmic poles to hoard the world's remaining magic for himself. Cloaked in star-iron armor that absorbs all light, he listens to the pleas of the condemned not to deliver their prayers to the gods, but to savor the exact moment their hope turns to ash under his heavy, dictatorial rule.",
+        "name": "Archon Vaelis"
+      },
+      "schema_name": "entity_prose",
+      "usage": {
+        "completion_tokens": 147,
+        "prompt_tokens": 115,
+        "total_tokens": 262
+      }
+    },
+    {
+      "key": "ae9fdb7966e373ed",
+      "prompt_sha": "249903291efa8dcfe653c802d914254d4e2475d0c2c2bf59623af5117e7488c8",
+      "response": {
+        "description": "Standing at the liminal crossroads where the mortal domain meets the blinding brilliance of the high Empyrean, Elidyr acts as the vital link between desperate suppliants and the aloof Powers in authority. Draped in heavy, ash-grey robes that mirror the neutral space between light and shadow, they hold copper scales and a staff of knotted ash, ever poised to receive the desperate pleas of those who seek divine intervention. As the eternal mediator, Elidyr stands resolutely between these two poles, translating the faltering prayers of the helpless into terms the absolute rulers of the cosmos might deign to answer, while bearing back their terrifying, uncompromising decrees.",
+        "name": "Elidyr of the Twin Thresholds"
+      },
+      "schema_name": "entity_prose",
+      "usage": {
+        "completion_tokens": 156,
+        "prompt_tokens": 117,
+        "total_tokens": 273
+      }
+    },
+    {
+      "key": "32189729d7c8971b",
+      "prompt_sha": "766e5f29e6f079676af73e35cb5a5e4bce85f947f5a93e4fd2c81419b34c56e1",
+      "response": {
+        "description": "Crafted from a split length of pale ash and dark ironwood, this slender rod represents the fragile boundary between the imploring suppliant and the unyielding power of authority. Its twin ends are capped with contrasting metals—one a shining electrum that catches the dimmest light, the other a dull, leaden weight that seems to swallow it. As a tool of mediation, it hums with a faint, tense vibration, as if constantly bearing the strain of bridging two incompatible worlds.",
+        "name": "The Mediator's Rod"
+      },
+      "schema_name": "item_prose",
+      "usage": {
+        "completion_tokens": 114,
+        "prompt_tokens": 109,
+        "total_tokens": 223
+      }
+    },
+    {
+      "key": "c778cfefb4e565e5",
+      "prompt_sha": "3f005da2b32f9ec8799df5ee3dd2247ac6cd23081b9d77b5c7b70ce3c8ca18a0",
+      "response": {
+        "description": "Positioned precisely between two towering obelisks of opposing elemental polarities, this ancient stone archway serves as the focal point for those who wish to petition the higher spheres. The flagstones at its base are deeply hollowed, worn away by centuries of desperate supplicants who knelt here to implore the silent powers in authority. A faint, resonant hum vibrates through the air, acting as a physical conduit between the mortal petitioner and the twin cosmic forces that hold the realm's delicate balance in check.",
+        "name": "The Arch of the Mediator"
+      },
+      "schema_name": "item_prose",
+      "usage": {
+        "completion_tokens": 116,
+        "prompt_tokens": 109,
+        "total_tokens": 225
+      }
+    },
+    {
+      "key": "644bf1c0902f8203",
+      "prompt_sha": "f9e5a4d0b2142af598c9c5f71782a19520d20d8d22fe5c1132d389a2e1629b7b",
+      "response": {
+        "description": "This slender rod of twin-braided electrum represents the timeless office of the mediator, eternally poised between opposing forces. At its apex, a carved ivory hand is raised in silent, desperate entreaty to a higher authority, while its base is split into two magnetized iron tines representing the conflicting poles of power it must reconcile. To carry it is to feel the faint, trembling residue of an ancient suppliant's plea, a lingering magic designed to bridge the chasm between the powerless and the divine.",
+        "name": "The Intercessor's Rod"
+      },
+      "schema_name": "item_prose",
+      "usage": {
+        "completion_tokens": 126,
+        "prompt_tokens": 109,
+        "total_tokens": 235
+      }
+    },
+    {
+      "key": "244dd85d1a7ab571",
+      "prompt_sha": "b238d5a1bd2c20377550f3b05ff0e2604ddf8d4d91e06225066cace69787fc5e",
+      "response": {
+        "description": "A slender wand of bi-colored ash wood, capped on one end with polished white marble and on the other with matte black obsidian, representing the two opposing poles of authority and submission. When held aloft, it hums with the tension of an unresolved plea, acting as a spiritual lightning rod that allows a humble suppliant to channel their appeal directly to a higher power without being consumed by their wrath.",
+        "name": "The Mediator's Rod"
+      },
+      "schema_name": "item_prose",
+      "usage": {
+        "completion_tokens": 97,
+        "prompt_tokens": 109,
+        "total_tokens": 206
+      }
+    },
+    {
+      "key": "0bdb02a32503b63b",
+      "prompt_sha": "b85ff84847ddb9ea09308b13f3d40c2f1c40719d3030c70c85693db4db74b7d2",
+      "response": {
+        "description": "This heavy brass pendulum hangs from a braided cord of silver and iron, its polished weight designed to swing rhythmically between two carved notches on its handle—one representing the desperate petitioner, the other the distant, unyielding authority. As it sways, it hums with a faint, resonant vibration, acting as a conduit for desperate prayers seeking the ear of a silent god. To hold it is to feel the immense, crushing tension of standing directly between the powerless who beg and the powerful who decide.",
+        "name": "The Brass Pendulum of Intercession"
+      },
+      "schema_name": "item_prose",
+      "usage": {
+        "completion_tokens": 117,
+        "prompt_tokens": 109,
+        "total_tokens": 226
+      }
+    }
+  ],
+  "model": "gemini/gemini-3.5-flash",
+  "recorded_at": "unknown",
+  "version": 1
+}

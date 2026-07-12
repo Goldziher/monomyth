@@ -5,19 +5,19 @@
 //! rule): a real [`Llm`] over a scripted [`StructuredBackend`], and a real
 //! [`Knowledge`] over an in-memory store and a deterministic fake embedder.
 
+mod support;
+
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use monomyth_core::{Direction, EntityId, ItemId, LocationId, ProvenanceSource, ScoredOne, World};
+use monomyth_core::{Direction, EntityId, ItemId, LocationId, ScoredOne, World};
 use monomyth_frameworks::{Archetype, MonomythStage, ProppRole};
-use monomyth_gen::{ContentContext, Generator};
-use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, Ledger};
+use monomyth_gen::{ContentConfig, ContentContext, Generator};
+use monomyth_knowledge::IngestInput;
 use monomyth_llm::{BackendError, Llm, StructuredBackend, Usage};
 use serde::Serialize;
 use serde_json::{Value, json};
-use xberg_rag::pipeline::Embedder;
-use xberg_rag::{InMemoryVectorStore, RagResult};
+use support::{assert_all_slots_filled_with_llm_provenance, test_knowledge};
 
 /// The seed every test generates from; the 4a determinism tests pin the same one.
 const SEED: u64 = 42;
@@ -64,58 +64,8 @@ impl StructuredBackend for CannedBackend {
     }
 }
 
-/// A deterministic, content-derived embedder of the collection dimension — mirrors
-/// the pattern in `monomyth-knowledge`'s own tests. No ONNX, no network.
-#[derive(Debug)]
-struct FakeEmbedder;
-
-#[async_trait]
-impl Embedder for FakeEmbedder {
-    async fn embed(&self, texts: Vec<String>) -> RagResult<Vec<Vec<f32>>> {
-        Ok(texts
-            .iter()
-            .map(|text| deterministic_vector(text))
-            .collect())
-    }
-}
-
-fn deterministic_vector(text: &str) -> Vec<f32> {
-    let width = EMBEDDING_DIM as usize;
-    let mut vector = vec![0.0f32; width];
-    for (index, byte) in text.bytes().enumerate() {
-        vector[index % width] += f32::from(byte) / 255.0;
-    }
-    vector
-}
-
-/// A real knowledge layer over an in-memory store and the fake embedder.
-fn test_knowledge() -> Knowledge {
-    let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(InMemoryVectorStore::new("test"));
-    let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
-    let ledger = Ledger::load_embedded().expect("embedded manifest parses");
-    Knowledge::with(store, embedder, ledger)
-}
-
 fn test_llm() -> Llm {
     Llm::new(Box::new(CannedBackend))
-}
-
-/// Every content slot the default content pipeline is responsible for.
-fn targeted_slots(world: &World) -> Vec<&monomyth_core::Content> {
-    let mut slots = vec![&world.meta.title];
-    for location in world.locations.values() {
-        slots.push(&location.name);
-        slots.push(&location.description);
-    }
-    for entity in world.entities.values() {
-        slots.push(&entity.name);
-        slots.push(&entity.description);
-    }
-    for item in world.items.values() {
-        slots.push(&item.name);
-        slots.push(&item.description);
-    }
-    slots
 }
 
 #[tokio::test]
@@ -130,6 +80,7 @@ async fn fill_content_fills_every_targeted_slot_with_llm_provenance() {
         llm: &llm,
         knowledge: &knowledge,
         model: MODEL_LABEL,
+        config: &ContentConfig::default(),
     };
 
     generator
@@ -137,21 +88,7 @@ async fn fill_content_fills_every_targeted_slot_with_llm_provenance() {
         .await
         .expect("content fill succeeds against the canned backend");
 
-    for slot in targeted_slots(&world) {
-        assert!(slot.is_filled(), "every targeted slot must be filled");
-        let provenance = slot.provenance().expect("a filled slot has provenance");
-        match &provenance.source {
-            ProvenanceSource::Llm { model } => {
-                assert_eq!(
-                    model, MODEL_LABEL,
-                    "provenance must carry the context model label"
-                );
-            }
-            ProvenanceSource::Procedural => {
-                panic!("expected an LLM provenance source, got Procedural")
-            }
-        }
-    }
+    assert_all_slots_filled_with_llm_provenance(&world, MODEL_LABEL);
 
     assert_eq!(
         world.meta.title.value().map(String::as_str),
@@ -263,6 +200,7 @@ async fn fill_content_changes_only_content_never_structure() {
         llm: &llm,
         knowledge: &knowledge,
         model: MODEL_LABEL,
+        config: &ContentConfig::default(),
     };
     generator
         .fill_content(&mut world, &context)
@@ -297,6 +235,7 @@ async fn fill_content_grounds_provenance_on_an_ingested_ship_source() {
         llm: &llm,
         knowledge: &knowledge,
         model: MODEL_LABEL,
+        config: &ContentConfig::default(),
     };
     generator
         .fill_content(&mut world, &context)

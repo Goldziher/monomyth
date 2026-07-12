@@ -19,6 +19,7 @@ exclude = [
     "vendor/**",
     "artifacts/**",
     "corpus/raw/**",
+    "crates/*/tests/cassettes/**",
     ".ai-rulez/.generated-manifest.json",
     "crates/*-ffi/include/*.h",
     "packages/go/include/*.h",
@@ -89,6 +90,7 @@ lint = { exclude = [
     "vendor/**",
     "artifacts/**",
     "corpus/raw/**",
+    "crates/*/tests/cassettes/**",
     "crates/*-ffi/include/*.h",
     "packages/go/include/*.h",
 ] }
@@ -104,6 +106,7 @@ fmt = { exclude = [
     "vendor/**",
     "artifacts/**",
     "corpus/raw/**",
+    "crates/*/tests/cassettes/**",
     "crates/*-ffi/include/*.h",
     "packages/go/include/*.h",
 ] }
@@ -120,6 +123,7 @@ file_safety = { exclude = [
     "vendor/**",
     "artifacts/**",
     "corpus/raw/**",
+    "crates/*/tests/cassettes/**",
     "crates/*-ffi/include/*.h",
     "packages/go/include/*.h",
 ] }

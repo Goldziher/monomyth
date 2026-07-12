@@ -49,7 +49,7 @@ use monomyth_core::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-pub use content::{ContentContext, ContentPass, NamedProse, TextProse};
+pub use content::{ContentConfig, ContentContext, ContentPass, NamedProse, TextProse};
 pub use content_passes::{
     EntityContentPass, ItemContentPass, LocationContentPass, TitleContentPass,
 };
@@ -167,7 +167,8 @@ impl Generator {
     ///
     /// # Errors
     ///
-    /// Returns [`GenError::Llm`] if a generation call fails, or
+    /// Returns [`GenError::ContentPass`], naming the failing pass, if a pass
+    /// fails — wrapping a [`GenError::Llm`] if a generation call fails, or a
     /// [`GenError::Knowledge`] if a grounding retrieval fails. A pass that fails
     /// partway leaves earlier fills in place.
     pub async fn fill_content(
@@ -176,7 +177,12 @@ impl Generator {
         context: &ContentContext<'_>,
     ) -> Result<(), GenError> {
         for pass in &self.content_passes {
-            pass.apply(world, context).await?;
+            pass.apply(world, context)
+                .await
+                .map_err(|source| GenError::ContentPass {
+                    pass: pass.name(),
+                    source: Box::new(source),
+                })?;
         }
         Ok(())
     }
