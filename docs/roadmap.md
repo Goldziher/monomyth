@@ -60,9 +60,19 @@ ordering with the "generation grounding first" near-term-focus decision.
   mode; H = acquire hardening (4xx-no-retry, response-size cap, `FilteredOut` classification — verify
   and land). Apply the `memchr` CRLF win in `normalize.rs`.
 - **1f. Land I — reference-ingest law synthesis.** See [`methodology.md`](./methodology.md#worked-example-2-reference-ingest-law-synthesis)
-  for the full worked example: a reference-collection ingest path, curated myth-theory sources, and
-  synthesized `Tier::System` law artifacts (Laurasian/Gondwanan two-arc, binary-opposition mediation,
-  trifunctional faction casting, Doty dimensions) committed beside `artifacts/frameworks/`.
+  for the full worked example. **Machinery landed:** the `monomyth-synthesis` crate (judge-gated
+  `draft_law`, ADR-0024), the reference-collection ingest path (`monomyth ingest --reference`), the
+  `artifacts/laws/` schema + `load_law` loader, and the `monomyth synthesize law` CLI. A first
+  end-to-end draft (a Campbell macro-phase law grounded in a PD myth text) has been produced and
+  reviewed for shape. **Remaining:** curate and ingest the real myth-theory reference sources
+  (Lévi-Strauss, Dumézil, Witzel, Doty, …) and draft + human-promote their `Tier::System` laws
+  (Laurasian/Gondwanan two-arc, binary-opposition mediation, trifunctional faction casting, Doty
+  dimensions) into `artifacts/laws/`.
+- **1g. Harden synthesis (grantflow-informed).** Follow-ups distilled from the grantflow RAG service
+  (ADR-0024/0025): framework-vocabulary query enrichment; a deterministic pre-score fast-path plus
+  "could-not-derive" markers for the judge; a synthesis quality-baseline benchmark under ADR-0023;
+  robust hybrid retrieval (FTS5-escaped lexical arm); and `monomyth-llm` ergonomics (named prompt
+  templates + identifiers, per-task model selection + thinking budgets, structured tracing).
 
 **Exit criteria:** build a small ship corpus, generate a world with layered config overrides, confirm
 grounded content-fill; reference-ingest a myth-theory source and confirm it stays reference-only.

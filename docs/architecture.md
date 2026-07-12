@@ -38,6 +38,8 @@ monomyth-contracts   NEW: seam TRAITS only (Extractor, GenerationStrategy, Genre
 monomyth-knowledge   impls VectorStore/Embedder seam; ship/reference/user gate
 monomyth-llm         impl Llm seam
 monomyth-gen         impls GenerationStrategy (the pass pipelines); reads config
+monomyth-synthesis   build-time: judge-gated reference→law drafting (composes knowledge + llm +
+                     frameworks); output is human-reviewed, never a run-time dependency
 monomyth-genre       NEW (Phase 2): GenreProfile + GenreClassifier impl
 monomyth-extract     NEW (Phase 3): Extractor impl (text→World)
 monomyth-render-*    NEW (Phase 5): Renderer impls, one per medium
@@ -89,7 +91,7 @@ Every row is enforced in code and/or CI, not just documented. Each links the ADR
 |---|---|---|
 | A new vector-store / LLM / embedder backend | A feature-gated impl module implementing the trait (`monomyth-knowledge`, `monomyth-llm`) | `monomyth-contracts` (traits only) or `monomyth-core` |
 | A tuning knob (a threshold, a top-k, a chance-permille) | `monomyth-config`, resolved through `Layered<T>` | A bare `const` scattered in `monomyth-gen` |
-| A rule/taxonomy/law synthesized from source material | `artifacts/frameworks/*.json`, read by `monomyth-frameworks` | `monomyth-config` (config tunes usage of rules; it does not encode them) |
+| A rule/taxonomy synthesized from source material | `artifacts/frameworks/*.json` (hand-encoded) or `artifacts/laws/*.json` (drafted by `monomyth-synthesis`, human-reviewed), read by `monomyth-frameworks` | `monomyth-config` (config tunes usage of rules; it does not encode them) |
 | A genre concern (profile, classifier, targeting) | `monomyth-genre` | `monomyth-core` — never; a serialization-unchanged test + `cargo tree` assertion enforce this |
 | A new plane-boundary seam (extractor, renderer, strategy, classifier) | A trait in `monomyth-contracts` | Ad hoc trait defined inside an impl crate |
 | A new rendering medium | A new `monomyth-render-*` crate implementing `Renderer` | `monomyth-text` (stays one thin impl) |
@@ -124,3 +126,5 @@ Every row is enforced in code and/or CI, not just documented. Each links the ADR
 | [0019](../adrs/0019-user-uploaded-media-namespace.md) | User-uploaded media + the `user` trust domain |
 | [0020](../adrs/0020-medium-agnostic-rendering-adapters.md) | Medium-agnostic rendering adapters (`Renderer` trait) |
 | [0021](../adrs/0021-rust-architecture-guidelines-in-ai-rulez.md) | Rust architecture guidelines in `.ai-rulez` |
+| [0024](../adrs/0024-llm-judge-feedback-loop-synthesis.md) | LLM-as-judge feedback loop for reference→law synthesis |
+| [0025](../adrs/0025-reference-retrieval-quality.md) | Reference retrieval quality: dedup, multi-query coverage (hybrid deferred) |

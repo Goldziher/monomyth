@@ -50,12 +50,36 @@ that sits predominantly in the `reference` namespace (copyrighted or NonCommerci
 
 | Step | What happens |
 |---|---|
-| Map | `Knowledge::ingest_reference` — the inverse gate of `Knowledge::ingest`, admitting **only** `reference`-namespace sources into the reference collection — pulls in curated myth-theory sources: Lévi-Strauss (structural binary oppositions), Dumézil (trifunctional hypothesis), Witzel (Laurasian/Gondwanan mythology), Doty (dimensions of myth), Eliade, d'Huy (phylogenetic reconstructions). Retrieved via `KnowledgeQuery::reference` (never surfaceable). |
-| Synthesize | A human-reviewed step turns mapped concepts into `Tier::System` "law" artifacts — the idea or taxonomy, independently encoded, **no prose reproduced**: the Laurasian/Gondwanan two-arc structure, binary-opposition mediation, trifunctional faction casting, Doty's dimension checklist. |
-| Configure | Synthesized artifacts land beside `artifacts/frameworks/*.json`, validated the same way. They feed `monomyth-gen` and later `monomyth-genre` — as tunable config through `monomyth-config`'s resolver where the value is a knob, or as typed vocabulary where it is fixed structure. |
+| Map | `Knowledge::ingest_reference` — the inverse gate of `Knowledge::ingest`, admitting **only** `reference`-namespace sources into the reference collection — pulls in curated myth-theory sources: Lévi-Strauss (structural binary oppositions), Dumézil (trifunctional hypothesis), Witzel (Laurasian/Gondwanan mythology), Doty (dimensions of myth), Eliade, d'Huy (phylogenetic reconstructions). Ingested at the CLI via `monomyth ingest --reference` (which stamps ADR-0005 provenance) and retrieved via `KnowledgeQuery::reference` (never surfaceable). |
+| Synthesize | The `monomyth-synthesis` crate **drafts** a `Tier::System` "law" candidate — the idea or taxonomy, independently encoded, **no prose reproduced** — and a human **reviews and promotes** it. Drafting is a judge-gated feedback loop (ADR-0024); the candidate is written pre-review (`reviewed_by` empty, so `load_law` refuses it) into a gitignored `synthesis/candidates/` and is only shippable once a human fills the reviewer and moves it into `artifacts/laws/`. |
+| Configure | Promoted artifacts land in `artifacts/laws/` beside `artifacts/frameworks/*.json`, validated the same way (`load_law`: tier `system`, namespace `ship`, contiguous ids, non-empty reviewer). They feed `monomyth-gen` and later `monomyth-genre` — as tunable config through `monomyth-config`'s resolver where the value is a knob, or as typed vocabulary where it is fixed structure. |
 
 This is where roadmap item I ("land reference-ingest law synthesis," see
 [`roadmap.md`](./roadmap.md#phase-1)) lands.
+
+### The synthesis pipeline (`monomyth-synthesis`)
+
+The **synthesize** step is not a single LLM call — a single distillation pass under-collects (a source
+supporting a dozen macro-phases flattens into three or four coarse buckets). `draft_law` instead runs
+a **retrieve → distill → judge → refine → gate → stamp** loop:
+
+1. **Retrieve** multi-query reference grounding (ADR-0025): the seed query plus, mid-loop, the phases
+   the judge names missing, unioned and deduplicated for whole-arc coverage.
+2. **Distill** an initial candidate with an exhaustiveness-demanding prompt.
+3. **Judge** the candidate with a second LLM call against weighted criteria (exhaustiveness, source
+   grounding, abstraction, ordering, tier fit), yielding a score and a list of missing phases.
+4. **Refine** while the weighted score is below a rising bar — retrieve grounding for the missing
+   phases and re-draft — keeping the best-scoring candidate across iterations (ADR-0024).
+5. **Gate** the best candidate through the machine-checked anti-leak shingle check (a fourth
+   enforcement layer atop ADR-0005's three — see [Licensing gate](#licensing-gate)); a verbatim
+   overlap refuses the candidate outright.
+6. **Stamp** a pre-review `LawArtifact` and write it plus a `.context.json` grounding sidecar (and the
+   judge trail) for the reviewer.
+
+The CLI entry point is `monomyth synthesize law --law <id> --domain <d> --query <q>`, which refuses any
+`--out` under `artifacts/` and prints a REVIEW-REQUIRED banner with the promotion steps. The judge
+raises the floor on completeness; **human review remains the ceiling**, and the empty `reviewed_by` is
+what makes that non-optional.
 
 ## Inspect-download mode
 
@@ -108,6 +132,10 @@ Every synthesis step from `reference` material is gated, concretely:
 - The existing three-layer enforcement (ingest-time refusal, retrieval-time
   `Filter::Eq("doc.metadata.namespace", "ship")`, CI ledger check — ADR-0005) extends to cover new
   reference sources; it is never bypassed or duplicated.
+- A **fourth, synthesis-specific layer**: the anti-leak shingle gate (`verify_no_verbatim`) refuses a
+  drafted candidate that shares any 8-word run with a reference passage — a machine-checked backstop
+  against a distillation model reproducing source wording. It catches verbatim spans, not semantic
+  copying; the real ceiling remains `Tier::System` plus human review.
 
 See [`crates/monomyth-knowledge/src/ledger.rs`](../crates/monomyth-knowledge/src/ledger.rs) for the
 `Namespace`/`Tier` types that carry this invariant, and ADR-0005/ADR-0016 for the full reasoning.

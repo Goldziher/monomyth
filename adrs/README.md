@@ -44,3 +44,5 @@ changed decision is a *new* ADR that supersedes the old one (never an edit).
 | [0021](./0021-rust-architecture-guidelines-in-ai-rulez.md) | Rust architecture guidelines authored in ai-rulez | accepted |
 | [0022](./0022-scored-weighted-classification-attributes.md) | Scored / weighted classification attributes | accepted |
 | [0023](./0023-benchmark-driven-evaluation.md) | Benchmark-driven evaluation + ground-truth corpus | accepted |
+| [0024](./0024-llm-judge-feedback-loop-synthesis.md) | LLM-as-judge feedback loop for reference→law synthesis | accepted |
+| [0025](./0025-reference-retrieval-quality.md) | Reference retrieval quality: dedup, multi-query coverage (hybrid deferred) | accepted |
