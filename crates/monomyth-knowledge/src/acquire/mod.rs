@@ -449,6 +449,10 @@ async fn fetch_for_source(
             Ok(vec![work])
         }
         "child_ballads" => {
+            // `classify_entry`'s `entry.url.is_none()` guard filters URL-less
+            // sources before dispatch, so a dispatched source always has a URL;
+            // `unwrap_or_default` yields `""` only in the unreachable case,
+            // which `parse_ebook_id` then rejects as a parse error.
             let url = entry.url.as_deref().unwrap_or_default();
             let pg_id = gutendex::parse_ebook_id(url)?;
             let work = gutendex::fetch(&ctx, pg_id, None, None, retrieved).await?;

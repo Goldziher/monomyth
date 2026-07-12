@@ -47,11 +47,12 @@ impl StoragePrefix {
 }
 
 impl From<Namespace> for StoragePrefix {
-    /// `Namespace::Ship` maps to `Self::Ship`; every other namespace —
-    /// `Namespace::Reference` today, and defensively any namespace added
-    /// later — maps to `Self::Reference`. Erring toward `reference/` on an
-    /// unrecognized namespace is the safe default: it can never mistakenly
-    /// place unverified material under the shippable prefix.
+    /// `Namespace::Ship` maps to `Self::Ship`, `Namespace::Reference` to
+    /// `Self::Reference`. The match is exhaustive over `Namespace`'s two
+    /// variants: adding a third will not compile until this mapping is
+    /// extended, forcing a deliberate ship-vs-reference decision at the type
+    /// level rather than letting a new namespace silently fall through to a
+    /// default prefix.
     fn from(namespace: Namespace) -> Self {
         match namespace {
             Namespace::Ship => Self::Ship,
