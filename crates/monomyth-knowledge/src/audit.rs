@@ -14,19 +14,19 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use xberg_rag::pipeline::retrieve as pipeline_retrieve;
-use xberg_rag::{RetrieveQuery, RetrievedChunk};
 
 use crate::error::KnowledgeError;
 use crate::ledger::{Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION};
+use crate::rag::pipeline::retrieve as pipeline_retrieve;
+use crate::rag::{RetrieveQuery, RetrievedChunk};
 use crate::{META_DOMAIN, META_LICENSE, META_NAMESPACE, META_SOURCE_ID, META_TIER};
 
 /// Neutral query text used to enumerate stored documents.
 ///
-/// The xberg [`xberg_rag::VectorStore`] API has no full-scan / list-all
+/// The xberg [`crate::rag::VectorStore`] API has no full-scan / list-all
 /// operation — every retrieval is a similarity query. We approximate a full
 /// scan with a broad, topic-neutral vector query at the maximum allowed
-/// `top_k` ([`xberg_rag::MAX_TOP_K`]) and no filter, which returns every
+/// `top_k` ([`crate::rag::MAX_TOP_K`]) and no filter, which returns every
 /// stored chunk ranked by similarity to the neutral text rather than a true
 /// enumeration. This is a real limitation: a collection holding more distinct
 /// documents than fit in one `top_k`-sized pull, or documents whose vectors
@@ -71,15 +71,15 @@ impl crate::Knowledge {
 /// See [`NEUTRAL_QUERY_TEXT`] for why this is a broad retrieve rather than a
 /// true enumeration.
 async fn broad_retrieve(
-    store: Arc<dyn xberg_rag::VectorStore>,
+    store: Arc<dyn crate::rag::VectorStore>,
     collection: &str,
-    embedder: &dyn xberg_rag::pipeline::Embedder,
+    embedder: &dyn crate::rag::pipeline::Embedder,
 ) -> Result<Vec<RetrievedChunk>, KnowledgeError> {
     let query = RetrieveQuery {
         query_text: Some(NEUTRAL_QUERY_TEXT.to_owned()),
         include_content: false,
         include_document: true,
-        ..RetrieveQuery::vector(xberg_rag::query::MAX_TOP_K)
+        ..RetrieveQuery::vector(crate::rag::MAX_TOP_K)
     };
     pipeline_retrieve(store, collection, query, Some(embedder))
         .await
@@ -204,8 +204,8 @@ fn check_field(
 mod tests {
     use std::sync::Arc;
 
-    use xberg_rag::pipeline::{IngestRequest, RagPipelineConfig, ingest_document};
-    use xberg_rag::{CollectionSpec, InMemoryVectorStore};
+    use crate::rag::pipeline::{IngestRequest, RagPipelineConfig, ingest_document};
+    use crate::rag::{CollectionSpec, InMemoryVectorStore};
 
     use super::*;
     use crate::{EMBEDDING_DIM, Ledger};
@@ -216,8 +216,8 @@ mod tests {
     struct AuditFakeEmbedder;
 
     #[async_trait::async_trait]
-    impl xberg_rag::pipeline::Embedder for AuditFakeEmbedder {
-        async fn embed(&self, texts: Vec<String>) -> xberg_rag::RagResult<Vec<Vec<f32>>> {
+    impl crate::rag::pipeline::Embedder for AuditFakeEmbedder {
+        async fn embed(&self, texts: Vec<String>) -> crate::rag::RagResult<Vec<Vec<f32>>> {
             Ok(texts
                 .iter()
                 .map(|_| vec![0.1f32; EMBEDDING_DIM as usize])
@@ -239,11 +239,11 @@ mod tests {
         Ledger::load_embedded().expect("embedded manifest parses")
     }
 
-    fn store() -> Arc<dyn xberg_rag::VectorStore> {
+    fn store() -> Arc<dyn crate::rag::VectorStore> {
         Arc::new(InMemoryVectorStore::new("audit-test"))
     }
 
-    async fn ensure(store: &Arc<dyn xberg_rag::VectorStore>, collection: &str) {
+    async fn ensure(store: &Arc<dyn crate::rag::VectorStore>, collection: &str) {
         store
             .ensure_collection(&CollectionSpec::new(collection, EMBEDDING_DIM))
             .await
@@ -255,7 +255,7 @@ mod tests {
     /// control — the lowest-level path available to construct a tampered
     /// fixture without adding a test-only mutator to production code.
     async fn write_document(
-        store: &Arc<dyn xberg_rag::VectorStore>,
+        store: &Arc<dyn crate::rag::VectorStore>,
         collection: &str,
         metadata: Value,
     ) {

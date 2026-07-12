@@ -1,5 +1,5 @@
-//! Ship-gated RAG over `xberg-rag`: the license ledger, ship-gated ingestion, and
-//! ship-filtered retrieval.
+//! Ship-gated RAG over the in-tree [`rag`] base layer: the license ledger,
+//! ship-gated ingestion, and ship-filtered retrieval.
 //!
 //! This crate owns the vector store, the embedded license ledger
 //! ([`Ledger`], from `corpus/manifest.json`), and the two operations that must
@@ -35,13 +35,24 @@
 //! # }
 //! ```
 
-#![forbid(unsafe_code)]
+// `unsafe_code` is `deny`, not `forbid`, only because `rag::backends::sqlite`
+// carries one pre-existing, narrowly-scoped `unsafe` block (registering the
+// sqlite-vec extension via `sqlite3_auto_extension`), inherited unchanged
+// from the former `xberg-rag` crate. Every other module in this crate must
+// stay unsafe-free; a new `unsafe` block anywhere outside that one function
+// is a bug, not a style choice.
+#![deny(unsafe_code)]
 
 #[cfg(feature = "acquire")]
 pub mod acquire;
 mod audit;
 mod error;
 mod ledger;
+#[allow(
+    clippy::pedantic,
+    reason = "inherited RAG base layer; lint burn-down tracked as follow-up"
+)]
+pub mod rag;
 
 use std::fmt;
 use std::path::Path;
@@ -49,12 +60,13 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use xberg::ChunkingConfig;
-use xberg_rag::backends::sqlite::SqliteVectorStore;
-use xberg_rag::pipeline::{
+
+use crate::rag::backends::sqlite::SqliteVectorStore;
+use crate::rag::pipeline::{
     CoreEmbedder, Embedder, IngestRequest, RagPipelineConfig, ingest_document,
     retrieve as pipeline_retrieve,
 };
-use xberg_rag::{
+use crate::rag::{
     CollectionSpec, DocumentId, Filter, FilterField, RagError, RetrieveMode, RetrieveQuery,
     RetrievedChunk,
 };
@@ -213,7 +225,7 @@ impl Passage {
 
 /// The ship-gated knowledge layer: vector store + embedder + license ledger.
 pub struct Knowledge {
-    store: Arc<dyn xberg_rag::VectorStore>,
+    store: Arc<dyn crate::rag::VectorStore>,
     embedder: Arc<dyn Embedder>,
     ledger: Ledger,
     chunking: ChunkingConfig,
@@ -262,7 +274,7 @@ impl Knowledge {
     /// chunking; pair it with an in-memory store and a fake embedder in tests.
     #[must_use]
     pub fn with(
-        store: Arc<dyn xberg_rag::VectorStore>,
+        store: Arc<dyn crate::rag::VectorStore>,
         embedder: Arc<dyn Embedder>,
         ledger: Ledger,
     ) -> Self {
@@ -778,9 +790,9 @@ fn build_passage(
 
 #[cfg(test)]
 mod tests {
+    use crate::rag::InMemoryVectorStore;
+    use crate::rag::RagResult;
     use async_trait::async_trait;
-    use xberg_rag::InMemoryVectorStore;
-    use xberg_rag::RagResult;
 
     use super::*;
 
@@ -809,7 +821,8 @@ mod tests {
     }
 
     fn test_knowledge() -> Knowledge {
-        let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(InMemoryVectorStore::new(STORE_NAME));
+        let store: Arc<dyn crate::rag::VectorStore> =
+            Arc::new(InMemoryVectorStore::new(STORE_NAME));
         let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
         let ledger = Ledger::load_embedded().expect("embedded manifest parses");
         Knowledge::with(store, embedder, ledger)
@@ -843,13 +856,13 @@ mod tests {
     /// pure dedup helper without a live store.
     fn retrieved_chunk(content: &str, score: f32) -> RetrievedChunk {
         RetrievedChunk {
-            id: xberg_rag::ChunkId(format!("chunk-{score}")),
+            id: crate::rag::ChunkId(format!("chunk-{score}")),
             document_id: DocumentId("doc".to_owned()),
             ordinal: 0,
             external_id: None,
             content: Some(content.to_owned()),
             score,
-            primary_score: xberg_rag::PrimaryScore::Vector(score),
+            primary_score: crate::rag::PrimaryScore::Vector(score),
             chunk_metadata: Value::Null,
             document: None,
         }
@@ -972,7 +985,7 @@ mod tests {
     /// (sqlite-vec + FTS5), so the reference path actually exercises hybrid
     /// retrieval rather than falling back to vector on the in-memory store.
     async fn sqlite_test_knowledge() -> Knowledge {
-        let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(
+        let store: Arc<dyn crate::rag::VectorStore> = Arc::new(
             SqliteVectorStore::open_in_memory(STORE_NAME)
                 .await
                 .expect("in-memory sqlite store opens"),

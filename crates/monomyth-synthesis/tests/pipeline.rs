@@ -7,12 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use monomyth_frameworks::load_law;
+use monomyth_knowledge::rag::pipeline::Embedder;
+use monomyth_knowledge::rag::{InMemoryVectorStore, RagResult};
 use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, KnowledgeQuery, Ledger};
 use monomyth_llm::{BackendError, Llm, StructuredBackend, Usage};
 use monomyth_synthesis::{DraftRequest, LoopConfig, SynthesisError, draft_law};
 use serde_json::{Value, json};
-use xberg_rag::pipeline::Embedder;
-use xberg_rag::{InMemoryVectorStore, RagResult};
 
 /// A reference-namespace source declared in the embedded corpus ledger, used
 /// to ingest self-authored synthetic text (never copyrighted bytes) under a
@@ -53,7 +53,7 @@ fn deterministic_vector(text: &str) -> Vec<f32> {
 /// A knowledge layer over an in-memory store and the fake embedder, with
 /// nothing ingested.
 fn test_knowledge() -> Knowledge {
-    let store: Arc<dyn xberg_rag::VectorStore> =
+    let store: Arc<dyn monomyth_knowledge::rag::VectorStore> =
         Arc::new(InMemoryVectorStore::new("synthesis-test"));
     let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
     let ledger = Ledger::load_embedded().expect("embedded manifest parses");

@@ -1,5 +1,6 @@
-# xberg / xberg-rag are consumed from the local xberg-io checkout via path dependencies.
-# liter-llm (xberg's transitive dep) is pinned to the matching local checkout via the patch below.
+# xberg is consumed as a published crate from crates.io. The RAG base layer
+# (formerly the standalone xberg-rag crate) now lives in-tree as
+# monomyth-knowledge's `rag` submodule; there is no xberg-rag dependency.
 [workspace]
 resolver = "3"
 members = ["crates/*"]
@@ -34,11 +35,13 @@ rand = "0.10.2"
 rand_chacha = "0.10.0"
 regex = "1.13.0"
 reqwest = { version = "0.13.4", default-features = false }
+rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"
 slotmap = { version = "1.1.1", features = ["serde"] }
+sqlite-vec = "0.1"
 tempfile = "3"
 thiserror = "2.0.18"
 time = "0.3.53"
@@ -46,8 +49,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-xberg = { path = "../xberg-io/xberg/crates/xberg" }
-xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }
+xberg = "1.0.0-rc.25"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -58,6 +60,3 @@ unreachable_pub = "warn"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 module_name_repetitions = { level = "allow", priority = 1 }
-
-[patch.crates-io]
-liter-llm = { path = "../xberg-io/liter-llm/crates/liter-llm" }

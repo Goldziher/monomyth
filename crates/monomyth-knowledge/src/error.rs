@@ -1,7 +1,8 @@
 //! Error model for the knowledge layer.
 
 use thiserror::Error;
-use xberg_rag::RagError;
+
+use crate::rag::RagError;
 
 use crate::ledger::Namespace;
 

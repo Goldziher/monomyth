@@ -16,9 +16,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use monomyth_core::{Content, ProvenanceSource, World};
+use monomyth_knowledge::rag::pipeline::Embedder;
+use monomyth_knowledge::rag::{InMemoryVectorStore, RagResult};
 use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, Ledger};
-use xberg_rag::pipeline::Embedder;
-use xberg_rag::{InMemoryVectorStore, RagResult};
 
 /// A ship-namespace source in the embedded ledger, used both to prove grounding
 /// provenance names its source and to seed [`record_knowledge`]'s fixed passage.
@@ -62,7 +62,8 @@ pub fn deterministic_vector(text: &str) -> Vec<f32> {
 /// nothing ingested.
 #[must_use]
 pub fn test_knowledge() -> Knowledge {
-    let store: Arc<dyn xberg_rag::VectorStore> = Arc::new(InMemoryVectorStore::new("test"));
+    let store: Arc<dyn monomyth_knowledge::rag::VectorStore> =
+        Arc::new(InMemoryVectorStore::new("test"));
     let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
     let ledger = Ledger::load_embedded().expect("embedded manifest parses");
     Knowledge::with(store, embedder, ledger)

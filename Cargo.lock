@@ -2559,6 +2559,8 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 [[package]]
 name = "liter-llm"
 version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2262222bbb692fb6c788b90bc24c1f8358d75f845374e4a0df6c70630541017"
 dependencies = [
  "ahash 0.8.12",
  "async-trait",
@@ -2880,7 +2882,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "xberg-rag",
 ]
 
 [[package]]
@@ -2891,15 +2892,17 @@ dependencies = [
  "opendal",
  "regex",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlite-vec",
  "tempfile",
  "thiserror",
  "time",
  "tokio",
+ "tracing",
  "xberg",
- "xberg-rag",
 ]
 
 [[package]]
@@ -2933,7 +2936,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "xberg",
- "xberg-rag",
 ]
 
 [[package]]
@@ -3904,6 +3906,17 @@ name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
+name = "rake"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a0a7b4878cdfa9c73657cf8479a1f2430104b21991db7940e97ab000056f0a1"
+dependencies = [
+ "lazy_static",
+ "regex",
+ "serde",
+]
 
 [[package]]
 name = "rand"
@@ -6462,6 +6475,8 @@ dependencies = [
 [[package]]
 name = "xberg"
 version = "1.0.0-rc.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4024143e9bef3eae8e99b41d0af6cf48c9cab6b3868e3a3bfa2fe1ee9be4029"
 dependencies = [
  "ahash 0.8.12",
  "async-trait",
@@ -6500,6 +6515,7 @@ dependencies = [
  "parking_lot",
  "pastey 0.2.3",
  "pulldown-cmark",
+ "rake",
  "rayon",
  "regex",
  "rmp-serde",
@@ -6523,6 +6539,8 @@ dependencies = [
 [[package]]
 name = "xberg-gliner"
 version = "1.0.0-rc.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99b4f71174ad2c73621bdd5251adcaf0fe668f684349fd78f6a17a6469386c5a"
 dependencies = [
  "ndarray",
  "ort",
@@ -6530,22 +6548,6 @@ dependencies = [
  "regex",
  "thiserror",
  "tokenizers",
-]
-
-[[package]]
-name = "xberg-rag"
-version = "1.0.0-rc.25"
-dependencies = [
- "async-trait",
- "futures",
- "rusqlite",
- "serde",
- "serde_json",
- "sqlite-vec",
- "thiserror",
- "tokio",
- "tracing",
- "xberg",
 ]
 
 [[package]]

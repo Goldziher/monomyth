@@ -97,9 +97,11 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use monomyth_knowledge::rag::pipeline::{
+        Embedder, IngestRequest, RagPipelineConfig, ingest_document,
+    };
+    use monomyth_knowledge::rag::{CollectionSpec, InMemoryVectorStore, RagResult, VectorStore};
     use monomyth_knowledge::{EMBEDDING_DIM, IngestInput, Knowledge, Ledger, REFERENCE_COLLECTION};
-    use xberg_rag::pipeline::{Embedder, IngestRequest, RagPipelineConfig, ingest_document};
-    use xberg_rag::{CollectionSpec, InMemoryVectorStore, RagResult, VectorStore};
 
     use super::gather_grounding;
     use crate::error::SynthesisError;
@@ -130,7 +132,7 @@ mod tests {
     }
 
     fn test_knowledge() -> Knowledge {
-        let store: Arc<dyn xberg_rag::VectorStore> =
+        let store: Arc<dyn monomyth_knowledge::rag::VectorStore> =
             Arc::new(InMemoryVectorStore::new("retrieval-test"));
         let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
         let ledger = Ledger::load_embedded().expect("embedded manifest parses");
@@ -185,7 +187,7 @@ mod tests {
     /// in (ship source -> ship collection, reference source -> reference
     /// collection), so neither public method can construct a mistagged
     /// document. This test writes directly into the reference collection via
-    /// `xberg_rag::pipeline::ingest_document`, on the same store `knowledge`
+    /// `monomyth_knowledge::rag::pipeline::ingest_document`, on the same store `knowledge`
     /// reads from, bypassing the `Knowledge` ingest gate the way a genuinely
     /// incorrectly populated reference collection would — the same construction
     /// `monomyth-knowledge`'s own

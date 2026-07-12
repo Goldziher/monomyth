@@ -21,7 +21,6 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 xberg = { workspace = true }
-xberg-rag = { workspace = true, features = ["vector-store", "pipeline"] }
 
 [lints]
 workspace = true

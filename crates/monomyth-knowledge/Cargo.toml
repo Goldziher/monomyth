@@ -8,7 +8,7 @@ publish.workspace = true
 authors.workspace = true
 
 [features]
-acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time", "dep:tokio"]
+acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time"]
 # Reserved cloud object-storage backends for the acquisition blob store
 # (ADR-0012). Declared but not wired to any call site this session — a local
 # build must not pull a cloud SDK, so these stay opt-in behind their own
@@ -17,23 +17,48 @@ acquire-s3 = ["acquire", "opendal/services-s3"]
 acquire-gcs = ["acquire", "opendal/services-gcs"]
 acquire-azblob = ["acquire", "opendal/services-azblob"]
 
+# Convenience wiring for the RAG pipeline (`rag` submodule), kept behind
+# narrow features so a default build incurs no extra pull-in of ONNX Runtime
+# or NER models beyond what embeddings already require.
+rag-keywords = ["xberg/keywords"]
+rag-ner-llm = ["xberg/ner-llm"]
+rag-ner-onnx = ["xberg/ner-onnx"]
+rag-reranker = ["xberg/reranker"]
+
 [dependencies]
+async-trait = { workspace = true }
 opendal = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true, default-features = false, features = ["rustls", "gzip", "json"] }
+rusqlite = { workspace = true, features = ["bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true, optional = true }
+sqlite-vec = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, optional = true, features = ["formatting", "macros", "parsing"] }
-tokio = { workspace = true, optional = true, features = ["time"] }
-xberg = { workspace = true }
-xberg-rag = { workspace = true, features = ["vector-store", "sqlite", "pipeline", "pipeline-embeddings"] }
+tokio = { workspace = true, features = ["rt", "time"] }
+tracing = { workspace = true }
+xberg = { workspace = true, features = ["chunking", "embeddings", "tokio-runtime", "structured"] }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
-[lints]
-workspace = true
+# `unsafe_code` cannot be inherited as `[lints] workspace = true` here: the
+# workspace forbids it, and `forbid` cannot be locally relaxed even with an
+# explicit crate-level `#![allow(...)]`. `rag::backends::sqlite` carries one
+# pre-existing, narrowly-scoped `unsafe` block (registering the sqlite-vec
+# extension), inherited unchanged from the former `xberg-rag` crate, so this
+# crate mirrors the workspace lint table but relaxes that one lint to `deny`
+# (still zero-tolerance for any *new* unsafe code, just overridable at the
+# call site that legitimately needs it).
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = { level = "allow", priority = 1 }
