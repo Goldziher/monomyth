@@ -57,6 +57,22 @@ that sits predominantly in the `reference` namespace (copyrighted or NonCommerci
 This is where roadmap item I ("land reference-ingest law synthesis," see
 [`roadmap.md`](./roadmap.md#phase-1)) lands.
 
+## Inspect-download mode
+
+Some declared sources are bulk dataset wrappers (`gutenberg_english`, `pg19`) whose per-item
+public-domain status is **not verified** — the wrapper's own license (MIT / Apache-2.0) covers dataset
+packaging, not each contained work. These are declared `reference`/`Tier::Reference` in
+`corpus/manifest.json`, never `ship`, until an item is individually verified and promoted.
+
+`monomyth corpus inspect` downloads reference/unverified sources into the `reference/` blob prefix
+(ADR-0012) for human license and provenance review, exactly like `corpus build` fetches ship sources
+into `ship/` — but it **never ingests** into the ship collection (ADR-0005). The guarantee is
+structural, not a filter that could be bypassed: `inspect_one_source` (the per-source worker behind
+`inspect_corpus`) takes no `Knowledge` parameter and has no code path to `Knowledge::ingest` anywhere
+in its body. It is reinforced by `classify_entry`, which filters ship-namespace sources out of inspect
+mode and reference-namespace sources out of build mode — so a source can never be dispatched to the
+wrong pipeline by mistake.
+
 ## Frameworks vs. config: the boundary
 
 Two different things both get called "configuration" informally. Keep them distinct:

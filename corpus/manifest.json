@@ -163,12 +163,12 @@
     {
       "id": "gutenberg_english",
       "name": "sedthh/gutenberg_english",
-      "tier": "permissive",
-      "namespace": "ship",
+      "tier": "reference",
+      "namespace": "reference",
       "domain": "myth",
       "license": "MIT wrapper, per-book PD",
       "url": "https://huggingface.co/datasets/sedthh/gutenberg_english",
-      "note": "verify per-book PD; strip PG boilerplate"
+      "note": "verify per-book PD; strip PG boilerplate; bulk HF dataset; per-item PD unverified — reference/inspect-download only until individually promoted to ship"
     },
     {
       "id": "pg_key_works",
@@ -243,12 +243,12 @@
     {
       "id": "pg19",
       "name": "PG-19 (long-context PD books)",
-      "tier": "permissive",
-      "namespace": "ship",
+      "tier": "reference",
+      "namespace": "reference",
       "domain": "scifi",
       "license": "Apache-2.0",
       "url": "https://huggingface.co/datasets/deepmind/pg19",
-      "note": "books published before 1919 (PD by age); Apache-2.0 covers the dataset packaging — verify per-book pre-1930 translation provenance before surfacing verbatim"
+      "note": "books published before 1919 (PD by age); Apache-2.0 covers the dataset packaging — verify per-book pre-1930 translation provenance before surfacing verbatim; bulk HF dataset; per-item PD unverified — reference/inspect-download only until individually promoted to ship"
     },
     {
       "id": "fandom_dumps",

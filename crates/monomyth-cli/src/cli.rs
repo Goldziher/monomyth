@@ -161,4 +161,16 @@ pub(crate) enum CorpusCommand {
     /// Audit stored document metadata against the license ledger (ADR-0005's
     /// third enforcement point, after ingest and retrieval).
     Audit {},
+
+    /// Download reference/unverified sources into the reference/ inspect
+    /// area for licensing review (never ingested into the ship corpus).
+    Inspect {
+        /// Restrict to a single declared source id.
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Cap the number of works fetched per source.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
 }

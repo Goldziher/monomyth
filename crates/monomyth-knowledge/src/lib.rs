@@ -54,7 +54,10 @@ use xberg_rag::pipeline::{
 use xberg_rag::{CollectionSpec, DocumentId, Filter, FilterField, RetrieveQuery, RetrievedChunk};
 
 #[cfg(feature = "acquire")]
-pub use crate::acquire::{BuildOptions, BuildReport, SourceOutcome, SourceReport, build_corpus};
+pub use crate::acquire::{
+    AcquireMode, BuildOptions, BuildReport, SourceOutcome, SourceReport, build_corpus,
+    inspect_corpus,
+};
 pub use crate::error::KnowledgeError;
 pub use crate::ledger::{
     Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, SourceEntry, Tier,

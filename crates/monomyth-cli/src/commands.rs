@@ -276,6 +276,57 @@ pub(crate) async fn run_corpus_build(
     for source_report in &report.sources {
         let summary = match &source_report.outcome {
             SourceOutcome::Ingested { count } => format!("ingested {count} work(s)"),
+            SourceOutcome::Downloaded { count } => {
+                format!("downloaded {count} work(s) for inspection")
+            }
+            SourceOutcome::FilteredOut { reason } => format!("filtered out ({reason})"),
+            SourceOutcome::NoFetcher { reason } => format!("no fetcher ({reason})"),
+            SourceOutcome::Failed { error } => format!("failed ({error})"),
+        };
+        println!("  {}: {summary}", source_report.source_id);
+    }
+    Ok(())
+}
+
+/// Handle `corpus inspect`: download reference/unverified ledger sources
+/// into the `reference/` blob prefix (ADR-0012) for human license review,
+/// without ever ingesting them into the ship collection (ADR-0005).
+///
+/// Mirrors [`run_corpus_build`] exactly, aside from calling
+/// [`monomyth_knowledge::inspect_corpus`] instead of `build_corpus` and
+/// reporting `total_downloaded` instead of `total_ingested`.
+///
+/// # Errors
+///
+/// Fails if the store cannot be opened, the retrieval date cannot be
+/// formatted, or the acquisition pipeline itself fails to start (per-source
+/// fetch failures are reported in the summary rather than propagated).
+pub(crate) async fn run_corpus_inspect(
+    source: Option<String>,
+    limit: Option<usize>,
+    db: &Path,
+) -> Result<()> {
+    let knowledge = Knowledge::open(db)
+        .await
+        .context("opening the knowledge store")?;
+
+    let date_format = format_description!("[year]-[month]-[day]");
+    let retrieved = OffsetDateTime::now_utc()
+        .format(&date_format)
+        .context("formatting the retrieval date")?;
+
+    let report =
+        monomyth_knowledge::inspect_corpus(&knowledge, BuildOptions { source, limit }, &retrieved)
+            .await
+            .context("running the corpus inspect pipeline")?;
+
+    println!("Downloaded {} work(s) total.", report.total_downloaded());
+    for source_report in &report.sources {
+        let summary = match &source_report.outcome {
+            SourceOutcome::Downloaded { count } => {
+                format!("downloaded {count} work(s) for inspection")
+            }
+            SourceOutcome::Ingested { count } => format!("ingested {count} work(s)"),
             SourceOutcome::FilteredOut { reason } => format!("filtered out ({reason})"),
             SourceOutcome::NoFetcher { reason } => format!("no fetcher ({reason})"),
             SourceOutcome::Failed { error } => format!("failed ({error})"),

@@ -37,6 +37,9 @@ async fn main() -> Result<()> {
                 commands::run_corpus_build(source, limit, &cli.db).await
             }
             CorpusCommand::Audit {} => commands::run_corpus_audit(&cli.db).await,
+            CorpusCommand::Inspect { source, limit } => {
+                commands::run_corpus_inspect(source, limit, &cli.db).await
+            }
         },
         Command::Eval {
             work,

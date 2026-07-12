@@ -1,5 +1,6 @@
 //! Corpus acquisition: fetch, normalize, and ingest ship-safe sources
-//! declared in the license ledger.
+//! declared in the license ledger; separately, download reference/unverified
+//! sources into an inspect-only area for human license review.
 //!
 //! Feature-gated (`acquire`), off by default, so `monomyth-gen` never
 //! compiles an HTTP stack (ADR-0010). Ports the retired Python prototype's
@@ -7,13 +8,19 @@
 //! (ADR-0007) — this module produces clean `full_text` and hands it to
 //! [`crate::Knowledge::ingest`], nothing more.
 //!
-//! [`build_corpus`] filters the ledger to ship-namespace, non-system,
-//! URL-bearing sources before dispatching to a fetcher — this is *defense in
-//! depth*, the same three-layer pattern documented on
+//! Two acquisition modes ([`AcquireMode`]) exist because ship ingestion and
+//! reference download-for-inspection are never allowed to be conflated
+//! (ADR-0005): [`build_corpus`] filters the ledger to ship-namespace,
+//! non-system, URL-bearing sources before dispatching to a fetcher — this is
+//! *defense in depth*, the same three-layer pattern documented on
 //! [`crate::build_passage`]: [`Knowledge::ingest`]'s own ledger gate is the
 //! authoritative enforcement point, and this up-front filter exists so an
 //! obviously-wrong dispatch (e.g. a reference source) is reported as skipped
-//! rather than ever reaching the network.
+//! rather than ever reaching the network. [`inspect_corpus`] mirrors that
+//! filter in the opposite direction — reference-namespace, non-system,
+//! URL-bearing sources only — and structurally cannot ingest anything: its
+//! per-source worker, [`inspect_one_source`], never calls
+//! [`Knowledge::ingest`].
 
 pub mod error;
 mod fetch;
@@ -58,12 +65,21 @@ const DEFAULT_HUGGINGFACE_LIMIT: usize = 20;
 /// (stripping the trademark header is a license term — see [`normalize`]).
 const GUTENDEX_FAMILY_SOURCE_IDS: [&str; 3] = ["polti", "pg_key_works", "child_ballads"];
 
-/// What happened when [`build_corpus`] considered one ledger source.
+/// What happened when [`build_corpus`] or [`inspect_corpus`] considered one
+/// ledger source.
 #[derive(Debug, Clone)]
 pub enum SourceOutcome {
     /// The source was fetched, normalized, and ingested.
     Ingested {
         /// How many works were fetched and ingested.
+        count: usize,
+    },
+    /// The reference blob was fetched into the `reference/` prefix for
+    /// inspection, not ingested. Only produced by [`inspect_corpus`] — the
+    /// structural counterpart to `Ingested` that keeps the two acquisition
+    /// modes' reports visibly distinct even when printed side by side.
+    Downloaded {
+        /// How many works were fetched into the inspect area.
         count: usize,
     },
     /// The source was filtered out up front (namespace/tier/URL), before any
@@ -72,8 +88,9 @@ pub enum SourceOutcome {
         /// Why the source was filtered out.
         reason: &'static str,
     },
-    /// The source is ship-eligible but has no fetcher wired up (or one that
-    /// still needs configuration, e.g. a missing archive.org identifier).
+    /// The source is eligible for the current mode but has no fetcher wired
+    /// up (or one that still needs configuration, e.g. a missing
+    /// archive.org identifier).
     NoFetcher {
         /// Why no fetcher is available.
         reason: &'static str,
@@ -113,6 +130,35 @@ impl BuildReport {
             })
             .sum()
     }
+
+    /// Total works downloaded for inspection (never ingested) across all
+    /// sources. Mirrors [`Self::total_ingested`] for [`inspect_corpus`]
+    /// runs.
+    #[must_use]
+    pub fn total_downloaded(&self) -> usize {
+        self.sources
+            .iter()
+            .map(|report| match &report.outcome {
+                SourceOutcome::Downloaded { count } => *count,
+                _ => 0,
+            })
+            .sum()
+    }
+}
+
+/// Which acquisition mode a run performs. The two modes are kept as a typed
+/// enum, rather than a bool or two near-duplicate functions, so a caller
+/// cannot accidentally conflate ship ingestion with reference download — the
+/// distinction that this whole task exists to enforce structurally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcquireMode {
+    /// Fetch, normalize, and ingest ship-namespace sources into the
+    /// surfaceable ship collection.
+    BuildShip,
+    /// Fetch reference/unverified sources into the `reference/` blob prefix
+    /// for human license/provenance review, without ever calling
+    /// [`Knowledge::ingest`].
+    InspectReference,
 }
 
 /// Fetch, normalize, and ingest every ship-safe, dispatchable source declared
@@ -135,6 +181,42 @@ pub async fn build_corpus(
     opts: BuildOptions,
     retrieved: &str,
 ) -> Result<BuildReport, KnowledgeError> {
+    acquire_corpus(knowledge, opts, retrieved, AcquireMode::BuildShip).await
+}
+
+/// Fetch reference/unverified sources declared in `knowledge`'s ledger (or
+/// just `opts.source`, if given) into the `reference/` blob prefix
+/// (ADR-0012), for human license and provenance review.
+///
+/// This function **never** calls [`Knowledge::ingest`] — reference material
+/// must never enter the ship collection (ADR-0005). `knowledge` is still
+/// taken by reference because the entry loop reads
+/// [`Knowledge::ledger`]; it is ledger access, not ingestion, and no code
+/// path from here reaches `.ingest(`.
+///
+/// # Errors
+///
+/// As [`build_corpus`]: [`KnowledgeError::Acquire`] if `retrieved` is
+/// malformed or the shared HTTP client cannot be constructed. Per-source
+/// failures are captured in the returned [`BuildReport`] rather than
+/// aborting the run.
+pub async fn inspect_corpus(
+    knowledge: &Knowledge,
+    opts: BuildOptions,
+    retrieved: &str,
+) -> Result<BuildReport, KnowledgeError> {
+    acquire_corpus(knowledge, opts, retrieved, AcquireMode::InspectReference).await
+}
+
+/// The shared acquisition loop behind [`build_corpus`] and
+/// [`inspect_corpus`]: classify every ledger entry under `mode`, then
+/// dispatch each to ingestion, inspect-download, or a filtered-out report.
+async fn acquire_corpus(
+    knowledge: &Knowledge,
+    opts: BuildOptions,
+    retrieved: &str,
+    mode: AcquireMode,
+) -> Result<BuildReport, KnowledgeError> {
     validate_retrieved_date(retrieved)?;
 
     let client = http::build_client().map_err(|source| {
@@ -155,10 +237,13 @@ pub async fn build_corpus(
         {
             continue;
         }
-        let outcome = match classify_entry(entry) {
+        let outcome = match classify_entry(entry, mode) {
             EntryDisposition::Filtered(reason) => SourceOutcome::FilteredOut { reason },
             EntryDisposition::Dispatchable => {
                 build_one_source(knowledge, &client, &store, entry, opts.limit, retrieved).await
+            }
+            EntryDisposition::Inspectable => {
+                inspect_one_source(&client, &store, entry, opts.limit, retrieved).await
             }
         };
         report.sources.push(SourceReport {
@@ -187,42 +272,62 @@ fn validate_retrieved_date(retrieved: &str) -> Result<(), AcquireError> {
 
 /// Whether a ledger entry can be dispatched to a fetcher, or why it was skipped.
 enum EntryDisposition {
-    /// Ship-namespace, non-system, URL-bearing — fetchable.
+    /// Ship-namespace, non-system, URL-bearing, under [`AcquireMode::BuildShip`]
+    /// — fetchable and ingestible.
     Dispatchable,
+    /// Reference-namespace, non-system, URL-bearing, under
+    /// [`AcquireMode::InspectReference`] — fetchable into the inspect area,
+    /// but never ingested.
+    Inspectable,
     /// Skipped before any fetch, with a human-readable reason.
     Filtered(&'static str),
 }
 
-/// Classify a ledger entry for acquisition. Only ship-namespace, non-system
-/// (system sources are authored taxonomy, not fetched text), URL-bearing
-/// sources are dispatchable; everything else is [`EntryDisposition::Filtered`]
-/// so a `build` run reports *why* a declared source was skipped rather than
-/// silently omitting it.
-fn classify_entry(entry: &SourceEntry) -> EntryDisposition {
+/// Classify a ledger entry for acquisition under `mode`. System-tier sources
+/// (authored taxonomy, not fetched text) and URL-less sources are always
+/// filtered. Otherwise the namespace must match the mode: ship-namespace
+/// sources are [`EntryDisposition::Dispatchable`] only under
+/// [`AcquireMode::BuildShip`]; reference-namespace sources are
+/// [`EntryDisposition::Inspectable`] only under
+/// [`AcquireMode::InspectReference`]. A namespace/mode mismatch is filtered
+/// with a reason, so a run reports *why* a declared source was skipped
+/// rather than silently omitting it — this is the enforcement point that
+/// keeps `corpus build` from ever touching a reference source and `corpus
+/// inspect` from ever ingesting a ship source.
+fn classify_entry(entry: &SourceEntry, mode: AcquireMode) -> EntryDisposition {
     if entry.tier == Tier::System {
-        EntryDisposition::Filtered("system tier: authored taxonomy, not fetched text")
-    } else if entry.namespace != Namespace::Ship {
-        EntryDisposition::Filtered("reference namespace: informs priors only, never ship-ingested")
-    } else if entry.url.is_none() {
-        EntryDisposition::Filtered("no source URL declared in the ledger")
-    } else {
-        EntryDisposition::Dispatchable
+        return EntryDisposition::Filtered("system tier: authored taxonomy, not fetched text");
+    }
+    if entry.url.is_none() {
+        return EntryDisposition::Filtered("no source URL declared in the ledger");
+    }
+    match (mode, entry.namespace) {
+        (AcquireMode::BuildShip, Namespace::Ship) => EntryDisposition::Dispatchable,
+        (AcquireMode::BuildShip, Namespace::Reference) => EntryDisposition::Filtered(
+            "reference namespace: informs priors only, never ship-ingested",
+        ),
+        (AcquireMode::InspectReference, Namespace::Reference) => EntryDisposition::Inspectable,
+        (AcquireMode::InspectReference, Namespace::Ship) => {
+            EntryDisposition::Filtered("ship namespace: use `corpus build`, not inspect")
+        }
     }
 }
 
 /// Select the ledger entries `build_corpus` should dispatch to a fetcher:
-/// [`EntryDisposition::Dispatchable`] entries, optionally restricted to a single
-/// `source_id`. Test-only: `build_corpus` classifies inline (so it can also
-/// report [`EntryDisposition::Filtered`] entries); this expresses the
+/// [`EntryDisposition::Dispatchable`] entries under `mode`, optionally
+/// restricted to a single `source_id`. Test-only: `acquire_corpus` classifies
+/// inline (so it can also report [`EntryDisposition::Filtered`] and
+/// [`EntryDisposition::Inspectable`] entries); this expresses the
 /// dispatchable subset for assertions over the whole ledger.
 #[cfg(test)]
 fn dispatchable_entries<'ledger>(
     ledger: &'ledger Ledger,
     source_id: Option<&str>,
+    mode: AcquireMode,
 ) -> impl Iterator<Item = &'ledger SourceEntry> {
     ledger.entries().filter(move |entry| {
         source_id.is_none_or(|wanted| entry.id == wanted)
-            && matches!(classify_entry(entry), EntryDisposition::Dispatchable)
+            && matches!(classify_entry(entry, mode), EntryDisposition::Dispatchable)
     })
 }
 
@@ -267,6 +372,28 @@ async fn build_one_source(
         }
     }
     SourceOutcome::Ingested { count: ingested }
+}
+
+/// Fetch one reference/unverified ledger source into the inspect area,
+/// mapping every failure mode to a [`SourceOutcome`] exactly as
+/// [`build_one_source`] does. The one structural difference — and the entire
+/// point of this function existing separately — is that it takes no
+/// `knowledge` parameter and never calls [`Knowledge::ingest`] anywhere in
+/// its body: there is no code path from here into the ship collection.
+async fn inspect_one_source(
+    client: &reqwest::Client,
+    store: &storage::BlobStore,
+    entry: &SourceEntry,
+    limit: Option<usize>,
+    retrieved: &str,
+) -> SourceOutcome {
+    match fetch_for_source(client, store, entry, limit, retrieved).await {
+        Ok(works) => SourceOutcome::Downloaded { count: works.len() },
+        Err(DispatchOutcome::NoFetcher { reason }) => SourceOutcome::NoFetcher { reason },
+        Err(DispatchOutcome::Error(error)) => SourceOutcome::Failed {
+            error: error.to_string(),
+        },
+    }
 }
 
 /// Why fetch dispatch for a source did not produce works.
@@ -501,7 +628,7 @@ mod tests {
     #[test]
     fn dispatchable_entries_excludes_system_tier_sources() {
         let ledger = ledger();
-        let ids: Vec<_> = dispatchable_entries(&ledger, None)
+        let ids: Vec<_> = dispatchable_entries(&ledger, None, AcquireMode::BuildShip)
             .map(|entry| entry.id.as_str())
             .collect();
         assert!(
@@ -514,7 +641,7 @@ mod tests {
     #[test]
     fn dispatchable_entries_excludes_reference_namespace_sources() {
         let ledger = ledger();
-        let ids: Vec<_> = dispatchable_entries(&ledger, None)
+        let ids: Vec<_> = dispatchable_entries(&ledger, None, AcquireMode::BuildShip)
             .map(|entry| entry.id.as_str())
             .collect();
         assert!(
@@ -529,15 +656,23 @@ mod tests {
             !ids.contains(&"tvtropes"),
             "reference namespace must be excluded"
         );
+        assert!(
+            !ids.contains(&"gutenberg_english"),
+            "gutenberg_english is now reference namespace and must be excluded from ship dispatch"
+        );
+        assert!(
+            !ids.contains(&"pg19"),
+            "pg19 is now reference namespace and must be excluded from ship dispatch"
+        );
     }
 
     #[test]
     fn dispatchable_entries_excludes_ship_sources_with_no_url() {
         let ledger = ledger();
-        let ids: Vec<_> = dispatchable_entries(&ledger, None)
+        let ids: Vec<_> = dispatchable_entries(&ledger, None, AcquireMode::BuildShip)
             .map(|entry| entry.id.as_str())
             .collect();
-        for entry in dispatchable_entries(&ledger, None) {
+        for entry in dispatchable_entries(&ledger, None, AcquireMode::BuildShip) {
             assert!(entry.url.is_some(), "entry '{}' must have a url", entry.id);
         }
         assert!(!ids.is_empty(), "some sources must remain dispatchable");
@@ -546,17 +681,10 @@ mod tests {
     #[test]
     fn dispatchable_entries_includes_expected_ship_sources() {
         let ledger = ledger();
-        let ids: Vec<_> = dispatchable_entries(&ledger, None)
+        let ids: Vec<_> = dispatchable_entries(&ledger, None, AcquireMode::BuildShip)
             .map(|entry| entry.id.as_str())
             .collect();
-        for expected in [
-            "polti",
-            "gutenberg_english",
-            "pg_key_works",
-            "child_ballads",
-            "pg19",
-            "bae_reports",
-        ] {
+        for expected in ["polti", "pg_key_works", "child_ballads", "bae_reports"] {
             assert!(
                 ids.contains(&expected),
                 "expected '{expected}' to be dispatchable"
@@ -567,40 +695,138 @@ mod tests {
     #[test]
     fn dispatchable_entries_restricts_to_a_single_source_id() {
         let ledger = ledger();
-        let ids: Vec<_> = dispatchable_entries(&ledger, Some("polti"))
+        let ids: Vec<_> = dispatchable_entries(&ledger, Some("polti"), AcquireMode::BuildShip)
             .map(|entry| entry.id.as_str())
             .collect();
         assert_eq!(ids, vec!["polti"]);
     }
 
     #[test]
-    fn classify_entry_filters_system_tier_with_a_reason() {
+    fn classify_entry_filters_system_tier_with_a_reason_under_both_modes() {
         let ledger = ledger();
         let entry = ledger.get("campbell_monomyth").expect("declared");
-        assert!(matches!(
-            classify_entry(entry),
-            EntryDisposition::Filtered(reason) if reason.contains("system")
-        ));
+        for mode in [AcquireMode::BuildShip, AcquireMode::InspectReference] {
+            assert!(matches!(
+                classify_entry(entry, mode),
+                EntryDisposition::Filtered(reason) if reason.contains("system")
+            ));
+        }
     }
 
     #[test]
-    fn classify_entry_filters_reference_namespace_with_a_reason() {
+    fn classify_entry_filters_a_url_less_source_under_both_modes() {
+        let ledger = ledger();
+        let entry = ledger.get("fandom_dumps").expect("declared");
+        assert!(
+            entry.url.is_none(),
+            "fandom_dumps must declare no url for this test to be meaningful"
+        );
+        for mode in [AcquireMode::BuildShip, AcquireMode::InspectReference] {
+            assert!(matches!(
+                classify_entry(entry, mode),
+                EntryDisposition::Filtered(reason) if reason.contains("no source URL")
+            ));
+        }
+    }
+
+    #[test]
+    fn classify_entry_filters_reference_namespace_with_a_reason_under_build_ship() {
         let ledger = ledger();
         let entry = ledger.get("perseus").expect("declared");
         assert!(matches!(
-            classify_entry(entry),
+            classify_entry(entry, AcquireMode::BuildShip),
             EntryDisposition::Filtered(reason) if reason.contains("reference")
         ));
     }
 
     #[test]
-    fn classify_entry_dispatches_a_ship_url_source() {
+    fn classify_entry_filters_ship_namespace_with_a_reason_under_inspect_reference() {
         let ledger = ledger();
         let entry = ledger.get("child_ballads").expect("declared");
         assert!(matches!(
-            classify_entry(entry),
+            classify_entry(entry, AcquireMode::InspectReference),
+            EntryDisposition::Filtered(reason) if reason.contains("corpus build")
+        ));
+    }
+
+    #[test]
+    fn classify_entry_dispatches_a_ship_url_source_under_build_ship() {
+        let ledger = ledger();
+        let entry = ledger.get("child_ballads").expect("declared");
+        assert!(matches!(
+            classify_entry(entry, AcquireMode::BuildShip),
             EntryDisposition::Dispatchable
         ));
+    }
+
+    #[test]
+    fn classify_entry_marks_a_reference_url_source_inspectable_under_inspect_reference() {
+        let ledger = ledger();
+        let entry = ledger.get("perseus").expect("declared");
+        assert!(matches!(
+            classify_entry(entry, AcquireMode::InspectReference),
+            EntryDisposition::Inspectable
+        ));
+    }
+
+    /// The licensing point of this whole task: the two bulk `HuggingFace`
+    /// datasets whose per-item PD status is unverified must classify as
+    /// `Inspectable` (never `Dispatchable`) under `InspectReference`, and be
+    /// `Filtered` (never dispatched) under `BuildShip`.
+    #[test]
+    fn classify_entry_routes_gutenberg_english_and_pg19_to_inspect_only() {
+        let ledger = ledger();
+        for id in ["gutenberg_english", "pg19"] {
+            let entry = ledger.get(id).expect("declared");
+            assert!(
+                matches!(
+                    classify_entry(entry, AcquireMode::BuildShip),
+                    EntryDisposition::Filtered(_)
+                ),
+                "'{id}' must be filtered out under BuildShip"
+            );
+            assert!(
+                matches!(
+                    classify_entry(entry, AcquireMode::InspectReference),
+                    EntryDisposition::Inspectable
+                ),
+                "'{id}' must be inspectable under InspectReference"
+            );
+        }
+    }
+
+    /// Ledger-level trace-through: a source declared with `namespace:
+    /// "reference"` in the manifest resolves to `Namespace::Reference` and
+    /// the `reference` tier for both re-namespaced sources.
+    #[test]
+    fn gutenberg_english_and_pg19_are_reference_namespace_and_reference_tier() {
+        let ledger = ledger();
+        for id in ["gutenberg_english", "pg19"] {
+            let entry = ledger.get(id).expect("declared");
+            assert_eq!(
+                entry.namespace,
+                Namespace::Reference,
+                "'{id}' must be reference-namespace"
+            );
+            assert_eq!(entry.tier, Tier::Reference, "'{id}' must be reference-tier");
+        }
+    }
+
+    /// Ledger-level trace-through of the ADR-0012 storage prefix: a
+    /// reference-namespace ledger entry resolves to the reference storage
+    /// prefix, never the ship prefix.
+    #[test]
+    fn reference_namespace_ledger_entry_resolves_to_the_reference_storage_prefix() {
+        let ledger = ledger();
+        let entry = ledger.get("gutenberg_english").expect("declared");
+        assert_eq!(
+            storage::StoragePrefix::from(entry.namespace),
+            storage::StoragePrefix::Reference
+        );
+        assert_eq!(
+            storage::StoragePrefix::from(Namespace::Reference),
+            storage::StoragePrefix::Reference
+        );
     }
 
     #[test]
