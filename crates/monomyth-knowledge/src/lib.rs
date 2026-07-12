@@ -9,7 +9,10 @@
 //!   ledger [`Namespace`] is [`Namespace::Ship`] into the surfaceable store; any
 //!   `reference` source is refused with [`KnowledgeError::RefusedNonShip`], and an
 //!   unknown source id with [`KnowledgeError::UndeclaredSource`]. Nothing outside
-//!   the `ship` namespace can ever enter the shippable collection.
+//!   the `ship` namespace can ever enter the shippable collection. The inverse
+//!   path, [`Knowledge::ingest_reference`], admits only `reference` sources into
+//!   the reference collection (priors only, never surfaced) — the reference-ingest
+//!   half of ADR-0016's build-time synthesis pipeline.
 //! - **Surfaceable retrieval is ship-filtered.** [`Knowledge::retrieve`] with a
 //!   surfaceable query targets the `ship` collection *and* applies the
 //!   `doc.metadata.namespace = "ship"` filter — defense in depth (collection and
@@ -147,9 +150,10 @@ impl KnowledgeQuery {
     /// A reference-only query whose results inform generation but are never
     /// shown verbatim.
     ///
-    /// Note: [`Knowledge::ingest`] is ship-only today, so the reference
-    /// collection is unpopulated and this returns no passages until a
-    /// reference-ingest path is wired up.
+    /// The reference collection is populated by [`Knowledge::ingest_reference`]
+    /// (ADR-0016); passages it returns are licensed for priors only, so callers
+    /// must gate any rendering on [`Passage::is_surfaceable`] (always `false`
+    /// for a reference passage).
     #[must_use]
     pub fn reference(text: impl Into<String>, top_k: u32) -> Self {
         Self {
@@ -260,7 +264,8 @@ impl Knowledge {
         }
     }
 
-    /// Ingest `input` under the ledger-declared source `source_id`.
+    /// Ingest `input` under the ledger-declared source `source_id` into the
+    /// surfaceable ship collection.
     ///
     /// The ship gate rejects any source not declared in the ledger
     /// ([`KnowledgeError::UndeclaredSource`]) and any source outside the `ship`
@@ -274,20 +279,73 @@ impl Knowledge {
         source_id: &str,
         input: IngestInput,
     ) -> Result<DocumentId, KnowledgeError> {
-        let entry = self
-            .ledger
-            .get(source_id)
-            .ok_or_else(|| KnowledgeError::UndeclaredSource {
-                id: source_id.to_owned(),
-            })?;
-
+        let entry = self.require_source(source_id)?;
         if entry.namespace != Namespace::Ship {
             return Err(KnowledgeError::RefusedNonShip {
                 id: source_id.to_owned(),
                 namespace: entry.namespace,
             });
         }
+        self.ingest_into(SHIP_COLLECTION, source_id, entry, input)
+            .await
+    }
 
+    /// Ingest `input` under the ledger-declared source `source_id` into the
+    /// reference collection, for generation priors only (ADR-0016).
+    ///
+    /// This is the inverse gate of [`Self::ingest`]: it admits **only** sources
+    /// whose ledger [`Namespace`] is [`Namespace::Reference`], rejecting an
+    /// undeclared source ([`KnowledgeError::UndeclaredSource`]) and a `ship`
+    /// source ([`KnowledgeError::RefusedNonReference`]) before any text is
+    /// stored. Reference material informs generation but is never surfaceable:
+    /// it lands in the reference collection, which [`Self::retrieve`]'s
+    /// surfaceable path never targets and whose namespace tag
+    /// [`Passage::is_surfaceable`] reports as unshowable. The commercial
+    /// licensing invariant (ADR-0005) therefore holds by construction — a
+    /// reference source cannot reach the ship collection through this path.
+    ///
+    /// # Errors
+    ///
+    /// Reference-gate errors as above, or [`KnowledgeError::Store`] on a store
+    /// failure.
+    pub async fn ingest_reference(
+        &self,
+        source_id: &str,
+        input: IngestInput,
+    ) -> Result<DocumentId, KnowledgeError> {
+        let entry = self.require_source(source_id)?;
+        if entry.namespace != Namespace::Reference {
+            return Err(KnowledgeError::RefusedNonReference {
+                id: source_id.to_owned(),
+                namespace: entry.namespace,
+            });
+        }
+        self.ingest_into(REFERENCE_COLLECTION, source_id, entry, input)
+            .await
+    }
+
+    /// Look up `source_id` in the ledger or fail with
+    /// [`KnowledgeError::UndeclaredSource`]. Shared by both ingest gates so an
+    /// undeclared source is refused identically before the namespace check.
+    fn require_source(&self, source_id: &str) -> Result<&SourceEntry, KnowledgeError> {
+        self.ledger
+            .get(source_id)
+            .ok_or_else(|| KnowledgeError::UndeclaredSource {
+                id: source_id.to_owned(),
+            })
+    }
+
+    /// Chunk, embed, and store `input` into `collection` with the ledger-derived
+    /// licensing metadata for `entry`. The namespace gate is the caller's
+    /// responsibility ([`Self::ingest`] / [`Self::ingest_reference`]); this
+    /// helper only runs once a source has been admitted to `collection`.
+    async fn ingest_into(
+        &self,
+        collection: &str,
+        source_id: &str,
+        entry: &SourceEntry,
+        input: IngestInput,
+    ) -> Result<DocumentId, KnowledgeError> {
         let metadata = ingest_metadata(source_id, entry, &input);
 
         let request = IngestRequest {
@@ -298,13 +356,13 @@ impl Knowledge {
             ..IngestRequest::default()
         };
 
-        self.ensure_collection(SHIP_COLLECTION).await?;
+        self.ensure_collection(collection).await?;
         let config = RagPipelineConfig {
             chunking: &self.chunking,
         };
         ingest_document(
             Arc::clone(&self.store),
-            SHIP_COLLECTION,
+            collection,
             request,
             &config,
             self.embedder.as_ref(),
@@ -578,6 +636,99 @@ mod tests {
             }
             other => panic!("expected RefusedNonShip, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn ingest_reference_refuses_ship_namespace_source() {
+        let knowledge = test_knowledge();
+        let error = knowledge
+            .ingest_reference(
+                "polti",
+                IngestInput::new("ship text misrouted to reference ingest"),
+            )
+            .await
+            .expect_err("a ship-namespace source must be refused by the reference gate");
+        match error {
+            KnowledgeError::RefusedNonReference { id, namespace } => {
+                assert_eq!(id, "polti");
+                assert_eq!(namespace, Namespace::Ship);
+            }
+            other => panic!("expected RefusedNonReference, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ingest_reference_rejects_undeclared_source() {
+        let knowledge = test_knowledge();
+        let error = knowledge
+            .ingest_reference("not_a_real_source", IngestInput::new("text"))
+            .await
+            .expect_err("undeclared source must be rejected by the reference gate too");
+        match error {
+            KnowledgeError::UndeclaredSource { id } => assert_eq!(id, "not_a_real_source"),
+            other => panic!("expected UndeclaredSource, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ingest_reference_then_reference_retrieve_round_trips_and_is_not_surfaceable() {
+        let knowledge = test_knowledge();
+        knowledge
+            .ingest_reference(
+                "perseus",
+                IngestInput::new("The hero descends to the underworld and returns transformed."),
+            )
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::reference("a descent to the underworld", 5))
+            .await
+            .expect("reference retrieval succeeds");
+
+        assert!(
+            !passages.is_empty(),
+            "expected at least one reference passage"
+        );
+        let passage = &passages[0];
+        assert_eq!(passage.namespace, Namespace::Reference);
+        assert_eq!(passage.source_id, "perseus");
+        assert!(
+            !passage.is_surfaceable(),
+            "a reference passage must never be surfaceable",
+        );
+    }
+
+    /// ADR-0016 confirmation: a document ingested through the reference path is
+    /// unreachable via the ship-gated (surfaceable) retrieval path — it lives in
+    /// the reference collection, which a surfaceable query never targets, so it
+    /// can never be surfaced verbatim.
+    #[tokio::test]
+    async fn reference_ingested_doc_is_unreachable_via_the_surfaceable_query() {
+        let knowledge = test_knowledge();
+        knowledge
+            .ingest_reference(
+                "perseus",
+                IngestInput::new("The Suppliant implores a Power in authority for mercy and aid."),
+            )
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::surfaceable("a plea for mercy and aid", 5))
+            .await
+            .expect("surfaceable retrieval succeeds");
+
+        assert!(
+            passages.iter().all(Passage::is_surfaceable),
+            "a surfaceable query must never return a non-surfaceable passage",
+        );
+        assert!(
+            passages
+                .iter()
+                .all(|passage| passage.source_id != "perseus"),
+            "the reference-ingested doc must be unreachable through the ship-gated path",
+        );
     }
 
     #[tokio::test]

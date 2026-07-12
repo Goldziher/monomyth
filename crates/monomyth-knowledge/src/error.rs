@@ -32,6 +32,21 @@ pub enum KnowledgeError {
         namespace: Namespace,
     },
 
+    /// The reference gate refused a non-reference source. The reference-ingest
+    /// path admits only `reference`-namespace sources; a `ship` source belongs
+    /// in the surfaceable store via [`crate::Knowledge::ingest`], not the
+    /// reference collection. This keeps the two ingest paths from being
+    /// conflated (ADR-0016).
+    #[error(
+        "refused to ingest non-reference source '{id}' (namespace: {namespace:?}) into the reference collection"
+    )]
+    RefusedNonReference {
+        /// The offending source id.
+        id: String,
+        /// The namespace that triggered the refusal.
+        namespace: Namespace,
+    },
+
     /// A vector-store or pipeline operation failed.
     #[error("vector store operation failed ({context})")]
     Store {

@@ -50,7 +50,7 @@ that sits predominantly in the `reference` namespace (copyrighted or NonCommerci
 
 | Step | What happens |
 |---|---|
-| Map | A *reference*-collection ingest path (new — today `Knowledge::ingest` is ship-only) pulls in curated myth-theory sources: Lévi-Strauss (structural binary oppositions), Dumézil (trifunctional hypothesis), Witzel (Laurasian/Gondwanan mythology), Doty (dimensions of myth), Eliade, d'Huy (phylogenetic reconstructions). Retrieved via a reference-only query path. |
+| Map | `Knowledge::ingest_reference` — the inverse gate of `Knowledge::ingest`, admitting **only** `reference`-namespace sources into the reference collection — pulls in curated myth-theory sources: Lévi-Strauss (structural binary oppositions), Dumézil (trifunctional hypothesis), Witzel (Laurasian/Gondwanan mythology), Doty (dimensions of myth), Eliade, d'Huy (phylogenetic reconstructions). Retrieved via `KnowledgeQuery::reference` (never surfaceable). |
 | Synthesize | A human-reviewed step turns mapped concepts into `Tier::System` "law" artifacts — the idea or taxonomy, independently encoded, **no prose reproduced**: the Laurasian/Gondwanan two-arc structure, binary-opposition mediation, trifunctional faction casting, Doty's dimension checklist. |
 | Configure | Synthesized artifacts land beside `artifacts/frameworks/*.json`, validated the same way. They feed `monomyth-gen` and later `monomyth-genre` — as tunable config through `monomyth-config`'s resolver where the value is a knob, or as typed vocabulary where it is fixed structure. |
 
@@ -72,6 +72,14 @@ structural, not a filter that could be bypassed: `inspect_one_source` (the per-s
 in its body. It is reinforced by `classify_entry`, which filters ship-namespace sources out of inspect
 mode and reference-namespace sources out of build mode — so a source can never be dispatched to the
 wrong pipeline by mistake.
+
+> **Migration note (ship → reference re-namespace).** `gutenberg_english` and `pg19` were originally
+> declared `ship`; they are now `reference`. Retrieval validates the namespace tag *stored on each
+> document at ingest time*, not a live re-check against the current ledger, so a local `monomyth.db`
+> built **before** the re-namespace may still hold chunks from these sources tagged `ship` — and those
+> would pass the ship filter. Any store built before the re-namespace must have its `ship` collection
+> dropped and rebuilt (`corpus build`) so the stored tags match the current ledger. A fresh store is
+> unaffected.
 
 ## Frameworks vs. config: the boundary
 
