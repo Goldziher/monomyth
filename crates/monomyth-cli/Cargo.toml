@@ -30,6 +30,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 time = { workspace = true, features = ["formatting", "macros"] }
 tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 monomyth-frameworks = { workspace = true }

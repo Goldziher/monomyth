@@ -2793,6 +2793,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2902,6 +2903,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "xberg",
 ]
 

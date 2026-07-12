@@ -133,6 +133,17 @@ impl Llm {
     where
         T: DeserializeOwned + JsonSchema,
     {
+        // The span carries only the schema name and a running attempt/usage
+        // account — never the prompt or response text, which can contain
+        // reference-corpus material that must not leak into logs (ADR-0005).
+        let span = tracing::info_span!(
+            "llm.generate",
+            schema_name,
+            attempts = tracing::field::Empty
+        );
+        let _guard = span.enter();
+        let started = std::time::Instant::now();
+
         let schema = serde_json::to_value(schema_for!(T))?;
         let mut current_prompt = prompt.to_owned();
         let mut last_error = String::new();
@@ -151,6 +162,13 @@ impl Llm {
 
             match serde_json::from_value::<T>(value) {
                 Ok(value) => {
+                    span.record("attempts", attempt);
+                    tracing::info!(
+                        attempts = attempt,
+                        total_tokens = total_usage.as_ref().and_then(|usage| usage.total_tokens),
+                        latency_ms = started.elapsed().as_millis(),
+                        "llm generate ok"
+                    );
                     return Ok(Generated {
                         value,
                         usage: total_usage,
@@ -158,6 +176,7 @@ impl Llm {
                 }
                 Err(error) => {
                     last_error = error.to_string();
+                    tracing::debug!(attempt, error = %last_error, "llm generate parse retry");
                     if attempt < MAX_ATTEMPTS {
                         current_prompt = augment_prompt(prompt, &last_error);
                     }
@@ -165,6 +184,13 @@ impl Llm {
             }
         }
 
+        span.record("attempts", attempts_made);
+        tracing::warn!(
+            attempts = attempts_made,
+            latency_ms = started.elapsed().as_millis(),
+            error = %last_error,
+            "llm generate parse-exhausted"
+        );
         Err(LlmError::Parse {
             attempts: attempts_made,
             last_error,
@@ -179,11 +205,19 @@ impl Llm {
     ///
     /// Returns [`LlmError::Backend`] if the backend call fails.
     pub async fn text(&self, prompt: &str) -> Result<Generated<String>, LlmError> {
+        let span = tracing::info_span!("llm.text");
+        let _guard = span.enter();
+        let started = std::time::Instant::now();
         let (value, usage) = self
             .backend
             .complete_text(prompt)
             .await
             .map_err(|source| LlmError::backend("text completion", source))?;
+        tracing::info!(
+            total_tokens = usage.as_ref().and_then(|usage| usage.total_tokens),
+            latency_ms = started.elapsed().as_millis(),
+            "llm text ok"
+        );
         Ok(Generated { value, usage })
     }
 }

@@ -41,6 +41,8 @@ tempfile = "3"
 thiserror = "2.0.18"
 time = "0.3.53"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 xberg = { path = "../xberg-io/xberg/crates/xberg" }
 xberg-rag = { path = "../xberg-io/xberg/crates/xberg-rag" }
 

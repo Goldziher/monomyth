@@ -17,6 +17,7 @@ mod synthesize;
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
+    init_tracing();
     let cli = Cli::parse();
 
     match cli.command {
@@ -86,4 +87,21 @@ async fn main() -> Result<()> {
             }
         },
     }
+}
+
+/// Install a `tracing` subscriber that emits the LLM/generation spans and events
+/// (`monomyth-llm` timing, token usage, retry counts) to stderr.
+///
+/// Filtering is driven by `RUST_LOG` (e.g. `RUST_LOG=monomyth_llm=info`); with no
+/// `RUST_LOG` set it defaults to `warn`, so normal runs stay quiet while the
+/// machinery is one env var away. Failing to install (e.g. a subscriber already
+/// set in a test harness) is ignored — logging is best-effort, never fatal.
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
 }
