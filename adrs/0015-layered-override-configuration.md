@@ -114,3 +114,28 @@ Draws the boundary against ADR-0004 (frameworks-as-schema): rule artifacts are e
 `monomyth-config`'s scope. Consumed by ADR-0017 (genre as a config dimension). Instantiates the
 X-CONFIG cross-cutting concern of ADR-0013. The vertical-slice migration order (one value, then
 generalize) is tracked as roadmap Phase 1a/1b, not part of this decision.
+
+## Implementation note (2026-07-12): the mechanism + first value landed
+
+The `monomyth-config` crate now exists with the mechanism-only surface this ADR specifies —
+`Layered<T>`, `LayerSource`, `ConfigResolver` — and the Phase 1a vertical slice
+(`generation.fork_chance_permille`) is threaded end to end. The immutable decision above stands; two
+points of record:
+
+- **A fifth layer, `RuntimeOverride`, was added above `UserOverride`** for CLI flags / programmatic
+  overrides, so the precedence is
+  `SystemDefault < DeploymentDefault < ProjectOverride < UserOverride < RuntimeOverride`. A `--flag`
+  therefore always wins over any file, which is what the existing global `--model`/`--db` flags need
+  once they migrate to config-supplied defaults.
+- **The determinism constraint is enforced exactly as the Confirmation section requires.**
+  `monomyth-gen` keeps owning `NarrativeConfig` and gains only a flat, resolved `GenerationConfig`
+  (plain scalars) plus `Generator::with_config`; it takes *no* dependency on `monomyth-config` (the CLI
+  does the projection). `with_default_passes()` now delegates to
+  `with_config(&GenerationConfig::default())`, and three ratchets pin the no-op: two in
+  `monomyth-gen/tests/determinism.rs` (the config-default and an explicit `fork_chance = 500` both
+  reproduce the seed-42 golden `0x65f6_6a4b_a541_5419`) and one cross-crate test in `monomyth-cli`
+  binding `monomyth-config`'s system default to that golden.
+
+The file schema currently deserializes via `serde` + `toml` (the `deny_unknown_fields` guard makes a
+misspelled key a hard error); the `schemars` JSON-Schema emission this ADR mentions is deferred to a
+later slice alongside the `[models]`/`[retrieval]`/`[synthesis]`/`[paths]` sections.
