@@ -195,21 +195,92 @@ pub(crate) fn resolve_text(text: Option<String>, file: Option<&Path>) -> Result<
     }
 }
 
+/// The `time` format for the ISO 8601 retrieval date stamped on an ingest.
+const INGEST_DATE_FORMAT: &[time::format_description::FormatItem<'_>] =
+    format_description!("[year]-[month]-[day]");
+
+/// The lowercase-hex sha256 checksum of `text`, carried as ADR-0005 provenance
+/// so an ingested record's content can be verified against its declared source.
+fn content_checksum(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(text.as_bytes());
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write as _;
+        // `write!` to a `String` never fails, so the result is discarded.
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+/// Assemble a provenance-stamped [`IngestInput`] from CLI arguments.
+///
+/// Pure and unit-testable: it stamps the content checksum and the given
+/// `retrieved` date onto the input so every ingested record carries ADR-0005
+/// provenance, regardless of whether it lands in the ship or reference
+/// collection.
+fn build_ingest_input(
+    text: String,
+    title: Option<String>,
+    url: Option<String>,
+    retrieved: String,
+) -> IngestInput {
+    let checksum = content_checksum(&text);
+    IngestInput {
+        full_text: text,
+        title,
+        source_uri: url,
+        checksum: Some(checksum),
+        retrieved: Some(retrieved),
+    }
+}
+
 /// Handle `ingest`: store `text` for the declared `source`, printing the doc id.
+///
+/// Routes to the reference collection when `reference` is set (priors only,
+/// never surfaced) and to the surfaceable ship collection otherwise; the
+/// knowledge layer's ingest gate refuses a source whose ledger namespace does
+/// not match the chosen collection. Either way the record is stamped with
+/// ADR-0005 provenance (content checksum + today's retrieval date).
 ///
 /// # Errors
 ///
-/// Fails if the store cannot be opened, or if the ingest gate refuses the source
-/// (undeclared or non-ship namespace).
-pub(crate) async fn run_ingest(source: &str, text: String, db: &Path) -> Result<()> {
+/// Fails if the store cannot be opened, today's date cannot be formatted, or the
+/// ingest gate refuses the source (undeclared, or a namespace that does not match
+/// the chosen collection).
+pub(crate) async fn run_ingest(
+    source: &str,
+    text: String,
+    reference: bool,
+    title: Option<String>,
+    url: Option<String>,
+    db: &Path,
+) -> Result<()> {
     let knowledge = Knowledge::open(db)
         .await
         .context("opening the knowledge store")?;
-    let document_id = knowledge
-        .ingest(source, IngestInput::new(text))
-        .await
-        .with_context(|| format!("ingesting source {source:?}"))?;
-    println!("Ingested {source} as document {}", document_id.0);
+    let retrieved = OffsetDateTime::now_utc()
+        .format(INGEST_DATE_FORMAT)
+        .context("formatting today's date")?;
+    let input = build_ingest_input(text, title, url, retrieved);
+
+    let document_id = if reference {
+        knowledge
+            .ingest_reference(source, input)
+            .await
+            .with_context(|| format!("ingesting reference source {source:?}"))?
+    } else {
+        knowledge
+            .ingest(source, input)
+            .await
+            .with_context(|| format!("ingesting source {source:?}"))?
+    };
+
+    let collection = if reference { "reference" } else { "ship" };
+    println!(
+        "Ingested {source} into the {collection} collection as document {}",
+        document_id.0
+    );
     Ok(())
 }
 
@@ -373,7 +444,10 @@ mod tests {
 
     use monomyth_core::NarrativeEdit;
 
-    use super::{apply_edit_script, generate_world, load_play_world, resolve_text};
+    use super::{
+        apply_edit_script, build_ingest_input, content_checksum, generate_world, load_play_world,
+        resolve_text,
+    };
 
     #[test]
     fn should_apply_a_valid_edit_script_to_the_structure() {
@@ -427,6 +501,42 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "provide exactly one of --world or --seed, not both"
+        );
+    }
+
+    #[test]
+    fn content_checksum_is_the_known_sha256_of_the_text() {
+        // The well-known sha256 of the empty string and of "abc" — a fixed
+        // vector, so a regression in the digest is caught immediately.
+        assert_eq!(
+            content_checksum(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            content_checksum("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn build_ingest_input_stamps_checksum_and_provenance() {
+        let input = build_ingest_input(
+            "some myth text".to_owned(),
+            Some("A Title".to_owned()),
+            Some("https://example.org/book".to_owned()),
+            "2026-07-12".to_owned(),
+        );
+        assert_eq!(input.full_text, "some myth text");
+        assert_eq!(input.title.as_deref(), Some("A Title"));
+        assert_eq!(
+            input.source_uri.as_deref(),
+            Some("https://example.org/book")
+        );
+        assert_eq!(input.retrieved.as_deref(), Some("2026-07-12"));
+        assert_eq!(
+            input.checksum.as_deref(),
+            Some(content_checksum("some myth text").as_str()),
+            "the stamped checksum must be the sha256 of the ingested text"
         );
     }
 

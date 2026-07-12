@@ -28,9 +28,16 @@ async fn main() -> Result<()> {
             play::run_play(world)
         }
         Command::Edit { world, script, out } => commands::run_edit(&world, &script, out),
-        Command::Ingest { source, text, file } => {
+        Command::Ingest {
+            source,
+            text,
+            file,
+            reference,
+            title,
+            url,
+        } => {
             let content = commands::resolve_text(text, file.as_deref())?;
-            commands::run_ingest(&source, content, &cli.db).await
+            commands::run_ingest(&source, content, reference, title, url, &cli.db).await
         }
         Command::Retrieve { query, top_k } => commands::run_retrieve(&query, top_k, &cli.db).await,
         Command::Corpus { command } => match command {

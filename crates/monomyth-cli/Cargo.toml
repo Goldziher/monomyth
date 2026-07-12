@@ -27,6 +27,7 @@ monomyth-synthesis = { workspace = true }
 monomyth-text = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 time = { workspace = true, features = ["formatting", "macros"] }
 tokio = { workspace = true }
 

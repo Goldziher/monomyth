@@ -90,9 +90,14 @@ pub(crate) enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Ingest a ship-namespace source's text into the knowledge store.
+    /// Ingest a declared source's text into the knowledge store.
+    ///
+    /// Ship-namespace by default (surfaceable). Pass `--reference` to ingest a
+    /// reference-namespace source into the priors-only reference collection
+    /// (never surfaced verbatim); the ingest gate refuses a source whose ledger
+    /// namespace does not match the chosen path.
     Ingest {
-        /// Declared source id (must exist in the ledger and be ship-namespace).
+        /// Declared source id (must exist in the ledger and match the namespace).
         source: String,
 
         /// Inline text to ingest.
@@ -102,6 +107,20 @@ pub(crate) enum Command {
         /// Path to a file whose contents are ingested.
         #[arg(long, group = "input")]
         file: Option<PathBuf>,
+
+        /// Ingest into the reference collection (priors only, never surfaced)
+        /// instead of the surfaceable ship collection.
+        #[arg(long)]
+        reference: bool,
+
+        /// Optional human-readable title recorded with the document.
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Optional source URI (e.g. the exact URL the text was retrieved from),
+        /// carried as provenance (ADR-0005).
+        #[arg(long)]
+        url: Option<String>,
     },
 
     /// Retrieve surfaceable passages matching a query.
