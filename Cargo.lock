@@ -2926,6 +2926,8 @@ name = "monomyth-synthesis"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dotenvy",
+ "monomyth-eval",
  "monomyth-frameworks",
  "monomyth-knowledge",
  "monomyth-llm",

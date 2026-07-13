@@ -1,0 +1,60 @@
+{
+  "interactions": [
+    {
+      "key": "d0033e4717ee95c1",
+      "prompt_sha": "f2c3dc69843a198908c562711a873244e5f72fabfc6ef65f62d11696ff0ca419",
+      "response": {
+        "criteria": [
+          {
+            "name": "Exhaustiveness",
+            "rationale": "Captures the provided grounding passages but fails to account for the full structural arc expected at the macro tier.",
+            "score": 60
+          },
+          {
+            "name": "Source grounding",
+            "rationale": "All included phases are directly supported by the grounding text.",
+            "score": 100
+          },
+          {
+            "name": "Ordering & non-overlap",
+            "rationale": "Phases are presented in chronological narrative order without conceptual overlap.",
+            "score": 100
+          },
+          {
+            "name": "Abstraction",
+            "rationale": "Descriptions heavily rely on near-verbatim source wording rather than abstract structural vocabulary.",
+            "score": 10
+          },
+          {
+            "name": "Tier fit",
+            "rationale": "Provides only a handful of phases rather than the expected dozen for a full macro-tier arc.",
+            "score": 40
+          },
+          {
+            "name": "Honest abstention",
+            "rationale": "Fails to use the [NOT DERIVABLE FROM GROUNDING] tag to acknowledge missing structural phases like the return.",
+            "score": 0
+          }
+        ],
+        "instructions": [
+          "Rewrite all phase descriptions using abstract structural language instead of near-verbatim source quotes.",
+          "Include structurally expected phases for the return and restoration using the [NOT DERIVABLE FROM GROUNDING] tag."
+        ],
+        "missing_phases": [
+          "Return Flight",
+          "Final Resurrection",
+          "Restoration"
+        ]
+      },
+      "schema_name": "JudgeVerdict",
+      "usage": {
+        "completion_tokens": 253,
+        "prompt_tokens": 666,
+        "total_tokens": 919
+      }
+    }
+  ],
+  "model": "gemini/gemini-3.1-pro-preview",
+  "recorded_at": "unknown",
+  "version": 1
+}

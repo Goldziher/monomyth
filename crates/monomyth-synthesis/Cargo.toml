@@ -19,6 +19,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }
+dotenvy = { workspace = true }
+monomyth-eval = { workspace = true, features = ["semantic"] }
 tokio = { workspace = true }
 xberg = { workspace = true }
 
