@@ -86,21 +86,22 @@ mod tests {
 
     use super::{SectionDraft, assemble};
 
+    /// Build a section carrying `text`, with the other fields fixed — the tests
+    /// below assert only on `text` stitching, so node/stage/note are constant.
+    fn section(text: &str) -> SectionDraft {
+        SectionDraft {
+            node_id: NarrativeNodeId::default(),
+            stage: MonomythStage::CallToAdventure,
+            text: text.to_owned(),
+            note: None,
+        }
+    }
+
     #[test]
     fn should_join_non_empty_section_texts_with_blank_line_separator() {
         let sections = vec![
-            SectionDraft {
-                node_id: NarrativeNodeId::default(),
-                stage: MonomythStage::CallToAdventure,
-                text: "The call arrives at dusk.".to_owned(),
-                note: None,
-            },
-            SectionDraft {
-                node_id: NarrativeNodeId::default(),
-                stage: MonomythStage::CallToAdventure,
-                text: "She refuses it twice.".to_owned(),
-                note: None,
-            },
+            section("The call arrives at dusk."),
+            section("She refuses it twice."),
         ];
 
         let doc = assemble(sections.clone());
@@ -115,5 +116,63 @@ mod tests {
             sections.as_slice(),
             "sections must round-trip unchanged"
         );
+    }
+
+    #[test]
+    fn should_produce_empty_prose_for_no_sections() {
+        let doc = assemble(Vec::new());
+
+        assert_eq!(doc.prose(), "", "no sections stitch to empty prose");
+        assert!(doc.sections().is_empty(), "no sections round-trip as none");
+    }
+
+    #[test]
+    fn should_stitch_a_single_section_without_a_separator() {
+        let sections = vec![section("The lone beat stands alone.")];
+
+        let doc = assemble(sections.clone());
+
+        assert_eq!(
+            doc.prose(),
+            "The lone beat stands alone.",
+            "a single section carries no separator"
+        );
+        assert_eq!(doc.sections(), sections.as_slice());
+    }
+
+    #[test]
+    fn should_produce_empty_prose_when_every_section_is_empty() {
+        let sections = vec![section(""), section(""), section("")];
+
+        let doc = assemble(sections.clone());
+
+        assert_eq!(
+            doc.prose(),
+            "",
+            "all-empty sections stitch to empty prose, no dangling separators"
+        );
+        assert_eq!(
+            doc.sections(),
+            sections.as_slice(),
+            "the empty sections still round-trip unchanged"
+        );
+    }
+
+    #[test]
+    fn should_skip_empty_sections_without_leaving_a_blank_gap() {
+        let sections = vec![
+            section("The call arrives at dusk."),
+            section(""),
+            section("She crosses the threshold."),
+        ];
+
+        let doc = assemble(sections.clone());
+
+        assert_eq!(
+            doc.prose(),
+            "The call arrives at dusk.\n\nShe crosses the threshold.",
+            "an empty middle section drops out with no double separator"
+        );
+        assert_eq!(doc.sections(), sections.as_slice());
     }
 }

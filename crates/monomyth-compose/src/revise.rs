@@ -164,7 +164,11 @@ async fn revise_loop(
         }
 
         if converged {
-            let winner = best.expect("just inserted this iteration's attempt");
+            // `best` is `Some` here: this iteration either just inserted its
+            // attempt, or kept an earlier attempt whose score is >= this one's
+            // and therefore also clears the threshold. Either way the winner is
+            // the best-scoring attempt seen, and it has converged.
+            let winner = best.expect("best is Some once the loop has run an iteration");
             return Ok(SectionDraft {
                 node_id: section.node_id,
                 stage: section.stage,
