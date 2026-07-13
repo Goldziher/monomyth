@@ -95,6 +95,16 @@ pub const EMBEDDING_DIM: u32 = 768;
 /// distillation of *distinct* grounding.
 const REFERENCE_OVERFETCH: u32 = 3;
 
+/// Maximum number of query-derived keyword predicates combined into the
+/// reference-path keyword filter (WS-C slice 2). Salient query terms beyond this
+/// are dropped; the cap bounds the disjunction's per-candidate evaluation and
+/// keeps it comfortably within the filter IR's `MAX_FILTER_NODES` complexity cap.
+const MAX_QUERY_KEYWORD_PREDICATES: usize = 8;
+
+/// The whitelisted document-level filter field carrying a document's extracted
+/// keywords, addressed for the reference-path [`Filter::ArrayContains`] narrowing.
+const DOC_KEYWORDS_FIELD: &str = "doc.keywords";
+
 /// The store name registered for the knowledge vector store.
 const STORE_NAME: &str = "monomyth";
 
@@ -397,14 +407,15 @@ impl Knowledge {
     }
 
     /// Best-effort keyword extraction for `text`, run only when enrichment is
-    /// enabled and the `rag-keywords` feature is compiled in. Extraction is
-    /// never fatal to an ingest: a failure is logged and treated as "no
-    /// keywords" rather than propagated, and the feature-off / disabled case
-    /// returns empty without attempting extraction at all — so default
-    /// behavior (and every existing cassette/golden) is byte-for-byte
+    /// enabled and the `rag-keywords` feature is compiled in. `context` is a
+    /// short label (the ingest `source_id` or `"reference query"`) attached to
+    /// the failure log. Extraction is never fatal: a failure is logged and
+    /// treated as "no keywords" rather than propagated, and the feature-off /
+    /// disabled case returns empty without attempting extraction at all — so
+    /// default behavior (and every existing cassette/golden) is byte-for-byte
     /// unchanged.
     #[cfg_attr(not(feature = "rag-keywords"), allow(unused_variables))]
-    fn extract_keywords_best_effort(&self, text: &str, source_id: &str) -> Vec<String> {
+    fn extract_keywords_best_effort(&self, text: &str, context: &str) -> Vec<String> {
         if !self.keyword_enrichment.enabled {
             return Vec::new();
         }
@@ -414,9 +425,9 @@ impl Knowledge {
                 Ok(keywords) => keywords,
                 Err(error) => {
                     tracing::warn!(
-                        source_id,
+                        context,
                         error = %error,
-                        "best-effort keyword extraction failed at ingest; proceeding with no keywords"
+                        "best-effort keyword extraction failed; proceeding with no keywords"
                     );
                     Vec::new()
                 }
@@ -425,6 +436,36 @@ impl Knowledge {
         #[cfg(not(feature = "rag-keywords"))]
         {
             Vec::new()
+        }
+    }
+
+    /// Build the reference-path keyword filter from the salient terms of `text`,
+    /// or `None` when enrichment is disabled, the `rag-keywords` feature is
+    /// compiled out, or the query yields no keywords.
+    ///
+    /// The filter is a disjunction of [`Filter::ArrayContains`] over
+    /// `doc.keywords` (capped at [`MAX_QUERY_KEYWORD_PREDICATES`]): a reference
+    /// document is a candidate when it shares *any* salient term with the query,
+    /// biasing the priors toward lexically-aligned grounding. Used on the
+    /// reference path only ([`retrieve_reference`](Self::retrieve_reference)) and
+    /// always degradable — the ship path is never keyword-filtered, so this can
+    /// never perturb surfaceable retrieval.
+    fn reference_keyword_filter(&self, text: &str) -> Option<Filter> {
+        let mut predicates: Vec<Filter> = self
+            .extract_keywords_best_effort(text, "reference query")
+            .into_iter()
+            .take(MAX_QUERY_KEYWORD_PREDICATES)
+            .map(|keyword| Filter::ArrayContains {
+                field: FilterField(DOC_KEYWORDS_FIELD.to_owned()),
+                value: Value::String(keyword),
+            })
+            .collect();
+        match predicates.len() {
+            0 => None,
+            1 => predicates.pop(),
+            _ => Some(Filter::Or {
+                filters: predicates,
+            }),
         }
     }
 
@@ -581,14 +622,32 @@ impl Knowledge {
             .pop();
         let escaped = fts5_match_query(text);
 
+        // Reference-path keyword narrowing (WS-C slice 2): when enrichment is on,
+        // bias candidates toward reference documents that share a salient query
+        // term. A filter that starves retrieval — no document shares a keyword,
+        // so the filtered fetch comes back empty — degrades to the unfiltered
+        // path, guaranteeing the distiller is never left without grounding it
+        // would otherwise have had. When enrichment is off (the default), the
+        // filter is `None` and this is byte-for-byte the prior unfiltered path.
+        if let Some(filter) = self.reference_keyword_filter(text) {
+            let filtered = self
+                .run_reference_retrieve(
+                    fetch_k,
+                    query_vector.clone(),
+                    escaped.clone(),
+                    Some(filter),
+                )
+                .await?;
+            if !filtered.is_empty() {
+                return reference_passages(filtered, top_k);
+            }
+        }
+
         let chunks = self
-            .run_reference_retrieve(fetch_k, query_vector, escaped)
+            .run_reference_retrieve(fetch_k, query_vector, escaped, None)
             .await?;
 
-        dedup_chunks(chunks, top_k as usize)
-            .into_iter()
-            .map(|chunk| passage_from_chunk(chunk, REFERENCE_COLLECTION))
-            .collect()
+        reference_passages(chunks, top_k)
     }
 
     /// Run the reference retrieval as hybrid when a lexical query and a store
@@ -600,10 +659,11 @@ impl Knowledge {
         fetch_k: u32,
         query_vector: Option<Vec<f32>>,
         escaped: Option<String>,
+        keyword_filter: Option<Filter>,
     ) -> Result<Vec<RetrievedChunk>, KnowledgeError> {
-        let vector_query = |query_vector: Option<Vec<f32>>| RetrieveQuery {
+        let vector_query = |query_vector: Option<Vec<f32>>, filter: Option<Filter>| RetrieveQuery {
             query_vector,
-            filter: None,
+            filter,
             include_content: true,
             include_document: true,
             ..RetrieveQuery::vector(fetch_k)
@@ -612,7 +672,10 @@ impl Knowledge {
         // No lexical terms (empty/all-punctuation query) → plain vector.
         let Some(match_query) = escaped else {
             return self
-                .run_retrieve(REFERENCE_COLLECTION, vector_query(query_vector))
+                .run_retrieve(
+                    REFERENCE_COLLECTION,
+                    vector_query(query_vector, keyword_filter),
+                )
                 .await
                 .map_err(|error| KnowledgeError::store("retrieving chunks", error));
         };
@@ -621,7 +684,7 @@ impl Knowledge {
             mode: RetrieveMode::Hybrid,
             query_text: Some(match_query),
             query_vector: query_vector.clone(),
-            filter: None,
+            filter: keyword_filter.clone(),
             include_content: true,
             include_document: true,
             ..RetrieveQuery::vector(fetch_k)
@@ -629,7 +692,10 @@ impl Knowledge {
         match self.run_retrieve(REFERENCE_COLLECTION, hybrid_query).await {
             Ok(chunks) => Ok(chunks),
             Err(RagError::UnsupportedMode { .. }) => self
-                .run_retrieve(REFERENCE_COLLECTION, vector_query(query_vector))
+                .run_retrieve(
+                    REFERENCE_COLLECTION,
+                    vector_query(query_vector, keyword_filter),
+                )
                 .await
                 .map_err(|error| KnowledgeError::store("retrieving chunks", error)),
             Err(error) => Err(KnowledgeError::store("retrieving chunks", error)),
@@ -720,6 +786,19 @@ fn semantic_chunking() -> ChunkingConfig {
         embedding: Some(xberg::EmbeddingConfig::default()),
         ..ChunkingConfig::default()
     }
+}
+
+/// Finalize reference-collection chunks into passages: near-duplicate dedup down
+/// to `top_k`, then convert each surviving chunk. Shared by the keyword-filtered
+/// and unfiltered reference paths so both apply identical dedup and conversion.
+fn reference_passages(
+    chunks: Vec<RetrievedChunk>,
+    top_k: u32,
+) -> Result<Vec<Passage>, KnowledgeError> {
+    dedup_chunks(chunks, top_k as usize)
+        .into_iter()
+        .map(|chunk| passage_from_chunk(chunk, REFERENCE_COLLECTION))
+        .collect()
 }
 
 /// Build a [`Passage`] from a retrieved chunk, reading licensing provenance from
@@ -1207,6 +1286,130 @@ mod tests {
             !keywords.is_empty(),
             "keyword enrichment must actually populate `doc.keywords` when enabled, \
              not silently no-op"
+        );
+    }
+
+    /// WS-C slice 2: with enrichment disabled (the default), the reference path
+    /// builds no keyword filter, so reference retrieval is byte-for-byte the
+    /// prior unfiltered behavior. This holds regardless of the `rag-keywords`
+    /// feature, so it is deliberately not feature-gated.
+    #[test]
+    fn reference_keyword_filter_is_none_when_enrichment_disabled() {
+        let knowledge = test_knowledge();
+        assert!(
+            knowledge
+                .reference_keyword_filter("the hero crosses the threshold")
+                .is_none(),
+            "a store with enrichment disabled must never narrow the reference path"
+        );
+    }
+
+    /// WS-C slice 2: with enrichment enabled, a keyword-bearing query yields a
+    /// disjunction of `ArrayContains` predicates, each targeting `doc.keywords`,
+    /// so a reference document is a candidate when it shares *any* salient term.
+    #[test]
+    #[cfg(feature = "rag-keywords")]
+    fn reference_keyword_filter_builds_array_contains_disjunction_over_doc_keywords() {
+        let knowledge = test_knowledge().with_keyword_enrichment(KeywordEnrichment::enabled());
+        let filter = knowledge
+            .reference_keyword_filter(KEYWORD_TEST_CORPUS)
+            .expect("a keyword-bearing query must produce a filter when enrichment is enabled");
+
+        // A single salient term degenerates to a bare `ArrayContains`; several
+        // combine under `Or`. Either way every leaf targets `doc.keywords`.
+        let predicates = match &filter {
+            Filter::Or { filters } => filters.clone(),
+            single @ Filter::ArrayContains { .. } => vec![single.clone()],
+            other => panic!("expected an ArrayContains disjunction, got {other:?}"),
+        };
+        assert!(
+            predicates.len() <= MAX_QUERY_KEYWORD_PREDICATES,
+            "predicate count must be capped at MAX_QUERY_KEYWORD_PREDICATES"
+        );
+        for predicate in &predicates {
+            match predicate {
+                Filter::ArrayContains { field, value } => {
+                    assert_eq!(
+                        field.0, DOC_KEYWORDS_FIELD,
+                        "every keyword predicate must target the doc.keywords field"
+                    );
+                    assert!(value.is_string(), "each predicate matches a keyword string");
+                }
+                other => panic!("every predicate must be ArrayContains, got {other:?}"),
+            }
+        }
+        // The filter must satisfy the IR complexity caps so retrieval accepts it.
+        filter
+            .validate()
+            .expect("keyword filter must be within complexity caps");
+    }
+
+    /// WS-C slice 2 (the load-bearing behavioral guarantee): a keyword filter
+    /// that no reference document satisfies must **degrade to the unfiltered
+    /// path** rather than starve the distiller. Ingest one reference document,
+    /// then query with vocabulary disjoint from it: a filter *is* built (proving
+    /// the narrowing was attempted) yet retrieval still returns the document,
+    /// which is only possible via the unfiltered fallback.
+    #[tokio::test]
+    #[cfg(feature = "rag-keywords")]
+    async fn reference_retrieval_degrades_to_unfiltered_when_no_document_shares_a_keyword() {
+        let knowledge = test_knowledge().with_keyword_enrichment(KeywordEnrichment::enabled());
+        knowledge
+            .ingest_reference("perseus", IngestInput::new(KEYWORD_TEST_CORPUS))
+            .await
+            .expect("reference source ingests");
+
+        // Vocabulary deliberately disjoint from the hero's-journey corpus, so no
+        // stored keyword can match — the filtered fetch is empty.
+        let disjoint_query = "photolithography semiconductor wafer fabrication throughput";
+        assert!(
+            knowledge.reference_keyword_filter(disjoint_query).is_some(),
+            "the disjoint query must still produce keywords (so a filter is built)"
+        );
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::reference(disjoint_query, 5))
+            .await
+            .expect("reference retrieval succeeds");
+
+        assert!(
+            !passages.is_empty(),
+            "a non-matching keyword filter must degrade to unfiltered retrieval, \
+             not return an empty grounding set"
+        );
+        assert!(
+            passages.iter().all(|passage| !passage.is_surfaceable()),
+            "reference passages are never surfaceable regardless of enrichment"
+        );
+    }
+
+    /// WS-C slice 2: the filtered (non-empty) path returns grounding that shares
+    /// a query keyword. Querying with the ingested corpus's own text extracts the
+    /// same keywords stored on the document, so the `ArrayContains` disjunction
+    /// matches exactly and the document is returned *through* the filter — not
+    /// via the fallback.
+    #[tokio::test]
+    #[cfg(feature = "rag-keywords")]
+    async fn reference_retrieval_with_enrichment_returns_grounding_that_shares_a_keyword() {
+        let knowledge = test_knowledge().with_keyword_enrichment(KeywordEnrichment::enabled());
+        knowledge
+            .ingest_reference("perseus", IngestInput::new(KEYWORD_TEST_CORPUS))
+            .await
+            .expect("reference source ingests");
+
+        let passages = knowledge
+            .retrieve(KnowledgeQuery::reference(KEYWORD_TEST_CORPUS, 5))
+            .await
+            .expect("reference retrieval succeeds");
+
+        assert!(
+            !passages.is_empty(),
+            "a query sharing keywords with the ingested document must return it \
+             through the keyword filter"
+        );
+        assert_eq!(
+            passages[0].source_id, "perseus",
+            "the keyword-matching reference document is the grounding returned"
         );
     }
 
