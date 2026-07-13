@@ -365,6 +365,13 @@ impl MonomythConfig {
                 reason: format!("must be at least 1, got {max_turns}"),
             });
         }
+        let grounding_top_k = *self.compose.grounding_top_k.get();
+        if grounding_top_k < 1 {
+            return Err(ConfigError::Invalid {
+                field: "compose.grounding_top_k".to_owned(),
+                reason: format!("must be at least 1, got {grounding_top_k}"),
+            });
+        }
         let revise_threshold = *self.compose.revise_threshold.get();
         if !revise_threshold.is_finite() {
             return Err(ConfigError::Invalid {
@@ -680,6 +687,21 @@ mod tests {
         assert!(
             matches!(error, ConfigError::Invalid { ref field, .. } if field == "compose.max_turns"),
             "the error must name compose.max_turns, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_zero_compose_grounding_top_k_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[compose]\ngrounding_top_k = 0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("0 grounding_top_k retrieves no priors to ground on");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "compose.grounding_top_k"),
+            "the error must name compose.grounding_top_k, got {error:?}"
         );
     }
 
