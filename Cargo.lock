@@ -2800,6 +2800,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-compose"
+version = "0.1.0"
+dependencies = [
+ "monomyth-core",
+ "monomyth-frameworks",
+ "monomyth-gen",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "monomyth-config"
 version = "0.1.0"
 dependencies = [
