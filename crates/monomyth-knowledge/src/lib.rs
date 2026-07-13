@@ -125,6 +125,20 @@ const META_CHECKSUM: &str = "checksum";
 /// Metadata key carrying the retrieval date on each stored document, when known.
 const META_RETRIEVED: &str = "retrieved";
 
+/// Entity category name for a mythological or divine figure, used to seed
+/// [`default_mythic_categories`].
+#[cfg(feature = "rag-ner-llm")]
+const MYTHIC_CATEGORY_DEITY: &str = "Deity";
+/// Entity category name for a story's protagonist figure.
+#[cfg(feature = "rag-ner-llm")]
+const MYTHIC_CATEGORY_HERO: &str = "Hero";
+/// Entity category name for a named magical or narratively significant object.
+#[cfg(feature = "rag-ner-llm")]
+const MYTHIC_CATEGORY_ARTIFACT: &str = "Artifact";
+/// Entity category name for a named place of mythic or narrative significance.
+#[cfg(feature = "rag-ner-llm")]
+const MYTHIC_CATEGORY_REALM: &str = "Realm";
+
 /// Our input type for a single ingest, deliberately narrower than the pipeline's
 /// [`IngestRequest`]: licensing metadata is supplied by the ledger, not the
 /// caller, so it cannot be spoofed at the call site.
@@ -188,6 +202,84 @@ impl KeywordEnrichment {
             config: xberg::KeywordConfig::default(),
         }
     }
+}
+
+/// Runtime knob for best-effort named-entity extraction at ingest time (WS-C
+/// slice 3), mirroring [`KeywordEnrichment`]. Defaults to **disabled**, so
+/// default behavior — and every existing cassette/golden — is byte-for-byte
+/// unchanged; a caller opts in via [`Knowledge::with_entity_enrichment`].
+///
+/// The backend and categories (and hence `xberg::NerBackend` /
+/// `xberg::EntityCategory`, which only exist when `xberg/ner-llm` is compiled)
+/// are only present when the `rag-ner-llm` feature is enabled. With the
+/// feature off, `enabled` can still be set but extraction is compiled out
+/// entirely, so ingest always proceeds with no entities.
+#[derive(Clone, Default)]
+pub struct EntityEnrichment {
+    /// Whether ingest should attempt named-entity extraction.
+    pub enabled: bool,
+    /// The NER backend to call, forwarded to `xberg::detect_entities`.
+    #[cfg(feature = "rag-ner-llm")]
+    backend: Option<Arc<dyn xberg::NerBackend>>,
+    /// The entity categories to detect.
+    #[cfg(feature = "rag-ner-llm")]
+    categories: Vec<xberg::EntityCategory>,
+}
+
+impl fmt::Debug for EntityEnrichment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug_struct = formatter.debug_struct("EntityEnrichment");
+        debug_struct.field("enabled", &self.enabled);
+        #[cfg(feature = "rag-ner-llm")]
+        debug_struct.field("has_backend", &self.backend.is_some());
+        // `categories` is intentionally omitted (not useful in a log line);
+        // `finish_non_exhaustive` documents that this Debug impl is a summary,
+        // not a full field dump, satisfying `clippy::missing_fields_in_debug`.
+        debug_struct.finish_non_exhaustive()
+    }
+}
+
+impl EntityEnrichment {
+    /// Enrichment enabled with an explicit backend and category set.
+    ///
+    /// The narrow seam a caller (or test) uses to supply a fake backend
+    /// without a live LLM call.
+    #[must_use]
+    #[cfg(feature = "rag-ner-llm")]
+    pub fn with_backend(
+        backend: Arc<dyn xberg::NerBackend>,
+        categories: Vec<xberg::EntityCategory>,
+    ) -> Self {
+        Self {
+            enabled: true,
+            backend: Some(backend),
+            categories,
+        }
+    }
+
+    /// Enrichment enabled with an `xberg::LlmBackend` built from `config`,
+    /// detecting the [`default_mythic_categories`] — the categories a mythic
+    /// corpus actually needs, rather than the generic PERSON/ORG/LOCATION set.
+    #[must_use]
+    #[cfg(feature = "rag-ner-llm")]
+    pub fn llm(config: xberg::LlmConfig) -> Self {
+        let backend = Arc::new(xberg::LlmBackend::new(config)) as Arc<dyn xberg::NerBackend>;
+        Self::with_backend(backend, default_mythic_categories())
+    }
+}
+
+/// The mythic-corpus entity categories an [`EntityEnrichment::llm`] backend
+/// detects by default: figures, protagonists, artifacts, and realms — the
+/// entity shapes generation priors actually care about, distinct from the
+/// generic PERSON/ORGANIZATION/LOCATION taxonomy built-in categories cover.
+#[cfg(feature = "rag-ner-llm")]
+fn default_mythic_categories() -> Vec<xberg::EntityCategory> {
+    vec![
+        xberg::EntityCategory::Custom(MYTHIC_CATEGORY_DEITY.to_owned()),
+        xberg::EntityCategory::Custom(MYTHIC_CATEGORY_HERO.to_owned()),
+        xberg::EntityCategory::Custom(MYTHIC_CATEGORY_ARTIFACT.to_owned()),
+        xberg::EntityCategory::Custom(MYTHIC_CATEGORY_REALM.to_owned()),
+    ]
 }
 
 /// A retrieval request against the knowledge layer.
@@ -275,6 +367,7 @@ pub struct Knowledge {
     ledger: Ledger,
     chunking: ChunkingConfig,
     keyword_enrichment: KeywordEnrichment,
+    entity_enrichment: EntityEnrichment,
 }
 
 impl fmt::Debug for Knowledge {
@@ -309,6 +402,7 @@ impl Knowledge {
             ledger: Ledger::load_embedded()?,
             chunking: semantic_chunking(),
             keyword_enrichment: KeywordEnrichment::default(),
+            entity_enrichment: EntityEnrichment::default(),
         };
         knowledge.ensure_collection(SHIP_COLLECTION).await?;
         knowledge.ensure_collection(REFERENCE_COLLECTION).await?;
@@ -331,6 +425,7 @@ impl Knowledge {
             ledger,
             chunking: ChunkingConfig::default(),
             keyword_enrichment: KeywordEnrichment::default(),
+            entity_enrichment: EntityEnrichment::default(),
         }
     }
 
@@ -343,6 +438,18 @@ impl Knowledge {
     #[must_use]
     pub fn with_keyword_enrichment(mut self, keyword_enrichment: KeywordEnrichment) -> Self {
         self.keyword_enrichment = keyword_enrichment;
+        self
+    }
+
+    /// Return `self` with named-entity enrichment reconfigured.
+    ///
+    /// Defaults to disabled (see [`EntityEnrichment`]); a caller opts in with
+    /// [`EntityEnrichment::with_backend`] or [`EntityEnrichment::llm`]. Extraction
+    /// only runs when the `rag-ner-llm` feature is compiled in — enabling this
+    /// knob without the feature has no effect.
+    #[must_use]
+    pub fn with_entity_enrichment(mut self, entity_enrichment: EntityEnrichment) -> Self {
+        self.entity_enrichment = entity_enrichment;
         self
     }
 
@@ -439,6 +546,51 @@ impl Knowledge {
         }
     }
 
+    /// Best-effort NER over `text` → deduped, sorted entity surface strings, run
+    /// only when enabled and `rag-ner-llm` is compiled. Never fatal to an ingest:
+    /// a backend error is logged and treated as "no entities". Returns `Vec::new()`
+    /// when disabled / feature-off, so default behavior is byte-for-byte unchanged.
+    #[cfg_attr(not(feature = "rag-ner-llm"), allow(unused_variables))]
+    // `async` is genuinely needed: `xberg::detect_entities` is async and is
+    // `.await`ed in the `rag-ner-llm` body below. With the feature off there is
+    // no await in this stub body, so `clippy::unused_async` fires spuriously —
+    // allow it only in that configuration rather than dropping `async` and
+    // forcing every call site to branch on the feature.
+    #[cfg_attr(not(feature = "rag-ner-llm"), allow(clippy::unused_async))]
+    async fn extract_entities_best_effort(&self, text: &str, context: &str) -> Vec<String> {
+        if !self.entity_enrichment.enabled {
+            return Vec::new();
+        }
+        #[cfg(feature = "rag-ner-llm")]
+        {
+            let Some(backend) = &self.entity_enrichment.backend else {
+                return Vec::new();
+            };
+            match xberg::detect_entities(text, backend.as_ref(), &self.entity_enrichment.categories)
+                .await
+            {
+                Ok(entities) => entities
+                    .into_iter()
+                    .map(|entity| entity.text)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                Err(error) => {
+                    tracing::warn!(
+                        context,
+                        error = %error,
+                        "best-effort NER failed; proceeding with no entities"
+                    );
+                    Vec::new()
+                }
+            }
+        }
+        #[cfg(not(feature = "rag-ner-llm"))]
+        {
+            Vec::new()
+        }
+    }
+
     /// Build the reference-path keyword filter from the salient terms of `text`,
     /// or `None` when enrichment is disabled, the `rag-keywords` feature is
     /// compiled out, or the query yields no keywords.
@@ -493,8 +645,11 @@ impl Knowledge {
     ) -> Result<DocumentId, KnowledgeError> {
         let metadata = ingest_metadata(source_id, entry, &input);
         let keywords = self.extract_keywords_best_effort(&input.full_text, source_id);
+        let entities = self
+            .extract_entities_best_effort(&input.full_text, source_id)
+            .await;
 
-        let request = IngestRequest {
+        let mut request = IngestRequest {
             full_text: input.full_text,
             title: input.title,
             source_uri: input.source_uri,
@@ -502,6 +657,9 @@ impl Knowledge {
             keywords,
             ..IngestRequest::default()
         };
+        if !entities.is_empty() {
+            request.entities = Value::Array(entities.into_iter().map(Value::String).collect());
+        }
 
         self.ensure_collection(collection).await?;
         let config = RagPipelineConfig {
@@ -991,6 +1149,47 @@ mod tests {
         Knowledge::with(store, embedder, ledger)
     }
 
+    /// Deterministic fake NER backend: scans `text` for "hero" and "threshold"
+    /// (both present in [`KEYWORD_TEST_CORPUS`]) and reports them at their real
+    /// byte offsets. No ONNX, no network, no LLM call.
+    #[cfg(feature = "rag-ner-llm")]
+    #[derive(Debug)]
+    struct FakeNerBackend;
+
+    #[cfg(feature = "rag-ner-llm")]
+    #[async_trait]
+    impl xberg::NerBackend for FakeNerBackend {
+        async fn detect(
+            &self,
+            text: &str,
+            _categories: &[xberg::EntityCategory],
+        ) -> xberg::Result<Vec<xberg::Entity>> {
+            let mut entities = Vec::new();
+            if let Some(start) = text.find("hero") {
+                let start = u32::try_from(start).expect("test fixture offsets fit in u32");
+                entities.push(xberg::Entity {
+                    category: xberg::EntityCategory::Custom("Hero".to_owned()),
+                    text: "hero".to_owned(),
+                    start,
+                    end: start + u32::try_from("hero".len()).expect("literal length fits in u32"),
+                    confidence: Some(1.0),
+                });
+            }
+            if let Some(start) = text.find("threshold") {
+                let start = u32::try_from(start).expect("test fixture offsets fit in u32");
+                entities.push(xberg::Entity {
+                    category: xberg::EntityCategory::Custom("Realm".to_owned()),
+                    text: "threshold".to_owned(),
+                    start,
+                    end: start
+                        + u32::try_from("threshold".len()).expect("literal length fits in u32"),
+                    confidence: Some(1.0),
+                });
+            }
+            Ok(entities)
+        }
+    }
+
     #[tokio::test]
     async fn embed_texts_returns_one_vector_per_input_in_order() {
         let knowledge = test_knowledge();
@@ -1198,9 +1397,9 @@ mod tests {
         );
     }
 
-    /// The small ship corpus shared by the two keyword-enrichment tests below,
-    /// so both exercise the exact same ingest content.
-    #[cfg(feature = "rag-keywords")]
+    /// The small ship corpus shared by the keyword- and entity-enrichment tests
+    /// below, so both exercise the exact same ingest content.
+    #[cfg(any(feature = "rag-keywords", feature = "rag-ner-llm"))]
     const KEYWORD_TEST_CORPUS: &str = "The hero departs the ordinary world, crosses the threshold into the \
          unknown, faces trials with the aid of allies and mentors, and returns \
          transformed, bringing the boon home to the ordinary world.";
@@ -1410,6 +1609,147 @@ mod tests {
         assert_eq!(
             passages[0].source_id, "perseus",
             "the keyword-matching reference document is the grounding returned"
+        );
+    }
+
+    /// WS-C slice 3, the entity-enrichment analogue of
+    /// `keyword_enrichment_does_not_perturb_surfaceable_retrieval`: populating
+    /// `doc.entities` at ingest must never perturb the surfaceable (ship)
+    /// retrieval path. Ingest the identical ship corpus into two stores, one
+    /// with entity enrichment enabled and one disabled, run the identical
+    /// surfaceable query against both, and assert the returned passages
+    /// serialize to byte-identical JSON.
+    #[tokio::test]
+    #[cfg(feature = "rag-ner-llm")]
+    async fn entity_enrichment_does_not_perturb_surfaceable_retrieval() {
+        let enriched = test_knowledge().with_entity_enrichment(EntityEnrichment::with_backend(
+            Arc::new(FakeNerBackend),
+            vec![
+                xberg::EntityCategory::Custom("Hero".to_owned()),
+                xberg::EntityCategory::Custom("Realm".to_owned()),
+            ],
+        ));
+        let plain = test_knowledge();
+
+        for knowledge in [&enriched, &plain] {
+            knowledge
+                .ingest("polti", IngestInput::new(KEYWORD_TEST_CORPUS))
+                .await
+                .expect("ship source ingests");
+        }
+
+        let query = || KnowledgeQuery::surfaceable("a hero returns transformed", 5);
+        let enriched_passages = enriched
+            .retrieve(query())
+            .await
+            .expect("surfaceable retrieval succeeds against the enriched store");
+        let plain_passages = plain
+            .retrieve(query())
+            .await
+            .expect("surfaceable retrieval succeeds against the plain store");
+
+        let enriched_json =
+            serde_json::to_string(&enriched_passages).expect("passages serialize to JSON");
+        let plain_json =
+            serde_json::to_string(&plain_passages).expect("passages serialize to JSON");
+
+        assert_eq!(
+            enriched_json, plain_json,
+            "entity enrichment at ingest must not perturb the surfaceable retrieval path: \
+             the ship query must return byte-identical passages whether or not \
+             `doc.entities` was populated during ingest"
+        );
+    }
+
+    /// Companion to the byte-identity guard above: proves entity enrichment is
+    /// not a silent no-op. Without this assertion, the byte-identity test could
+    /// pass vacuously if entity detection always produced an empty vector (e.g.
+    /// a wiring bug that never calls `detect_entities` at all). Ingests the same
+    /// corpus on the *reference* path (never surfaced, so this is purely an
+    /// internal check) with enrichment enabled and inspects the stored
+    /// document's `entities` via a direct reference-collection retrieve, whose
+    /// `RetrievedChunk::document` carries the full `DocumentRecord` (including
+    /// `entities`) when `include_document` is set.
+    #[tokio::test]
+    #[cfg(feature = "rag-ner-llm")]
+    async fn entity_enrichment_populates_entities_when_enabled() {
+        let knowledge = test_knowledge().with_entity_enrichment(EntityEnrichment::with_backend(
+            Arc::new(FakeNerBackend),
+            vec![
+                xberg::EntityCategory::Custom("Hero".to_owned()),
+                xberg::EntityCategory::Custom("Realm".to_owned()),
+            ],
+        ));
+        knowledge
+            .ingest_reference("perseus", IngestInput::new(KEYWORD_TEST_CORPUS))
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let query = RetrieveQuery {
+            query_text: Some("a hero returns transformed".to_owned()),
+            include_content: true,
+            include_document: true,
+            ..RetrieveQuery::vector(5)
+        };
+        let chunks = knowledge
+            .run_retrieve(REFERENCE_COLLECTION, query)
+            .await
+            .expect("direct reference retrieval succeeds");
+
+        let entities = chunks
+            .into_iter()
+            .find_map(|chunk| chunk.document.map(|document| document.entities))
+            .expect("retrieved chunk must carry its parent document with entities");
+
+        let entities = entities.as_array().expect("entities must be a JSON array");
+        assert!(
+            !entities.is_empty(),
+            "entity enrichment must actually populate `doc.entities` when enabled, \
+             not silently no-op"
+        );
+        assert!(
+            entities.iter().all(serde_json::Value::is_string),
+            "each stored entity must be a surface-string, not a nested object"
+        );
+    }
+
+    /// Capability proof: a reference document is retrievable by a
+    /// `Filter::ArrayContains` predicate over `doc.entities`, end to end — the
+    /// detected entity actually lands somewhere the filter IR can address, not
+    /// just somewhere `include_document` happens to expose.
+    #[tokio::test]
+    #[cfg(feature = "rag-ner-llm")]
+    async fn reference_document_is_retrievable_by_a_detected_entity_via_array_contains() {
+        let knowledge = test_knowledge().with_entity_enrichment(EntityEnrichment::with_backend(
+            Arc::new(FakeNerBackend),
+            vec![
+                xberg::EntityCategory::Custom("Hero".to_owned()),
+                xberg::EntityCategory::Custom("Realm".to_owned()),
+            ],
+        ));
+        knowledge
+            .ingest_reference("perseus", IngestInput::new(KEYWORD_TEST_CORPUS))
+            .await
+            .expect("reference source ingests into the reference collection");
+
+        let query = RetrieveQuery {
+            query_text: Some("a hero returns transformed".to_owned()),
+            filter: Some(Filter::ArrayContains {
+                field: FilterField("doc.entities".to_owned()),
+                value: Value::String("hero".to_owned()),
+            }),
+            include_document: true,
+            ..RetrieveQuery::vector(5)
+        };
+        let chunks = knowledge
+            .run_retrieve(REFERENCE_COLLECTION, query)
+            .await
+            .expect("array-contains filtered retrieval succeeds");
+
+        assert!(
+            !chunks.is_empty(),
+            "a document carrying the detected entity must be retrievable via \
+             ArrayContains over doc.entities"
         );
     }
 
