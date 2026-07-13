@@ -138,12 +138,13 @@ points of record:
 
 The file schema deserializes via `serde` + `toml` (the `deny_unknown_fields` guard makes a misspelled
 key a hard error). Sections landed so far: `[generation]` (fork probability + the beat/map/item/cast
-procedural bounds), `[models]` (per-task `content`/`synthesis` routing, replacing the CLI's hardcoded
-model consts — model ids now live only in `ModelsSettings::default()`), and `[synthesis]` (the judge
-loop's integer knobs, bound to `LoopConfig::default()` by a `monomyth-cli` test). `monomyth.example.toml`
-documents the whole schema. Still deferred: `[retrieval]`/`[paths]`, the synthesis f64 bar thresholds,
-the extraction softmax temperature, a dedicated judge model (needs `draft_law`'s API widened), and the
-`schemars` JSON-Schema emission.
+procedural bounds), `[models]` (per-task `content`/`synthesis`/`compose` routing, replacing the CLI's
+hardcoded model consts — model ids now live only in `ModelsSettings::default()`), `[synthesis]` (the
+judge loop's integer knobs, bound to `LoopConfig::default()` by a `monomyth-cli` test), and `[compose]`
+(the long-form composition pipeline's knobs, bound to `ComposeSettings::default()` by a `monomyth-cli`
+test). `monomyth.example.toml` documents the whole schema. Still deferred: `[retrieval]`/`[paths]`, the
+synthesis f64 bar thresholds, the extraction softmax temperature, a dedicated judge model (needs
+`draft_law`'s API widened), and the `schemars` JSON-Schema emission.
 
 ## Remediation note (2026-07-12): review hardening
 

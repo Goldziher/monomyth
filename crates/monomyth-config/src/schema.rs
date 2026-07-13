@@ -67,6 +67,28 @@ const DEFAULT_CONTENT_MODEL: &str = "gemini/gemini-3.5-flash";
 /// distillation pass. A PRO tier, since distillation quality outweighs latency.
 const DEFAULT_SYNTHESIS_MODEL: &str = "gemini/gemini-3.1-pro-preview";
 
+/// The system-default `provider/model` routing string for the long-form
+/// composition pipeline (`compose`). Long-form prose generation uses the
+/// cheaper/faster flash tier by default; a quality tier can be selected via
+/// `[models].compose` or `--model`.
+///
+/// This is the single authoring point for the compose model id: no model
+/// string is hardcoded anywhere else in code or tests.
+const DEFAULT_COMPOSE_MODEL: &str = "gemini/gemini-3.5-flash";
+
+/// The system default for `compose.max_turns`.
+///
+/// Duplicates `monomyth-compose`'s `ComposeSettings` default for the duration of
+/// the migration; the two must agree, guarded by `monomyth-cli`'s test asserting
+/// the resolved-default compose config equals `ComposeSettings::default()`.
+const DEFAULT_COMPOSE_MAX_TURNS: usize = 5;
+/// The system default for `compose.grounding_top_k`.
+const DEFAULT_COMPOSE_GROUNDING_TOP_K: u32 = 4;
+/// The system default for `compose.revise_threshold`.
+const DEFAULT_COMPOSE_REVISE_THRESHOLD: f64 = 0.6;
+/// The system default for `compose.max_revise_iterations`.
+const DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS: usize = 2;
+
 /// A per-task model role: which configured model a caller resolves via
 /// [`MonomythConfig::model_for`].
 ///
@@ -79,6 +101,8 @@ pub enum ModelRole {
     Content,
     /// The law-synthesis distillation pass (`synthesize law`).
     Synthesis,
+    /// The long-form composition pipeline (`compose`).
+    Compose,
 }
 
 /// The on-disk configuration file shape: every field optional, so an omitted key
@@ -95,6 +119,8 @@ pub struct MonomythConfigFile {
     pub models: ModelsSection,
     /// The `[synthesis]` table.
     pub synthesis: SynthesisSection,
+    /// The `[compose]` table.
+    pub compose: ComposeSection,
 }
 
 /// The `[generation]` table as it appears on disk.
@@ -137,6 +163,8 @@ pub struct ModelsSection {
     pub content: Option<String>,
     /// Overrides the law-synthesis model when present.
     pub synthesis: Option<String>,
+    /// Overrides the long-form composition model when present.
+    pub compose: Option<String>,
 }
 
 /// The `[synthesis]` table as it appears on disk: the law-synthesis judge loop's
@@ -156,6 +184,25 @@ pub struct SynthesisSection {
     pub max_grounding: Option<usize>,
 }
 
+/// The `[compose]` table as it appears on disk: the long-form composition
+/// pipeline's tuning knobs, mirroring `monomyth-compose::ComposeSettings`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ComposeSection {
+    /// The maximum number of model turns spent narrating a single outline
+    /// section. Absent → the system default.
+    pub max_turns: Option<usize>,
+    /// The number of REFERENCE-path passages retrieved as grounding for each
+    /// outline section. Absent → the system default.
+    pub grounding_top_k: Option<u32>,
+    /// The minimum cosine similarity a drafted section must reach to be
+    /// accepted without revision. Absent → the system default.
+    pub revise_threshold: Option<f64>,
+    /// The maximum number of revision attempts made after the initial draft.
+    /// Absent → the system default.
+    pub max_revise_iterations: Option<usize>,
+}
+
 /// The fully-resolved configuration: every value tagged with the [`Layered`] source
 /// that set it.
 #[derive(Clone, Debug)]
@@ -166,6 +213,8 @@ pub struct MonomythConfig {
     pub models: ModelsSettings,
     /// Resolved law-synthesis judge-loop knobs.
     pub synthesis: SynthesisSettings,
+    /// Resolved long-form composition pipeline knobs.
+    pub compose: ComposeConfigSettings,
 }
 
 /// Resolved narrative-generation knobs.
@@ -196,6 +245,8 @@ pub struct ModelsSettings {
     pub content: Layered<String>,
     /// Resolved law-synthesis model routing string.
     pub synthesis: Layered<String>,
+    /// Resolved long-form composition model routing string.
+    pub compose: Layered<String>,
 }
 
 /// Resolved law-synthesis judge-loop knobs.
@@ -207,6 +258,25 @@ pub struct SynthesisSettings {
     pub per_query_top_k: Layered<u32>,
     /// Resolved max deduped grounding passages across all queries.
     pub max_grounding: Layered<usize>,
+}
+
+/// Resolved long-form composition pipeline knobs.
+///
+/// Named `ComposeConfigSettings` (rather than `ComposeSettings`) because
+/// `monomyth-compose::ComposeSettings` already owns that name for the pipeline's
+/// own settings struct; the two are related by projection, not identity.
+#[derive(Clone, Debug)]
+pub struct ComposeConfigSettings {
+    /// Resolved maximum number of model turns spent narrating a single
+    /// outline section.
+    pub max_turns: Layered<usize>,
+    /// Resolved number of grounding passages retrieved per outline section.
+    pub grounding_top_k: Layered<u32>,
+    /// Resolved minimum cosine similarity a drafted section must reach to be
+    /// accepted without revision.
+    pub revise_threshold: Layered<f64>,
+    /// Resolved maximum number of revision attempts after the initial draft.
+    pub max_revise_iterations: Layered<usize>,
 }
 
 impl Default for MonomythConfig {
@@ -225,11 +295,20 @@ impl Default for MonomythConfig {
             models: ModelsSettings {
                 content: Layered::system_default(DEFAULT_CONTENT_MODEL.to_owned()),
                 synthesis: Layered::system_default(DEFAULT_SYNTHESIS_MODEL.to_owned()),
+                compose: Layered::system_default(DEFAULT_COMPOSE_MODEL.to_owned()),
             },
             synthesis: SynthesisSettings {
                 max_iterations: Layered::system_default(DEFAULT_MAX_ITERATIONS),
                 per_query_top_k: Layered::system_default(DEFAULT_PER_QUERY_TOP_K),
                 max_grounding: Layered::system_default(DEFAULT_MAX_GROUNDING),
+            },
+            compose: ComposeConfigSettings {
+                max_turns: Layered::system_default(DEFAULT_COMPOSE_MAX_TURNS),
+                grounding_top_k: Layered::system_default(DEFAULT_COMPOSE_GROUNDING_TOP_K),
+                revise_threshold: Layered::system_default(DEFAULT_COMPOSE_REVISE_THRESHOLD),
+                max_revise_iterations: Layered::system_default(
+                    DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS,
+                ),
             },
         }
     }
@@ -242,6 +321,7 @@ impl MonomythConfig {
         match role {
             ModelRole::Content => self.models.content.get(),
             ModelRole::Synthesis => self.models.synthesis.get(),
+            ModelRole::Compose => self.models.compose.get(),
         }
     }
 
@@ -278,6 +358,20 @@ impl MonomythConfig {
             *self.generation.items_min.get(),
             *self.generation.items_max.get(),
         )?;
+        let max_turns = *self.compose.max_turns.get();
+        if max_turns < 1 {
+            return Err(ConfigError::Invalid {
+                field: "compose.max_turns".to_owned(),
+                reason: format!("must be at least 1, got {max_turns}"),
+            });
+        }
+        let revise_threshold = *self.compose.revise_threshold.get();
+        if !revise_threshold.is_finite() {
+            return Err(ConfigError::Invalid {
+                field: "compose.revise_threshold".to_owned(),
+                reason: format!("must be finite, got {revise_threshold}"),
+            });
+        }
         Ok(())
     }
 
@@ -331,6 +425,9 @@ impl MonomythConfig {
         self.models
             .synthesis
             .override_with(file.models.synthesis.clone(), from);
+        self.models
+            .compose
+            .override_with(file.models.compose.clone(), from);
         self.synthesis
             .max_iterations
             .override_with(file.synthesis.max_iterations, from);
@@ -340,16 +437,30 @@ impl MonomythConfig {
         self.synthesis
             .max_grounding
             .override_with(file.synthesis.max_grounding, from);
+        self.compose
+            .max_turns
+            .override_with(file.compose.max_turns, from);
+        self.compose
+            .grounding_top_k
+            .override_with(file.compose.grounding_top_k, from);
+        self.compose
+            .revise_threshold
+            .override_with(file.compose.revise_threshold, from);
+        self.compose
+            .max_revise_iterations
+            .override_with(file.compose.max_revise_iterations, from);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_CONTENT_MODEL,
-        DEFAULT_FORK_CHANCE_PERMILLE, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN, DEFAULT_MAX_EXTRA_CAST,
-        DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX,
-        DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
+        DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_COMPOSE_GROUNDING_TOP_K,
+        DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS, DEFAULT_COMPOSE_MAX_TURNS, DEFAULT_COMPOSE_MODEL,
+        DEFAULT_COMPOSE_REVISE_THRESHOLD, DEFAULT_CONTENT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE,
+        DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN, DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING,
+        DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN,
+        DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
     };
     use crate::error::ConfigError;
     use crate::layered::LayerSource;
@@ -375,6 +486,7 @@ mod tests {
             config.model_for(ModelRole::Synthesis),
             DEFAULT_SYNTHESIS_MODEL
         );
+        assert_eq!(config.model_for(ModelRole::Compose), DEFAULT_COMPOSE_MODEL);
     }
 
     #[test]
@@ -491,6 +603,98 @@ mod tests {
         assert_eq!(
             config.synthesis.max_iterations.source(),
             LayerSource::UserOverride
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_compose_knobs() {
+        let config = MonomythConfig::default();
+        assert_eq!(*config.compose.max_turns.get(), DEFAULT_COMPOSE_MAX_TURNS);
+        assert_eq!(
+            *config.compose.grounding_top_k.get(),
+            DEFAULT_COMPOSE_GROUNDING_TOP_K
+        );
+        assert!(
+            (*config.compose.revise_threshold.get() - DEFAULT_COMPOSE_REVISE_THRESHOLD).abs()
+                < f64::EPSILON
+        );
+        assert_eq!(
+            *config.compose.max_revise_iterations.get(),
+            DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS
+        );
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_compose_knobs_at_its_layer() {
+        let file: MonomythConfigFile = toml::from_str(
+            "[compose]\nmax_turns = 8\ngrounding_top_k = 6\nrevise_threshold = 0.75\n\
+             max_revise_iterations = 4\n",
+        )
+        .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::UserOverride);
+        assert_eq!(*config.compose.max_turns.get(), 8);
+        assert_eq!(*config.compose.grounding_top_k.get(), 6);
+        assert!((*config.compose.revise_threshold.get() - 0.75).abs() < f64::EPSILON);
+        assert_eq!(*config.compose.max_revise_iterations.get(), 4);
+        assert_eq!(config.compose.max_turns.source(), LayerSource::UserOverride);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_the_compose_model_leaving_others_default() {
+        let file: MonomythConfigFile =
+            toml::from_str("[models]\ncompose = \"anthropic/claude-haiku-4-5\"\n")
+                .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(
+            config.model_for(ModelRole::Compose),
+            "anthropic/claude-haiku-4-5"
+        );
+        assert_eq!(config.models.compose.source(), LayerSource::ProjectOverride);
+        assert_eq!(config.model_for(ModelRole::Content), DEFAULT_CONTENT_MODEL);
+        assert_eq!(
+            config.model_for(ModelRole::Synthesis),
+            DEFAULT_SYNTHESIS_MODEL
+        );
+    }
+
+    #[test]
+    fn an_unknown_compose_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> = toml::from_str("[compose]\nmax_trns = 8\n");
+        assert!(
+            result.is_err(),
+            "a misspelled [compose] key must be rejected"
+        );
+    }
+
+    #[test]
+    fn a_zero_compose_max_turns_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[compose]\nmax_turns = 0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("0 max_turns can never produce content");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "compose.max_turns"),
+            "the error must name compose.max_turns, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_finite_revise_threshold_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[compose]\nrevise_threshold = nan\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("a NaN revise_threshold is invalid");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "compose.revise_threshold"),
+            "the error must name compose.revise_threshold, got {error:?}"
         );
     }
 

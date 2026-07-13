@@ -15,11 +15,12 @@
 # Secrets never live here: a model is named by its `provider/model` routing
 # string, but the API key stays in the environment (e.g. GEMINI_API_KEY in .env).
 
-# Per-task model routing. Overridden by the global `--model` (content) and
-# `synthesize law --model` (synthesis) flags.
+# Per-task model routing. Overridden by the global `--model` (content and
+# compose) and `synthesize law --model` (synthesis) flags.
 [models]
 content = "gemini/gemini-3.5-flash"         # per-slot content fill (cheaper tier)
 synthesis = "gemini/gemini-3.1-pro-preview" # law-synthesis distillation (quality tier)
+compose = "gemini/gemini-3.5-flash"         # long-form composition (cheaper tier)
 
 # Procedural generation knobs. These feed the seeded, deterministic passes; the
 # defaults reproduce the pinned determinism golden exactly.
@@ -39,3 +40,10 @@ max_extra_cast = 3         # most supporting roles added on top of the base cast
 max_iterations = 3  # max judge/refine iterations before the loop stops
 per_query_top_k = 8 # reference passages retrieved per coverage query
 max_grounding = 24  # max deduped grounding passages kept across all queries
+
+# Long-form composition pipeline tuning (Plan -> Draft -> Revise -> Assemble).
+[compose]
+max_turns = 5             # max model turns spent narrating a single outline section
+grounding_top_k = 4       # grounding passages retrieved per outline section
+revise_threshold = 0.6    # min cosine similarity a drafted section must reach to skip revision
+max_revise_iterations = 2 # max revision attempts after the initial draft
