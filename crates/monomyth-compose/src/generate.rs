@@ -146,76 +146,9 @@ fn combined_prose(prior: &str, generated_so_far: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use async_trait::async_trait;
-    use monomyth_llm::{BackendError, StructuredBackend, Usage};
-    use serde_json::Value;
-
     use super::{Continuation, DEFAULT_MAX_TURNS, generate_long_form};
     use crate::error::ComposeError;
-
-    /// A shared call counter, cloned out of a [`FakeBackend`] before it is moved
-    /// into an [`monomyth_llm::Llm`], so tests can assert exactly how many
-    /// backend calls a `generate_long_form` invocation made.
-    type CallCount = Arc<Mutex<usize>>;
-
-    /// A fake [`StructuredBackend`] that plays back a fixed script of
-    /// [`Continuation`] responses in order, recording how many calls it served.
-    ///
-    /// `complete_text` is unused by [`generate_long_form`] (which only calls
-    /// `Llm::generate`), so it is left unimplemented rather than scripted.
-    struct FakeBackend {
-        script: Mutex<Vec<Continuation>>,
-        calls: CallCount,
-    }
-
-    impl FakeBackend {
-        fn scripted(responses: Vec<Continuation>) -> Self {
-            Self {
-                script: Mutex::new(responses),
-                calls: CallCount::default(),
-            }
-        }
-
-        /// A shared handle to the call counter, cloned out before the backend is
-        /// moved into an [`monomyth_llm::Llm`].
-        fn call_count(&self) -> CallCount {
-            Arc::clone(&self.calls)
-        }
-    }
-
-    #[async_trait]
-    impl StructuredBackend for FakeBackend {
-        async fn complete_json(
-            &self,
-            _prompt: &str,
-            _schema_name: &str,
-            _schema: &Value,
-        ) -> Result<(Value, Option<Usage>), BackendError> {
-            *self.calls.lock().expect("lock poisoned") += 1;
-            let mut script = self.script.lock().expect("lock poisoned");
-            if script.is_empty() {
-                return Err(BackendError::new("no scripted responses remain"));
-            }
-            let next = script.remove(0);
-            Ok((
-                serde_json::to_value(next).expect("Continuation serializes"),
-                None,
-            ))
-        }
-
-        async fn complete_text(
-            &self,
-            _prompt: &str,
-        ) -> Result<(String, Option<Usage>), BackendError> {
-            unimplemented!("generate_long_form only calls Llm::generate, never Llm::text")
-        }
-    }
-
-    fn llm_with(backend: FakeBackend) -> monomyth_llm::Llm {
-        monomyth_llm::Llm::new(Box::new(backend))
-    }
+    use crate::test_support::{FakeBackend, llm_with};
 
     #[tokio::test]
     async fn should_concatenate_turns_until_model_reports_complete() {
