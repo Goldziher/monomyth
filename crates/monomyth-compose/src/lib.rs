@@ -15,11 +15,12 @@
 //! [`generate_long_form`] is the multi-turn long-form generation *primitive*:
 //! the building block the Draft phase calls once per outline section to narrate
 //! it. **Draft** ([`draft`]) orchestrates that primitive across a whole
-//! [`Outline`], threading prior prose forward for cross-section coherence.
+//! [`Outline`], threading prior prose forward for cross-section coherence, and
+//! scores/revises each section against its grounding (see [`revise`]).
 //! **Assemble** ([`assemble`]) stitches the drafted sections into one
 //! [`LongFormDoc`]. [`compose`] wires Plan -> Draft -> Assemble into a single
-//! end-to-end entry point. Retrieval grounding, the revise loop, and any
-//! live/recorded cassette are later slices and are not present here.
+//! end-to-end entry point. Any live/recorded cassette is a later slice and is
+//! not present here.
 
 #![forbid(unsafe_code)]
 
@@ -29,6 +30,8 @@ pub mod error;
 pub mod generate;
 pub mod outline;
 pub mod plan;
+pub mod revise;
+pub mod settings;
 
 #[cfg(test)]
 mod test_support;
@@ -39,3 +42,4 @@ pub use error::ComposeError;
 pub use generate::{Continuation, DEFAULT_MAX_TURNS, generate_long_form};
 pub use outline::{Outline, OutlineSection};
 pub use plan::plan;
+pub use settings::ComposeSettings;

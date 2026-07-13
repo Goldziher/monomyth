@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 monomyth-core = { workspace = true }
+monomyth-eval = { workspace = true, features = ["semantic"] }
 monomyth-frameworks = { workspace = true }
 monomyth-knowledge = { workspace = true }
 monomyth-llm = { workspace = true }

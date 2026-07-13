@@ -1,36 +1,28 @@
 //! The Draft phase: narrating an [`Outline`]'s sections into prose, and the
 //! end-to-end [`compose`] pipeline that wires Plan -> Draft -> Assemble together.
 //!
-//! Draft calls [`generate_long_form`] once per [`OutlineSection`], threading the
-//! prose drafted so far as `prior` so later sections stay coherent with earlier
-//! ones. It never invents structure — the outline it narrates is a pure function
-//! of the world, produced upstream by [`crate::plan::plan`]. Each section is
-//! additionally grounded with REFERENCE-path passages retrieved from
-//! [`monomyth_knowledge::Knowledge`]; see [`draft`]'s doc comment on the
-//! retrieval call for the licensing invariant this must uphold.
+//! Draft calls [`draft_and_revise_section`] once per [`OutlineSection`], threading
+//! the prose drafted so far as `prior` so later sections stay coherent with
+//! earlier ones. It never invents structure — the outline it narrates is a pure
+//! function of the world, produced upstream by [`crate::plan::plan`]. Each
+//! section is additionally grounded with REFERENCE-path passages retrieved from
+//! [`monomyth_knowledge::Knowledge`] and scored/revised against that grounding;
+//! see [`crate::revise`] for the licensing invariant and the revise loop.
 
 use monomyth_core::World;
-use monomyth_knowledge::{Knowledge, KnowledgeQuery};
+use monomyth_knowledge::Knowledge;
 use monomyth_llm::Llm;
 
 use crate::assemble::{LongFormDoc, SectionDraft, assemble};
 use crate::error::ComposeError;
-use crate::generate::generate_long_form;
 use crate::outline::{Outline, OutlineSection};
 use crate::plan::plan;
+use crate::revise::draft_and_revise_section;
+use crate::settings::ComposeSettings;
 
 /// The separator threading previously-drafted sections' prose into the next
 /// section's `prior`, mirroring [`crate::assemble::assemble`]'s section separator.
 const PRIOR_SEPARATOR: &str = "\n\n";
-
-/// Number of REFERENCE-path passages retrieved as grounding for each outline
-/// section.
-///
-/// An interim knob: destined to move into the `[compose]` config section
-/// (ADR-0015 / ADR-0027) in a later slice, once compose grows a config-driven
-/// entry point. Kept as a named constant here rather than a call-site literal
-/// in the meantime.
-const GROUNDING_TOP_K: u32 = 4;
 
 /// Build the per-section drafting instruction from a section's stage and
 /// synopsis hint.
@@ -39,7 +31,7 @@ const GROUNDING_TOP_K: u32 = 4;
 /// slice has exactly one prompt role (narrate this section). A template layer
 /// arrives once the Draft phase needs multiple distinct roles (e.g. draft vs.
 /// revise), per [`crate::generate`]'s prompt-role note.
-fn section_instruction(section: &OutlineSection) -> String {
+pub(crate) fn section_instruction(section: &OutlineSection) -> String {
     format!(
         "Narrate the \"{stage}\" beat of the story. Grounding hint: {hint}",
         stage = section.stage.info().name,
@@ -57,7 +49,7 @@ fn section_instruction(section: &OutlineSection) -> String {
 /// `section_instruction` — extracting a shared builder is deferred until the
 /// two genuinely diverge (they already read differently: no quoting, no
 /// imperative framing).
-fn grounding_query(section: &OutlineSection) -> String {
+pub(crate) fn grounding_query(section: &OutlineSection) -> String {
     format!(
         "{stage}: {hint}",
         stage = section.stage.info().name,
@@ -79,46 +71,30 @@ fn grounding_query(section: &OutlineSection) -> String {
 /// # Errors
 ///
 /// Returns [`ComposeError::Generation`] if any underlying [`generate_long_form`]
-/// call fails, [`ComposeError::NoTurns`] if `max_turns == 0`, or
-/// [`ComposeError::Retrieval`] if a section's grounding retrieval fails.
+/// call fails, [`ComposeError::NoTurns`] if `settings.max_turns == 0`, or
+/// [`ComposeError::Retrieval`] if a section's grounding retrieval fails. Never
+/// errors for a section that fails to converge in the revise loop — see
+/// [`draft_and_revise_section`].
+///
+/// [`generate_long_form`]: crate::generate::generate_long_form
 pub async fn draft(
     llm: &Llm,
     knowledge: &Knowledge,
     outline: &Outline,
-    max_turns: usize,
+    settings: &ComposeSettings,
 ) -> Result<Vec<SectionDraft>, ComposeError> {
     let mut drafts = Vec::with_capacity(outline.len());
     let mut prior = String::new();
 
     for section in outline.sections() {
-        let instruction = section_instruction(section);
+        let drafted = draft_and_revise_section(llm, knowledge, section, &prior, settings).await?;
 
-        // Reference-path retrieval only (`KnowledgeQuery::reference`), never
-        // `KnowledgeQuery::surfaceable`. Reference passages inform generation
-        // as priors and are never surfaced verbatim (ADR-0016); the prose
-        // `generate_long_form` returns is LLM output shaped by these passages,
-        // not a copy of them, so the commercial ship/reference licensing
-        // invariant holds regardless of what the retrieved text contains.
-        let passages = knowledge
-            .retrieve(KnowledgeQuery::reference(
-                grounding_query(section),
-                GROUNDING_TOP_K,
-            ))
-            .await?;
-        let grounding: Vec<String> = passages.into_iter().map(|passage| passage.text).collect();
-
-        let text = generate_long_form(llm, &instruction, &grounding, &prior, max_turns).await?;
-
-        if !prior.is_empty() && !text.is_empty() {
+        if !prior.is_empty() && !drafted.text.is_empty() {
             prior.push_str(PRIOR_SEPARATOR);
         }
-        prior.push_str(&text);
+        prior.push_str(&drafted.text);
 
-        drafts.push(SectionDraft {
-            node_id: section.node_id,
-            stage: section.stage,
-            text,
-        });
+        drafts.push(drafted);
     }
 
     Ok(drafts)
@@ -129,8 +105,8 @@ pub async fn draft(
 /// [`LongFormDoc`].
 ///
 /// This is the deterministic pipeline skeleton plus reference-grounding
-/// retrieval: the Revise/feedback loop and any live/recorded cassette are
-/// later slices.
+/// retrieval and the Revise feedback loop; any live/recorded cassette is a
+/// later slice.
 ///
 /// # Errors
 ///
@@ -140,10 +116,10 @@ pub async fn compose(
     llm: &Llm,
     knowledge: &Knowledge,
     world: &World,
-    max_turns: usize,
+    settings: &ComposeSettings,
 ) -> Result<LongFormDoc, ComposeError> {
     let outline = plan(world)?;
-    let sections = draft(llm, knowledge, &outline, max_turns).await?;
+    let sections = draft(llm, knowledge, &outline, settings).await?;
     Ok(assemble(sections))
 }
 
@@ -155,11 +131,23 @@ mod tests {
     use super::{compose, draft};
     use crate::outline::{Outline, OutlineSection};
     use crate::plan::plan;
+    use crate::settings::ComposeSettings;
     use crate::test_support::{Continuation, FakeBackend, in_memory_reference_knowledge, llm_with};
 
     /// The seed used for the seeded-world `compose` test; arbitrary but fixed for
     /// determinism, matching `plan`'s test seed.
     const SEED: u64 = 42;
+
+    /// A threshold so low that any drafted section's cosine score (always
+    /// `>= -1.0`) converges on its first attempt, isolating these tests'
+    /// assertions from the revise loop's own behavior (covered separately in
+    /// `crate::revise`'s tests).
+    fn always_converges_settings() -> ComposeSettings {
+        ComposeSettings {
+            revise_threshold: -1.0,
+            ..ComposeSettings::default()
+        }
+    }
 
     /// A declared `reference`-namespace source id (see `corpus/manifest.json`),
     /// used to ingest reference passages for these tests' grounding.
@@ -229,7 +217,7 @@ mod tests {
         let calls = backend.call_count();
         let llm = llm_with(backend);
 
-        let drafts = draft(&llm, &knowledge, &outline, 5)
+        let drafts = draft(&llm, &knowledge, &outline, &always_converges_settings())
             .await
             .expect("drafting a two-section outline should succeed");
 
@@ -269,7 +257,7 @@ mod tests {
         let prompt_log = backend.prompt_log();
         let llm = llm_with(backend);
 
-        draft(&llm, &knowledge, &outline, 5)
+        draft(&llm, &knowledge, &outline, &always_converges_settings())
             .await
             .expect("drafting a two-section outline should succeed");
 
@@ -303,7 +291,7 @@ mod tests {
         let backend = FakeBackend::scripted(script);
         let llm = llm_with(backend);
 
-        let doc = compose(&llm, &knowledge, &world, 5)
+        let doc = compose(&llm, &knowledge, &world, &always_converges_settings())
             .await
             .expect("composing a seeded world should succeed");
 
@@ -355,10 +343,10 @@ mod tests {
         let llm_a = llm_with(FakeBackend::scripted(build_script()));
         let llm_b = llm_with(FakeBackend::scripted(build_script()));
 
-        let doc_a = compose(&llm_a, &knowledge_a, &world, 5)
+        let doc_a = compose(&llm_a, &knowledge_a, &world, &always_converges_settings())
             .await
             .expect("first compose call succeeds");
-        let doc_b = compose(&llm_b, &knowledge_b, &world, 5)
+        let doc_b = compose(&llm_b, &knowledge_b, &world, &always_converges_settings())
             .await
             .expect("second compose call succeeds");
 

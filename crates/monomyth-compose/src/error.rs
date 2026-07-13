@@ -5,8 +5,9 @@
 //! ([`crate::generate_long_form`]) adds two more: a caller misuse (asking for
 //! zero turns) and a wrapped [`LlmError`] from the underlying model call.
 //! Draft's per-section reference-grounding retrieval adds a wrapped
-//! [`KnowledgeError`]. The revise-loop variant lands with a later slice, once
-//! that phase exists to fail — it is deliberately not added here.
+//! [`KnowledgeError`]. The Revise feedback loop ([`crate::revise`]) adds no new
+//! variant: non-convergence is never an error — compose always succeeds,
+//! keeping the best-scoring attempt with an explanatory note instead.
 
 use monomyth_knowledge::KnowledgeError;
 use monomyth_llm::LlmError;

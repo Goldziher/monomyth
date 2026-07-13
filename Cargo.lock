@@ -2805,6 +2805,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "monomyth-core",
+ "monomyth-eval",
  "monomyth-frameworks",
  "monomyth-gen",
  "monomyth-knowledge",

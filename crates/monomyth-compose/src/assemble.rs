@@ -26,6 +26,12 @@ pub struct SectionDraft {
     pub stage: MonomythStage,
     /// The drafted prose for this section.
     pub text: String,
+    /// `None` when the section converged on (or above) its grounding-faithfulness
+    /// threshold, or when scoring was skipped entirely (no grounding to score
+    /// against). `Some(reason)` when the revise loop exhausted its attempt cap
+    /// and this is the best-scoring attempt seen, kept below threshold; see
+    /// [`crate::revise::draft_and_revise_section`].
+    pub note: Option<String>,
 }
 
 /// The assembled long-form document: every drafted section plus the stitched
@@ -87,11 +93,13 @@ mod tests {
                 node_id: NarrativeNodeId::default(),
                 stage: MonomythStage::CallToAdventure,
                 text: "The call arrives at dusk.".to_owned(),
+                note: None,
             },
             SectionDraft {
                 node_id: NarrativeNodeId::default(),
                 stage: MonomythStage::CallToAdventure,
                 text: "She refuses it twice.".to_owned(),
+                note: None,
             },
         ];
 
