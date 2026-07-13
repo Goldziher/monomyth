@@ -1,0 +1,53 @@
+# Task runner for the monomyth workspace (https://taskfile.dev).
+#
+# Thin wrappers over the canonical cargo + poly gate set so the commands stay
+# discoverable and consistent. `task check` is the full pre-commit gate.
+version: "3"
+
+tasks:
+  default:
+    desc: List available tasks.
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: Fetch dependencies and do a first debug build.
+    cmds:
+      - cargo fetch
+      - cargo build --workspace
+
+  build:
+    desc: Build the whole workspace.
+    cmds:
+      - cargo build --workspace
+
+  test:
+    desc: Run the full test suite.
+    cmds:
+      - cargo test --workspace
+
+  format:
+    desc: Apply Rust and poly formatting in place.
+    cmds:
+      - cargo fmt --all
+      - poly fmt --fix .
+
+  lint:
+    desc: Clippy (deny warnings) plus poly lint.
+    cmds:
+      - cargo clippy --workspace --all-targets --tests -- -D warnings
+      - poly lint .
+
+  bench:
+    desc: Run the Criterion microbenchmarks.
+    cmds:
+      - cargo bench --workspace
+
+  check:
+    desc: The full pre-commit gate — format check, lint, and tests.
+    cmds:
+      - cargo fmt --all -- --check
+      - cargo clippy --workspace --all-targets --tests -- -D warnings
+      - cargo test --workspace
+      - poly lint .
