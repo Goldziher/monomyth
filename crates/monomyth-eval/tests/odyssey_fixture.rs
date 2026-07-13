@@ -271,7 +271,6 @@ fn build_world_and_script() -> (World, Vec<NarrativeEdit>) {
         tail = new_id;
     }
 
-    // Re-point endings: only the final spine node is a real ending.
     let unmark_root = NarrativeEdit::UnmarkEnding { node: root };
     structure
         .apply_edit(&unmark_root)
@@ -289,7 +288,7 @@ fn build_world_and_script() -> (World, Vec<NarrativeEdit>) {
         .validate()
         .expect("the Odyssey spine is a single-source, acyclic, reconverging DAG");
 
-    // Odysseus, the sole named entity: optional per the task, kept minimal.
+    // Odysseus, the sole named entity: optional per the task, kept minimal. ~keep
     let mut locations = SlotMap::with_key();
     let ithaca = locations.insert(Location {
         name: Content::empty(ContentPrompt::new(ContentKind::Name, "Ithaca")),

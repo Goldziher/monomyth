@@ -74,10 +74,10 @@ pub(crate) async fn draft_and_revise_section(
     prior: &str,
     settings: &ComposeSettings,
 ) -> Result<SectionDraft, ComposeError> {
-    // Reference-path retrieval only (`KnowledgeQuery::reference`), never
-    // `KnowledgeQuery::surfaceable`. Reference passages inform generation as
-    // priors and are never surfaced verbatim (ADR-0016); grounding must never
-    // leave the reference namespace.
+    // Reference-path retrieval only (`KnowledgeQuery::reference`), never ~keep
+    // `KnowledgeQuery::surfaceable`. Reference passages inform generation as ~keep
+    // priors and are never surfaced verbatim (ADR-0016); grounding must never ~keep
+    // leave the reference namespace. ~keep
     let passages = knowledge
         .retrieve(KnowledgeQuery::reference(
             grounding_query(section),
@@ -92,8 +92,8 @@ pub(crate) async fn draft_and_revise_section(
 
     let grounding_embeddings = knowledge.embed_texts(grounding.clone()).await?;
     let Some(gold) = mean_vector(&grounding_embeddings) else {
-        // No gold to score against (embedding failure/degenerate input) —
-        // scoring is impossible, so draft once and skip the revise loop.
+        // No gold to score against (embedding failure/degenerate input) — ~keep
+        // scoring is impossible, so draft once and skip the revise loop. ~keep
         return draft_single_unscored(llm, section, &grounding, prior, settings).await;
     };
 
@@ -147,14 +147,14 @@ async fn revise_loop(
         let text =
             generate_long_form(llm, &instruction, grounding, prior, settings.max_turns).await?;
         let embedded = knowledge.embed_texts(vec![text.clone()]).await?;
-        // `embed_texts` returns one vector per input; a single-element input
-        // always yields exactly one output vector.
+        // `embed_texts` returns one vector per input; a single-element input ~keep
+        // always yields exactly one output vector. ~keep
         let score = embedded
             .first()
             .and_then(|vector| cosine_similarity(vector, gold))
-            // Treat a non-comparable embedding (`None`) as the worst possible
-            // score rather than skipping it, so a degenerate embedding can
-            // never spuriously "converge" by being excluded from comparison.
+            // Treat a non-comparable embedding (`None`) as the worst possible ~keep
+            // score rather than skipping it, so a degenerate embedding can ~keep
+            // never spuriously "converge" by being excluded from comparison. ~keep
             .unwrap_or(0.0);
 
         let converged = score >= settings.revise_threshold;
@@ -164,10 +164,10 @@ async fn revise_loop(
         }
 
         if converged {
-            // `best` is `Some` here: this iteration either just inserted its
-            // attempt, or kept an earlier attempt whose score is >= this one's
-            // and therefore also clears the threshold. Either way the winner is
-            // the best-scoring attempt seen, and it has converged.
+            // `best` is `Some` here: this iteration either just inserted its ~keep
+            // attempt, or kept an earlier attempt whose score is >= this one's ~keep
+            // and therefore also clears the threshold. Either way the winner is ~keep
+            // the best-scoring attempt seen, and it has converged. ~keep
             let winner = best.expect("best is Some once the loop has run an iteration");
             return Ok(SectionDraft {
                 node_id: section.node_id,
@@ -293,8 +293,8 @@ mod tests {
 
     #[tokio::test]
     async fn should_keep_best_attempt_and_attach_a_note_when_threshold_is_never_met() {
-        // Cosine similarity is always <= 1.0, so a threshold above 1.0 can
-        // never be met: every attempt exhausts the revise loop.
+        // Cosine similarity is always <= 1.0, so a threshold above 1.0 can ~keep
+        // never be met: every attempt exhausts the revise loop. ~keep
         const IMPOSSIBLE_THRESHOLD: f64 = 2.0;
         const MAX_REVISE_ITERATIONS: usize = 2;
 

@@ -73,8 +73,8 @@ impl PassageRetriever for KnowledgeRetriever {
         query: &str,
         top_k: u32,
     ) -> Result<Vec<ScoredHit>, RetrievalError> {
-        // Surfaceable (ship-gated) retrieval: extraction priors must be drawn
-        // from the same corpus a shippable query would see.
+        // Surfaceable (ship-gated) retrieval: extraction priors must be drawn ~keep
+        // from the same corpus a shippable query would see. ~keep
         let passages = self
             .knowledge
             .retrieve(KnowledgeQuery::surfaceable(query, top_k))
@@ -181,7 +181,7 @@ pub(crate) async fn run_eval(
         })?
         .world;
 
-    // `validate_extractor` above guarantees this is the only reachable strategy.
+    // `validate_extractor` above guarantees this is the only reachable strategy. ~keep
     let knowledge = Knowledge::open(db)
         .await
         .context("opening the knowledge store")?;
@@ -260,7 +260,7 @@ pub(crate) fn run_finetune_export(
         .with_context(|| format!("parsing benchmark registry {}", index_path.display()))?;
     let fixture = resolve_fixture(&index, work)?;
 
-    // The licensing gate: refuse to export anything derived from a non-PD source.
+    // The licensing gate: refuse to export anything derived from a non-PD source. ~keep
     let ledger = Ledger::load_embedded().context("loading the license ledger")?;
     let entry = ledger.get(&fixture.source_id).ok_or_else(|| {
         anyhow!(
@@ -350,8 +350,8 @@ mod tests {
             "the Odyssey fixture's public-domain source must be exportable"
         );
 
-        // `trilogy` is a share-alike source: real, declared, and correctly
-        // refused for fine-tune export.
+        // `trilogy` is a share-alike source: real, declared, and correctly ~keep
+        // refused for fine-tune export. ~keep
         let reference = ledger
             .get("trilogy")
             .expect("the trilogy source is declared");

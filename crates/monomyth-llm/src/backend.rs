@@ -315,8 +315,8 @@ fn inline_object(
     definitions: &Map<String, Value>,
     active: &mut BTreeSet<String>,
 ) -> Value {
-    // A cyclic ref cannot be represented by Gemini anyway; the `active` filter
-    // leaves it unresolved rather than recursing without end.
+    // A cyclic ref cannot be represented by Gemini anyway; the `active` filter ~keep
+    // leaves it unresolved rather than recursing without end. ~keep
     if let Some(Value::String(reference)) = map.get("$ref")
         && let Some(name) = local_definition_name(reference)
         && let Some(definition) = definitions.get(name).filter(|_| !active.contains(name))
@@ -324,8 +324,8 @@ fn inline_object(
         active.insert(name.to_owned());
         let mut resolved = inline_refs(definition, definitions, active);
         active.remove(name);
-        // Overlay sibling keys (e.g. a `description` alongside the ref) onto the
-        // resolved definition so annotations are not lost.
+        // Overlay sibling keys (e.g. a `description` alongside the ref) onto the ~keep
+        // resolved definition so annotations are not lost. ~keep
         if let Value::Object(ref mut resolved_map) = resolved {
             for (key, value) in map {
                 if key == "$ref" {
@@ -471,7 +471,6 @@ mod tests {
         );
         assert_eq!(element["required"], json!(["name", "description"]));
 
-        // Belt-and-braces: no `$ref` anywhere in the serialized output.
         assert!(
             !serde_json::to_string(&cleaned)
                 .expect("serializes")
@@ -518,8 +517,8 @@ mod tests {
                 }
             }
         });
-        // The outer ref inlines once; the self-reference inside it is left as a
-        // `$ref` (a cycle Gemini could not represent), and the call terminates.
+        // The outer ref inlines once; the self-reference inside it is left as a ~keep
+        // `$ref` (a cycle Gemini could not represent), and the call terminates. ~keep
         let cleaned = sanitize_schema_for_model("gemini/gemini-3.5-flash", &schema);
         let inner = &cleaned["properties"]["self"]["properties"]["next"];
         assert_eq!(

@@ -22,7 +22,7 @@ pub struct VectorStoreRegistry {
 
 impl std::fmt::Debug for VectorStoreRegistry {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // `dyn VectorStore` is not `Debug`, so summarize by registered names.
+        // `dyn VectorStore` is not `Debug`, so summarize by registered names. ~keep
         formatter
             .debug_struct("VectorStoreRegistry")
             .field("stores", &self.stores.keys().collect::<Vec<_>>())

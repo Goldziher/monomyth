@@ -300,8 +300,8 @@ mod tests {
             "order-project",
             "[generation]\nfork_chance_permille = 300\n",
         );
-        // User outranks project (per ADR-0015), so the user value must win even
-        // though the project file is merged last.
+        // User outranks project (per ADR-0015), so the user value must win even ~keep
+        // though the project file is merged last. ~keep
         let config = ConfigResolver::discover_from(None, Some(&user), Some(&project))
             .expect("both files parse")
             .resolve()

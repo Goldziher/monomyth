@@ -170,21 +170,21 @@ mod tests {
         assert_close(baseline.mean, 0.8);
         assert_close(baseline.min, 0.6);
         assert_close(baseline.max, 1.0);
-        // population variance = ((-0.2)^2 + 0^2 + (0.2)^2) / 3 = 0.08/3
+        // population variance = ((-0.2)^2 + 0^2 + (0.2)^2) / 3 = 0.08/3 ~keep
         assert_close(baseline.stddev, (0.08_f64 / 3.0).sqrt());
     }
 
     #[test]
     fn classify_within_tolerance_should_not_flag_either_direction() {
-        // Powers-of-two-friendly values so the band edges (mean +/- tolerance =
-        // 0.25 and 0.75) are exactly representable and edge classification is not
-        // a floating-point coin flip.
+        // Powers-of-two-friendly values so the band edges (mean +/- tolerance = ~keep
+        // 0.25 and 0.75) are exactly representable and edge classification is not ~keep
+        // a floating-point coin flip. ~keep
         let baseline = Baseline::from_observations(&[0.5, 0.5, 0.5]).expect("non-empty");
         assert_eq!(
             baseline.classify(0.5, 0.25),
             BaselineComparison::WithinTolerance
         );
-        // exactly on the band edges is within tolerance (strict inequalities).
+        // exactly on the band edges is within tolerance (strict inequalities). ~keep
         assert_eq!(
             baseline.classify(0.25, 0.25),
             BaselineComparison::WithinTolerance

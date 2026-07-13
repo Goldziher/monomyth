@@ -59,7 +59,7 @@ pub use pipeline::{DraftRequest, DraftedLaw, LoopConfig, draft_law};
 pub use prescore::{PreScore, pre_score};
 pub use retrieval::gather_grounding;
 
-// Re-exported so a caller building a `DraftRequest`/`draft_law` call site does
-// not need a direct `monomyth-frameworks` dependency just to name the
-// artifact type its result carries.
+// Re-exported so a caller building a `DraftRequest`/`draft_law` call site does ~keep
+// not need a direct `monomyth-frameworks` dependency just to name the ~keep
+// artifact type its result carries. ~keep
 pub use monomyth_frameworks::LawArtifact;

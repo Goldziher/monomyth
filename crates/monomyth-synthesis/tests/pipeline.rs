@@ -249,9 +249,9 @@ fn base_request() -> DraftRequest {
         domain: "myth".to_owned(),
         query: "a plea to a powerful protector".to_owned(),
         sub_queries: Vec::new(),
-        // A synthetic provenance label: this offline test uses a CannedBackend,
-        // so the model string is never routed — only stamped. Hardcoding a real
-        // model id here would date the test and imply a routing that never happens.
+        // A synthetic provenance label: this offline test uses a CannedBackend, ~keep
+        // so the model string is never routed — only stamped. Hardcoding a real ~keep
+        // model id here would date the test and imply a routing that never happens. ~keep
         model: "test/stub-model".to_owned(),
         generated: "2026-07-11".to_owned(),
         loop_config: LoopConfig::default(),
@@ -401,9 +401,9 @@ async fn draft_law_refines_after_a_low_verdict_then_accepts_the_richer_candidate
 #[tokio::test]
 async fn draft_law_keeps_the_best_candidate_when_no_iteration_ever_passes() {
     let knowledge = knowledge_with_reference_text().await;
-    // Three low verdicts, none clearing even the initial (lowest) bar, so the
-    // loop runs to `max_iterations` and returns the best (first) scored
-    // candidate rather than looping forever.
+    // Three low verdicts, none clearing even the initial (lowest) bar, so the ~keep
+    // loop runs to `max_iterations` and returns the best (first) scored ~keep
+    // candidate rather than looping forever. ~keep
     let llm = Llm::new(Box::new(CannedBackend::new(
         vec![
             clean_candidate_json(),
@@ -423,14 +423,14 @@ async fn draft_law_keeps_the_best_candidate_when_no_iteration_ever_passes() {
         drafted.iterations, 3,
         "must exhaust max_iterations when no verdict ever clears its bar"
     );
-    // Every low_verdict_json() scores identically, so the *first* judged
-    // candidate remains best (later ones don't strictly exceed it).
+    // Every low_verdict_json() scores identically, so the *first* judged ~keep
+    // candidate remains best (later ones don't strictly exceed it). ~keep
     assert_eq!(
         drafted.artifact.count, 2,
         "must keep the first (initial) candidate, since no later score exceeded it"
     );
     let expected_low_score = {
-        // (40*1.0 + 60*0.9 + 60*0.7 + 60*0.8 + 40*0.6) / (1.0+0.9+0.7+0.8+0.6)
+        // (40*1.0 + 60*0.9 + 60*0.7 + 60*0.8 + 40*0.6) / (1.0+0.9+0.7+0.8+0.6) ~keep
         let numerator =
             40.0f64.mul_add(1.0, 60.0 * 0.9) + 60.0f64.mul_add(0.7, 60.0 * 0.8) + 40.0 * 0.6;
         let denominator = 1.0 + 0.9 + 0.7 + 0.8 + 0.6;

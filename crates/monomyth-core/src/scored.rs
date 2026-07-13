@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn scored_set_iter_should_yield_canonical_btreemap_order_regardless_of_insertion_order() {
         let mut set = ScoredSet::new();
-        // Insert out of Ord order (Victory=18, Departure=11, Struggle=16).
+        // Insert out of Ord order (Victory=18, Departure=11, Struggle=16). ~keep
         set.insert(ProppFunction::Victory, Weight::new(100));
         set.insert(ProppFunction::Departure, Weight::new(200));
         set.insert(ProppFunction::Struggle, Weight::new(300));
@@ -363,8 +363,8 @@ mod tests {
             "a fresh ScoredOne has no alternatives"
         );
 
-        // Bypass insert_alternative's rejection to simulate a derived-Deserialize
-        // payload that smuggled the primary into alternatives.
+        // Bypass insert_alternative's rejection to simulate a derived-Deserialize ~keep
+        // payload that smuggled the primary into alternatives. ~keep
         scored
             .alternatives
             .insert(ProppFunction::Departure, Weight::new(500));

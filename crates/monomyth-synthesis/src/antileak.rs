@@ -168,9 +168,9 @@ mod tests {
 
     #[test]
     fn accepts_a_short_shared_phrase_under_the_shingle_width() {
-        // Shares "a power in authority" (four words) with REFERENCE_TEXT, well
-        // under SHINGLE_N — too short and common a phrase to be meaningful
-        // evidence of copying.
+        // Shares "a power in authority" (four words) with REFERENCE_TEXT, well ~keep
+        // under SHINGLE_N — too short and common a phrase to be meaningful ~keep
+        // evidence of copying. ~keep
         let candidate = "A power in authority governs the realm in this taxonomy's second stage.";
 
         verify_no_verbatim(&[candidate], &[("perseus", REFERENCE_TEXT)])

@@ -85,8 +85,8 @@ mod tests {
                 max_cosine: 1.0,
             })
         );
-        // The load-bearing invariant: attaching a semantic axis leaves the
-        // structural fingerprint (the frozen golden) byte-for-byte unchanged.
+        // The load-bearing invariant: attaching a semantic axis leaves the ~keep
+        // structural fingerprint (the frozen golden) byte-for-byte unchanged. ~keep
         assert_eq!(
             report_fingerprint(&report.structural),
             baseline,

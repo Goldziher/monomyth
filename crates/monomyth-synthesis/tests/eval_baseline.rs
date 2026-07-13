@@ -188,8 +188,8 @@ fn prescore_over_the_fixture_is_stable() {
         }
     );
 
-    // Exercise the reusable `monomyth-eval` baseline engine deterministically
-    // over the pre-score's three raw axes, pinning its summary stats too.
+    // Exercise the reusable `monomyth-eval` baseline engine deterministically ~keep
+    // over the pre-score's three raw axes, pinning its summary stats too. ~keep
     let baseline = Baseline::from_observations(&[
         scored.phase_coverage,
         scored.ordering_monotonicity,
@@ -313,8 +313,8 @@ async fn record_synthesis_judge_and_semantic_baseline_against_live_gemini() {
 
     write_baseline(baseline_path, &judge_baseline, &semantic_report);
 
-    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette
-    // file it wrote.
+    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette ~keep
+    // file it wrote. ~keep
     drop(llm);
 
     let cassette = std::fs::read_to_string(cassette_path).expect("the cassette file was written");
@@ -368,7 +368,7 @@ async fn compute_semantic_axis(
     let semantic_report = score_semantic(&pairs);
 
     if let Some((first_predicted, first_gold)) = pairs.first() {
-        // A direct call must succeed on the same pair `score_semantic` scored.
+        // A direct call must succeed on the same pair `score_semantic` scored. ~keep
         cosine_similarity(first_predicted, first_gold).expect("the first pair is comparable");
     }
 

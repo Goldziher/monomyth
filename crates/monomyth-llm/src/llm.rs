@@ -133,9 +133,9 @@ impl Llm {
     where
         T: DeserializeOwned + JsonSchema,
     {
-        // The span carries only the schema name and a running attempt/usage
-        // account — never the prompt or response text, which can contain
-        // reference-corpus material that must not leak into logs (ADR-0005).
+        // The span carries only the schema name and a running attempt/usage ~keep
+        // account — never the prompt or response text, which can contain ~keep
+        // reference-corpus material that must not leak into logs (ADR-0005). ~keep
         let span = tracing::info_span!(
             "llm.generate",
             schema_name,

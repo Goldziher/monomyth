@@ -50,9 +50,9 @@ impl PassageRetriever for HashRetriever {
         query: &str,
         _top_k: u32,
     ) -> Result<Vec<ScoredHit>, RetrievalError> {
-        // A stable byte-sum mapped into 0.0..1.0. `u32` accumulation cannot
-        // overflow for any realistic query length, and the modulo keeps the
-        // score in a fixed range independent of query length.
+        // A stable byte-sum mapped into 0.0..1.0. `u32` accumulation cannot ~keep
+        // overflow for any realistic query length, and the modulo keeps the ~keep
+        // score in a fixed range independent of query length. ~keep
         let checksum: u32 = query.bytes().map(u32::from).sum::<u32>() % 1000;
         #[allow(
             clippy::cast_precision_loss,
@@ -90,8 +90,8 @@ async fn extracting_over_the_odyssey_skeleton_preserves_structure_and_pins_a_fin
 
     let report = AlignmentScorer.score(&gold, &predicted);
 
-    // Structure is preserved (only the scored stage axis is re-derived), so the
-    // node alignment is perfect regardless of classification quality.
+    // Structure is preserved (only the scored stage axis is re-derived), so the ~keep
+    // node alignment is perfect regardless of classification quality. ~keep
     assert!((report.structural_precision - 1.0).abs() < 1e-9);
     assert!((report.structural_recall - 1.0).abs() < 1e-9);
     assert!((report.structural_f1 - 1.0).abs() < 1e-9);

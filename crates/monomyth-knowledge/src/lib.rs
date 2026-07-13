@@ -35,12 +35,12 @@
 //! # }
 //! ```
 
-// `unsafe_code` is `deny`, not `forbid`, only because `rag::backends::sqlite`
-// carries one pre-existing, narrowly-scoped `unsafe` block (registering the
-// sqlite-vec extension via `sqlite3_auto_extension`), inherited unchanged
-// from the former `xberg-rag` crate. Every other module in this crate must
-// stay unsafe-free; a new `unsafe` block anywhere outside that one function
-// is a bug, not a style choice.
+// `unsafe_code` is `deny`, not `forbid`, only because `rag::backends::sqlite` ~keep
+// carries one pre-existing, narrowly-scoped `unsafe` block (registering the ~keep
+// sqlite-vec extension via `sqlite3_auto_extension`), inherited unchanged ~keep
+// from the former `xberg-rag` crate. Every other module in this crate must ~keep
+// stay unsafe-free; a new `unsafe` block anywhere outside that one function ~keep
+// is a bug, not a style choice. ~keep
 #![deny(unsafe_code)]
 
 #[cfg(feature = "acquire")]
@@ -232,9 +232,9 @@ impl fmt::Debug for EntityEnrichment {
         debug_struct.field("enabled", &self.enabled);
         #[cfg(feature = "rag-ner-llm")]
         debug_struct.field("has_backend", &self.backend.is_some());
-        // `categories` is intentionally omitted (not useful in a log line);
-        // `finish_non_exhaustive` documents that this Debug impl is a summary,
-        // not a full field dump, satisfying `clippy::missing_fields_in_debug`.
+        // `categories` is intentionally omitted (not useful in a log line); ~keep
+        // `finish_non_exhaustive` documents that this Debug impl is a summary, ~keep
+        // not a full field dump, satisfying `clippy::missing_fields_in_debug`. ~keep
         debug_struct.finish_non_exhaustive()
     }
 }
@@ -551,11 +551,11 @@ impl Knowledge {
     /// a backend error is logged and treated as "no entities". Returns `Vec::new()`
     /// when disabled / feature-off, so default behavior is byte-for-byte unchanged.
     #[cfg_attr(not(feature = "rag-ner-llm"), allow(unused_variables))]
-    // `async` is genuinely needed: `xberg::detect_entities` is async and is
-    // `.await`ed in the `rag-ner-llm` body below. With the feature off there is
-    // no await in this stub body, so `clippy::unused_async` fires spuriously —
-    // allow it only in that configuration rather than dropping `async` and
-    // forcing every call site to branch on the feature.
+    // `async` is genuinely needed: `xberg::detect_entities` is async and is ~keep
+    // `.await`ed in the `rag-ner-llm` body below. With the feature off there is ~keep
+    // no await in this stub body, so `clippy::unused_async` fires spuriously — ~keep
+    // allow it only in that configuration rather than dropping `async` and ~keep
+    // forcing every call site to branch on the feature. ~keep
     #[cfg_attr(not(feature = "rag-ner-llm"), allow(clippy::unused_async))]
     async fn extract_entities_best_effort(&self, text: &str, context: &str) -> Vec<String> {
         if !self.entity_enrichment.enabled {
@@ -769,9 +769,9 @@ impl Knowledge {
         self.ensure_collection(REFERENCE_COLLECTION).await?;
         let fetch_k = top_k.saturating_mul(REFERENCE_OVERFETCH).max(top_k);
 
-        // Pre-embed the raw query for the dense arm (query-side prefix preserved
-        // by `embed_query`); an FTS5-escaped term string drives the lexical arm.
-        // An all-punctuation query escapes to no terms, degrading to vector-only.
+        // Pre-embed the raw query for the dense arm (query-side prefix preserved ~keep
+        // by `embed_query`); an FTS5-escaped term string drives the lexical arm. ~keep
+        // An all-punctuation query escapes to no terms, degrading to vector-only. ~keep
         let query_vector = self
             .embedder
             .embed_query(vec![text.to_owned()])
@@ -780,13 +780,13 @@ impl Knowledge {
             .pop();
         let escaped = fts5_match_query(text);
 
-        // Reference-path keyword narrowing (WS-C slice 2): when enrichment is on,
-        // bias candidates toward reference documents that share a salient query
-        // term. A filter that starves retrieval — no document shares a keyword,
-        // so the filtered fetch comes back empty — degrades to the unfiltered
-        // path, guaranteeing the distiller is never left without grounding it
-        // would otherwise have had. When enrichment is off (the default), the
-        // filter is `None` and this is byte-for-byte the prior unfiltered path.
+        // Reference-path keyword narrowing (WS-C slice 2): when enrichment is on, ~keep
+        // bias candidates toward reference documents that share a salient query ~keep
+        // term. A filter that starves retrieval — no document shares a keyword, ~keep
+        // so the filtered fetch comes back empty — degrades to the unfiltered ~keep
+        // path, guaranteeing the distiller is never left without grounding it ~keep
+        // would otherwise have had. When enrichment is off (the default), the ~keep
+        // filter is `None` and this is byte-for-byte the prior unfiltered path. ~keep
         if let Some(filter) = self.reference_keyword_filter(text) {
             let filtered = self
                 .run_reference_retrieve(
@@ -827,7 +827,6 @@ impl Knowledge {
             ..RetrieveQuery::vector(fetch_k)
         };
 
-        // No lexical terms (empty/all-punctuation query) → plain vector.
         let Some(match_query) = escaped else {
             return self
                 .run_retrieve(
@@ -1206,7 +1205,6 @@ mod tests {
             "distinct inputs must embed to distinct vectors"
         );
 
-        // Deterministic: the same input embeds to the same vector.
         let again = knowledge
             .embed_texts(vec!["a hero departs".to_owned()])
             .await
@@ -1246,7 +1244,6 @@ mod tests {
 
     #[test]
     fn dedup_chunks_drops_repeats_keeps_first_and_honors_limit() {
-        // Highest-ranked first; the second "alpha" is a duplicate of the first.
         let chunks = vec![
             retrieved_chunk("Alpha passage.", 0.9),
             retrieved_chunk("Beta passage.", 0.8),
@@ -1359,9 +1356,9 @@ mod tests {
 
     #[tokio::test]
     async fn reference_hybrid_retrieval_survives_punctuation_that_crashes_raw_fts5() {
-        // This exact query — apostrophe, colon, comma — is a syntax error to
-        // FTS5's MATCH parser if passed raw; the escaping + pre-embed path must
-        // make it succeed rather than crash.
+        // This exact query — apostrophe, colon, comma — is a syntax error to ~keep
+        // FTS5's MATCH parser if passed raw; the escaping + pre-embed path must ~keep
+        // make it succeed rather than crash. ~keep
         let knowledge = sqlite_test_knowledge().await;
         knowledge
             .ingest_reference(
@@ -1514,8 +1511,8 @@ mod tests {
             .reference_keyword_filter(KEYWORD_TEST_CORPUS)
             .expect("a keyword-bearing query must produce a filter when enrichment is enabled");
 
-        // A single salient term degenerates to a bare `ArrayContains`; several
-        // combine under `Or`. Either way every leaf targets `doc.keywords`.
+        // A single salient term degenerates to a bare `ArrayContains`; several ~keep
+        // combine under `Or`. Either way every leaf targets `doc.keywords`. ~keep
         let predicates = match &filter {
             Filter::Or { filters } => filters.clone(),
             single @ Filter::ArrayContains { .. } => vec![single.clone()],
@@ -1537,7 +1534,6 @@ mod tests {
                 other => panic!("every predicate must be ArrayContains, got {other:?}"),
             }
         }
-        // The filter must satisfy the IR complexity caps so retrieval accepts it.
         filter
             .validate()
             .expect("keyword filter must be within complexity caps");
@@ -1558,8 +1554,8 @@ mod tests {
             .await
             .expect("reference source ingests");
 
-        // Vocabulary deliberately disjoint from the hero's-journey corpus, so no
-        // stored keyword can match — the filtered fetch is empty.
+        // Vocabulary deliberately disjoint from the hero's-journey corpus, so no ~keep
+        // stored keyword can match — the filtered fetch is empty. ~keep
         let disjoint_query = "photolithography semiconductor wafer fabrication throughput";
         assert!(
             knowledge.reference_keyword_filter(disjoint_query).is_some(),
@@ -1755,8 +1751,8 @@ mod tests {
 
     #[test]
     fn fts5_match_query_quotes_each_token_neutralizing_operators() {
-        // Apostrophe survives inside the quoted token; colon/comma no longer parse
-        // as FTS5 operators.
+        // Apostrophe survives inside the quoted token; colon/comma no longer parse ~keep
+        // as FTS5 operators. ~keep
         assert_eq!(
             fts5_match_query("the hero's descent: trial, return").as_deref(),
             Some("\"the\" \"hero's\" \"descent:\" \"trial,\" \"return\""),

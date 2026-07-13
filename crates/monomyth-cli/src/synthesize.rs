@@ -251,9 +251,9 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
         bail!("{reason}");
     }
 
-    // Resolve coverage enrichment before any network/db work, mirroring the
-    // forbidden-directory guard's fail-fast: a typo'd framework name should
-    // error immediately, not after spending a retrieval + LLM call.
+    // Resolve coverage enrichment before any network/db work, mirroring the ~keep
+    // forbidden-directory guard's fail-fast: a typo'd framework name should ~keep
+    // error immediately, not after spending a retrieval + LLM call. ~keep
     let sub_queries = match coverage_framework.as_deref() {
         None => Vec::new(),
         Some(key) => {
@@ -465,8 +465,8 @@ mod tests {
         assert_eq!(round_tripped.count, 2);
         assert_eq!(round_tripped.items.len(), 2);
 
-        // A written candidate must be structurally incapable of shipping: its
-        // empty `reviewed_by` makes `load_law` refuse it outright.
+        // A written candidate must be structurally incapable of shipping: its ~keep
+        // empty `reviewed_by` makes `load_law` refuse it outright. ~keep
         let load_result = load_law(&artifact_json);
         assert!(
             matches!(load_result, Err(LawError::MissingReviewer { .. })),

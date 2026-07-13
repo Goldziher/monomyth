@@ -320,11 +320,11 @@ impl Scorer for AlignmentScorer {
                 &Dist::from(&predicted_node.motifs),
             ));
 
-            // `situation` is `Option<ScoredOne<_>>`: `None` means "this axis
-            // does not apply to this beat", not "the distribution is empty",
-            // so a pair only counts toward the axis average when both sides
-            // scored it — otherwise an irrelevant beat would be scored as if
-            // gold and predicted disagreed.
+            // `situation` is `Option<ScoredOne<_>>`: `None` means "this axis ~keep
+            // does not apply to this beat", not "the distribution is empty", ~keep
+            // so a pair only counts toward the axis average when both sides ~keep
+            // scored it — otherwise an irrelevant beat would be scored as if ~keep
+            // gold and predicted disagreed. ~keep
             if let (Some(gold_situation), Some(predicted_situation)) =
                 (&gold_node.situation, &predicted_node.situation)
             {
@@ -474,7 +474,6 @@ mod tests {
         world.story.structure.spine()
     }
 
-    // ---- 1. Identical structures ----
 
     #[test]
     fn identical_structures_should_align_perfectly() {
@@ -483,7 +482,7 @@ mod tests {
             ("B", MonomythStage::SupernaturalAid),
             ("C", MonomythStage::CrossingTheFirstThreshold),
         ]);
-        // Independently built (fresh SlotMap), not cloned, so ids differ.
+        // Independently built (fresh SlotMap), not cloned, so ids differ. ~keep
         let predicted = linear_world(&[
             ("A", MonomythStage::CallToAdventure),
             ("B", MonomythStage::SupernaturalAid),
@@ -513,7 +512,6 @@ mod tests {
         assert!((stage_score.top1_accuracy - 1.0).abs() < EPSILON);
     }
 
-    // ---- 2. Predicted missing a middle node ----
 
     #[test]
     fn predicted_missing_a_middle_node_should_leave_it_unmatched_and_align_the_ends() {
@@ -542,15 +540,12 @@ mod tests {
         );
         assert!(report.alignment.unmatched_predicted.is_empty());
 
-        // precision = matched / predicted_count = 2/2 = 1.0
         assert!((report.structural_precision - 1.0).abs() < EPSILON);
-        // recall = matched / gold_count = 2/3
         assert!((report.structural_recall - (2.0 / 3.0)).abs() < EPSILON);
         let expected_f1 = 2.0 * 1.0 * (2.0 / 3.0) / (1.0 + 2.0 / 3.0);
         assert!((report.structural_f1 - expected_f1).abs() < EPSILON);
     }
 
-    // ---- 3. Predicted has an extra node ----
 
     #[test]
     fn predicted_extra_node_should_leave_it_unmatched_and_reduce_precision() {
@@ -579,13 +574,10 @@ mod tests {
             BTreeSet::from([predicted_ids[1]])
         );
 
-        // recall = matched / gold_count = 2/2 = 1.0
         assert!((report.structural_recall - 1.0).abs() < EPSILON);
-        // precision = matched / predicted_count = 2/3
         assert!((report.structural_precision - (2.0 / 3.0)).abs() < EPSILON);
     }
 
-    // ---- 4. One node's stage relabeled: aligner is robust to a bad substitution ----
 
     /// gold = [A(CallToAdventure), B(SupernaturalAid), C(CrossingTheFirstThreshold)],
     /// predicted = [A(CallToAdventure), B(TheRoadOfTrials), C(CrossingTheFirstThreshold)]
@@ -634,17 +626,14 @@ mod tests {
         assert!(report.alignment.unmatched_gold.is_empty());
         assert!(report.alignment.unmatched_predicted.is_empty());
 
-        // Perfect structural alignment (every node matched); the classification
-        // failure shows up in the stage axis, not in P/R/F1.
+        // Perfect structural alignment (every node matched); the classification ~keep
+        // failure shows up in the stage axis, not in P/R/F1. ~keep
         assert!((report.structural_f1 - 1.0).abs() < EPSILON);
 
-        // Average histogram_intersection across the three matched pairs:
-        // (1.0 + 0.0 + 1.0) / 3 = 2/3.
         let stage_score = report.axes.get("stage").expect("stage axis always present");
         assert!((stage_score.histogram_intersection - (2.0 / 3.0)).abs() < EPSILON);
     }
 
-    // ---- 5. Two adjacent nodes swapped ----
 
     /// gold = [A, B, C], predicted = [B, A, C] (A and B's stages are swapped in
     /// position). A monotonic aligner cannot un-swap adjacent nodes: matching
@@ -686,22 +675,21 @@ mod tests {
         let report = AlignmentScorer.score(&gold, &predicted);
 
         let mut expected_matches = BTreeMap::new();
-        expected_matches.insert(gold_ids[0], predicted_ids[0]); // gold-A <-> pred-B
-        expected_matches.insert(gold_ids[1], predicted_ids[1]); // gold-B <-> pred-A
-        expected_matches.insert(gold_ids[2], predicted_ids[2]); // gold-C <-> pred-C
+        expected_matches.insert(gold_ids[0], predicted_ids[0]); // gold-A <-> pred-B ~keep
+        expected_matches.insert(gold_ids[1], predicted_ids[1]); // gold-B <-> pred-A ~keep
+        expected_matches.insert(gold_ids[2], predicted_ids[2]); // gold-C <-> pred-C ~keep
         assert_eq!(report.alignment.matches, expected_matches);
         assert!(report.alignment.unmatched_gold.is_empty());
         assert!(report.alignment.unmatched_predicted.is_empty());
 
         assert!((report.structural_f1 - 1.0).abs() < EPSILON);
 
-        // Average histogram_intersection: (0.0 + 0.0 + 1.0) / 3 = 1/3 — the
-        // swap's damage is visible here, not in the structural counts.
+        // Average histogram_intersection: (0.0 + 0.0 + 1.0) / 3 = 1/3 — the ~keep
+        // swap's damage is visible here, not in the structural counts. ~keep
         let stage_score = report.axes.get("stage").expect("stage axis always present");
         assert!((stage_score.histogram_intersection - (1.0 / 3.0)).abs() < EPSILON);
     }
 
-    // ---- 6. The scored split (mirrors the real Odyssey GoddessAndTemptress node) ----
 
     /// gold node: `ScoredOne { primary: TheMeetingWithTheGoddess, alternatives:
     /// {WomanAsTemptress: 350} }` vs a predicted node that scores
@@ -765,7 +753,6 @@ mod tests {
         );
     }
 
-    // ---- 7. Degenerate / near-empty predicted spine ----
 
     /// `NarrativeStructure::spine` always yields at least the root (it pushes
     /// `current` before checking for an out-edge), and `NarrativeStructure::validate`
@@ -791,16 +778,16 @@ mod tests {
             "the degenerate predicted spine is 1 node"
         );
 
-        // Reaching this assertion at all confirms `score` does not panic on the
-        // degenerate 1-node-vs-3-node case.
+        // Reaching this assertion at all confirms `score` does not panic on the ~keep
+        // degenerate 1-node-vs-3-node case. ~keep
         let report = AlignmentScorer.score(&gold, &predicted);
 
-        // `Apotheosis` shares no support with any gold stage here, so every
-        // substitution costs 1.0, tying every gap-only path (`cost[i][1] =
-        // i * GAP_PENALTY` either way). Backtracking starts at `(3, 1)`, where
-        // the diagonal tie-break applies first: gold-C (the last gold node)
-        // aligns to predicted-Z, and the walk then consumes the remaining gold
-        // nodes (B, then A) as gaps before reaching `(0, 0)`.
+        // `Apotheosis` shares no support with any gold stage here, so every ~keep
+        // substitution costs 1.0, tying every gap-only path (`cost[i][1] = ~keep
+        // i * GAP_PENALTY` either way). Backtracking starts at `(3, 1)`, where ~keep
+        // the diagonal tie-break applies first: gold-C (the last gold node) ~keep
+        // aligns to predicted-Z, and the walk then consumes the remaining gold ~keep
+        // nodes (B, then A) as gaps before reaching `(0, 0)`. ~keep
         assert_eq!(report.alignment.matches.len(), 1);
         assert_eq!(report.alignment.matches[&gold_ids[2]], predicted_ids[0]);
         assert_eq!(
@@ -809,14 +796,12 @@ mod tests {
         );
         assert!(report.alignment.unmatched_predicted.is_empty());
 
-        // recall = matched / gold_count = 1/3; precision = matched / predicted_count = 1/1.
         assert!((report.structural_recall - (1.0 / 3.0)).abs() < EPSILON);
         assert!((report.structural_precision - 1.0).abs() < EPSILON);
         assert!(report.structural_f1.is_finite(), "f1 must never be NaN");
         assert!(!report.structural_f1.is_nan(), "f1 must never be NaN");
     }
 
-    // ---- Fingerprint smoke test (the full Odyssey golden lives in tests/alignment_scoring.rs) ----
 
     #[test]
     fn alignment_scorer_report_fingerprint_should_be_deterministic() {

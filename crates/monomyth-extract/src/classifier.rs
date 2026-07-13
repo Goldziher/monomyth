@@ -216,9 +216,9 @@ mod tests {
 
     #[tokio::test]
     async fn classify_should_pick_the_stage_whose_fused_query_scores_highest() {
-        // `CrossingTheFirstThreshold` has a distinctive canonical name that no
-        // other stage's fused query contains, so the scripted retriever gives
-        // evidence to that stage alone.
+        // `CrossingTheFirstThreshold` has a distinctive canonical name that no ~keep
+        // other stage's fused query contains, so the scripted retriever gives ~keep
+        // evidence to that stage alone. ~keep
         let target = MonomythStage::CrossingTheFirstThreshold;
         let classifier = RagSoftmaxClassifier::new(ScriptedRetriever { target });
 

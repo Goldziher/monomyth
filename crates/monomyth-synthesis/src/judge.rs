@@ -261,7 +261,7 @@ mod tests {
             instructions: Vec::new(),
         };
 
-        // (80*1.0 + 40*0.5) / (1.0 + 0.5) = 100.0 / 1.5 = 66.666...
+        // (80*1.0 + 40*0.5) / (1.0 + 0.5) = 100.0 / 1.5 = 66.666... ~keep
         let result = weighted_score(&verdict, TEST_CRITERIA);
         assert!(
             (result - 66.666_666_666_666_67).abs() < 1e-9,
@@ -277,7 +277,7 @@ mod tests {
             instructions: Vec::new(),
         };
 
-        // (100*1.0 + 0*0.5) / 1.5 = 66.666...
+        // (100*1.0 + 0*0.5) / 1.5 = 66.666... ~keep
         let result = weighted_score(&verdict, TEST_CRITERIA);
         assert!(
             (result - 66.666_666_666_666_67).abs() < 1e-9,
@@ -293,7 +293,7 @@ mod tests {
             instructions: Vec::new(),
         };
 
-        // Only "Exhaustiveness" matches: 80*1.0 / 1.0 = 80.0.
+        // Only "Exhaustiveness" matches: 80*1.0 / 1.0 = 80.0. ~keep
         assert!((weighted_score(&verdict, TEST_CRITERIA) - 80.0).abs() < 1e-9);
     }
 

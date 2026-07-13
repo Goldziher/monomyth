@@ -58,8 +58,8 @@ async fn records_a_content_fill_cassette_against_live_gemini() {
 
     assert_all_slots_filled_with_llm_provenance(&world, MODEL);
 
-    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette
-    // file it wrote.
+    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette ~keep
+    // file it wrote. ~keep
     drop(llm);
 
     let cassette = std::fs::read_to_string(cassette_path).expect("the cassette file was written");

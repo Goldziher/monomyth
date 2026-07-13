@@ -360,9 +360,9 @@ mod tests {
         let mut json: serde_json::Value =
             serde_json::to_value(&world).expect("world serializes to a JSON value");
 
-        // `SlotMap` serializes as a plain array of `{value, version}` slots
-        // indexed by slot position, not a keyed object; the fixture's sole node
-        // is the only live (non-null-`value`) slot.
+        // `SlotMap` serializes as a plain array of `{value, version}` slots ~keep
+        // indexed by slot position, not a keyed object; the fixture's sole node ~keep
+        // is the only live (non-null-`value`) slot. ~keep
         let nodes = json["story"]["structure"]["nodes"]
             .as_array_mut()
             .expect("nodes serializes to an array");
@@ -401,9 +401,9 @@ mod tests {
         let room = world.player.location;
 
         let role = ScoredOne::new(ProppRole::Hero);
-        // insert_alternative refuses a key equal to primary, so the invariant
-        // violation is forced through a JSON round trip, mirroring what a
-        // derived Deserialize over hand-authored JSON could smuggle in.
+        // insert_alternative refuses a key equal to primary, so the invariant ~keep
+        // violation is forced through a JSON round trip, mirroring what a ~keep
+        // derived Deserialize over hand-authored JSON could smuggle in. ~keep
         let mut role_json = serde_json::to_value(&role).expect("role serializes");
         let primary = role_json["primary"].clone();
         role_json["alternatives"][primary.as_str().expect("primary is a string label")] =

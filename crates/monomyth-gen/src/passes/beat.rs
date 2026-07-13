@@ -220,10 +220,10 @@ fn draw_motif_subset(
     }
 
     let max = MOTIFS_PER_BEAT_MAX.min(candidates.len());
-    // MOTIFS_PER_BEAT_MIN is 0, which is never greater than `max`, so no clamp is
-    // needed here (unlike the general min/max clamp `draw_indexed_subset` used to
-    // do for its caller-supplied bounds); clippy's `unnecessary_min_or_max` lint
-    // catches this statically.
+    // MOTIFS_PER_BEAT_MIN is 0, which is never greater than `max`, so no clamp is ~keep
+    // needed here (unlike the general min/max clamp `draw_indexed_subset` used to ~keep
+    // do for its caller-supplied bounds); clippy's `unnecessary_min_or_max` lint ~keep
+    // catches this statically. ~keep
     let count = draw_range_inclusive(rng, MOTIFS_PER_BEAT_MIN, max);
 
     let mut pool: Vec<(MotifClass, Weight)> = candidates

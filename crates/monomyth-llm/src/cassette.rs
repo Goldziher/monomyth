@@ -69,7 +69,6 @@ fn prompt_sha256(prompt: &str) -> String {
     let digest = Sha256::digest(prompt.as_bytes());
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
-        // `write!` to a `String` never fails, so the result is discarded.
         let _ = write!(hex, "{byte:02x}");
     }
     hex
@@ -133,8 +132,8 @@ impl Cassette {
     /// Returns a [`serde_json::Error`] if the cassette cannot be serialized (it
     /// always can, in practice, since every field type here is serializable).
     fn to_pretty_string(&self) -> Result<String, serde_json::Error> {
-        // Route through `serde_json::Value` so map keys sort lexicographically
-        // regardless of struct field declaration order.
+        // Route through `serde_json::Value` so map keys sort lexicographically ~keep
+        // regardless of struct field declaration order. ~keep
         let value: Value = serde_json::to_value(self)?;
         let mut rendered = serde_json::to_string_pretty(&sort_keys(value))?;
         rendered.push('\n');
@@ -602,11 +601,11 @@ mod tests {
 
     #[tokio::test]
     async fn should_never_serialize_secrets_into_a_cassette() {
-        // The recorder's inputs are only ever a prompt and a `StructuredBackend`
-        // response — it has no access to `LlmConfig` (which may carry a provider
-        // API key) and cannot serialize what it cannot see. This test pins that
-        // by construction: a normal, secret-free prompt/response round-trips
-        // into a cassette that contains none of the well-known secret markers.
+        // The recorder's inputs are only ever a prompt and a `StructuredBackend` ~keep
+        // response — it has no access to `LlmConfig` (which may carry a provider ~keep
+        // API key) and cannot serialize what it cannot see. This test pins that ~keep
+        // by construction: a normal, secret-free prompt/response round-trips ~keep
+        // into a cassette that contains none of the well-known secret markers. ~keep
         let file = NamedTempFile::new().expect("create tempfile");
         let path = file.path().to_path_buf();
         let live = FakeLiveBackend::new(vec![(json!({"name": "Gilgamesh"}), None)]);

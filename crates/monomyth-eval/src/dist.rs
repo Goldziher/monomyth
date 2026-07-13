@@ -93,9 +93,9 @@ impl<T: Ord + Clone> Dist<T> {
                 a_prob
                     .partial_cmp(b_prob)
                     .unwrap_or(std::cmp::Ordering::Equal)
-                    // Reverse the key comparison so that on a probability tie,
-                    // `max_by` (which keeps the *last* maximal element) keeps the
-                    // canonically *smallest* key.
+                    // Reverse the key comparison so that on a probability tie, ~keep
+                    // `max_by` (which keeps the *last* maximal element) keeps the ~keep
+                    // canonically *smallest* key. ~keep
                     .then(b_key.cmp(a_key))
             })
             .map(|(key, _)| key)
@@ -152,10 +152,10 @@ impl<T: Ord + Clone> From<&ScoredOne<T>> for Dist<T> {
 }
 
 #[cfg(test)]
-// `dist.get(...)` on an absent key returns the exact literal `0.0` (see
-// `get`'s `unwrap_or(0.0)`), not an accumulated float, so an exact comparison
-// is the correct assertion there; ratios computed by normalization are still
-// compared with `EPSILON` below.
+// `dist.get(...)` on an absent key returns the exact literal `0.0` (see ~keep
+// `get`'s `unwrap_or(0.0)`), not an accumulated float, so an exact comparison ~keep
+// is the correct assertion there; ratios computed by normalization are still ~keep
+// compared with `EPSILON` below. ~keep
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
@@ -214,7 +214,7 @@ mod tests {
         let mut scored = ScoredOne::new(ProppFunction::Departure);
         scored.insert_alternative(ProppFunction::Struggle, Weight::new(500));
 
-        // primary implicit weight = FULL = 1000; alternative = 500; total = 1500.
+        // primary implicit weight = FULL = 1000; alternative = 500; total = 1500. ~keep
         let dist = Dist::from(&scored);
         assert!((dist.get(&ProppFunction::Departure) - (1000.0 / 1500.0)).abs() < EPSILON);
         assert!((dist.get(&ProppFunction::Struggle) - (500.0 / 1500.0)).abs() < EPSILON);
@@ -227,7 +227,7 @@ mod tests {
         set.insert(ProppFunction::Departure, Weight::new(500));
 
         let dist = Dist::from(&set);
-        // ProppFunction::Departure < ProppFunction::Victory in artifact id order.
+        // ProppFunction::Departure < ProppFunction::Victory in artifact id order. ~keep
         assert_eq!(dist.argmax(), Some(&ProppFunction::Departure));
     }
 

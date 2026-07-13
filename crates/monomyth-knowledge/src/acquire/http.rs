@@ -267,9 +267,9 @@ async fn attempt_once(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, At
         .and_then(reqwest::Response::error_for_status)
         .map_err(classify)?;
 
-    // Fast reject when the server declares an over-cap length up front. This is
-    // the compressed length (or absent under gzip), so the streaming check
-    // below is the authoritative guard against decompression bombs.
+    // Fast reject when the server declares an over-cap length up front. This is ~keep
+    // the compressed length (or absent under gzip), so the streaming check ~keep
+    // below is the authoritative guard against decompression bombs. ~keep
     if response
         .content_length()
         .is_some_and(|len| len > MAX_RESPONSE_BYTES)

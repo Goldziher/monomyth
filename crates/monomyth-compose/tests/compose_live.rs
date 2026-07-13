@@ -31,11 +31,11 @@ async fn records_a_compose_cassette_against_live_gemini() {
         "/tests/cassettes/compose_seed42_gemini.json"
     );
 
-    // Recording makes one live call per outline section in sequence, so a single
-    // transient transport blip anywhere along the way aborts the whole run and
-    // leaves a partial cassette. Grant more transport retries and a longer
-    // timeout than the hardened default here — this affects only the recording,
-    // never the committed cassette or the deterministic offline replay.
+    // Recording makes one live call per outline section in sequence, so a single ~keep
+    // transient transport blip anywhere along the way aborts the whole run and ~keep
+    // leaves a partial cassette. Grant more transport retries and a longer ~keep
+    // timeout than the hardened default here — this affects only the recording, ~keep
+    // never the committed cassette or the deterministic offline replay. ~keep
     let options = BackendOptions {
         max_retries: Some(6),
         timeout_secs: Some(120),
@@ -61,8 +61,8 @@ async fn records_a_compose_cassette_against_live_gemini() {
     assert_eq!(doc.sections().len(), outline.len());
     assert!(!doc.prose().is_empty());
 
-    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette
-    // file it wrote.
+    // Force the `RecordingBackend`'s drop-flush before inspecting the cassette ~keep
+    // file it wrote. ~keep
     drop(llm);
 
     let cassette = std::fs::read_to_string(cassette_path).expect("the cassette file was written");

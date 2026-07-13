@@ -36,8 +36,6 @@ impl Default for ComposeSettings {
     fn default() -> Self {
         Self {
             max_turns: crate::generate::DEFAULT_MAX_TURNS,
-            // Formerly `draft::GROUNDING_TOP_K`; moved here now that the
-            // pipeline's knobs are consolidated into one settings struct.
             grounding_top_k: 4,
             revise_threshold: 0.6,
             max_revise_iterations: 2,

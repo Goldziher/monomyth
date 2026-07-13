@@ -48,15 +48,15 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f64> {
         norm_a += x * x;
         norm_b += y * y;
     }
-    // Norms are sums of squares, so each is `>= 0.0`; `<= 0.0` therefore means an
-    // all-zero vector, whose cosine is undefined. (`<=` avoids an exact-equality
-    // float comparison.)
+    // Norms are sums of squares, so each is `>= 0.0`; `<= 0.0` therefore means an ~keep
+    // all-zero vector, whose cosine is undefined. (`<=` avoids an exact-equality ~keep
+    // float comparison.) ~keep
     if norm_a <= 0.0 || norm_b <= 0.0 {
         return None;
     }
-    // Clamp to the valid cosine range: the `sqrt` division can overshoot `1.0` (or
-    // undershoot `-1.0`) by a floating-point epsilon for a vector compared against
-    // a scalar multiple of itself, which would otherwise leak an out-of-range score.
+    // Clamp to the valid cosine range: the `sqrt` division can overshoot `1.0` (or ~keep
+    // undershoot `-1.0`) by a floating-point epsilon for a vector compared against ~keep
+    // a scalar multiple of itself, which would otherwise leak an out-of-range score. ~keep
     Some((dot / (norm_a.sqrt() * norm_b.sqrt())).clamp(-1.0, 1.0))
 }
 
@@ -183,9 +183,9 @@ mod tests {
     #[test]
     fn score_semantic_should_aggregate_mean_min_max() {
         let report = score_semantic(&[
-            (vec![1.0, 0.0], vec![1.0, 0.0]),  // 1.0
-            (vec![1.0, 0.0], vec![0.0, 1.0]),  // 0.0
-            (vec![1.0, 0.0], vec![-1.0, 0.0]), // -1.0
+            (vec![1.0, 0.0], vec![1.0, 0.0]),  
+            (vec![1.0, 0.0], vec![0.0, 1.0]),  
+            (vec![1.0, 0.0], vec![-1.0, 0.0]), 
         ]);
         assert_eq!(report.pairs, 3);
         assert_close(report.mean_cosine, 0.0);
@@ -196,9 +196,9 @@ mod tests {
     #[test]
     fn score_semantic_should_skip_degenerate_pairs() {
         let report = score_semantic(&[
-            (vec![1.0, 0.0], vec![1.0, 0.0]), // comparable -> 1.0
-            (vec![1.0, 0.0], vec![0.0, 0.0]), // zero vector -> skipped
-            (vec![1.0], vec![1.0, 2.0]),      // length mismatch -> skipped
+            (vec![1.0, 0.0], vec![1.0, 0.0]), // comparable -> 1.0 ~keep
+            (vec![1.0, 0.0], vec![0.0, 0.0]), // zero vector -> skipped ~keep
+            (vec![1.0], vec![1.0, 2.0]),      // length mismatch -> skipped ~keep
         ]);
         assert_eq!(report.pairs, 1, "only the one comparable pair is counted");
         assert_close(report.mean_cosine, 1.0);

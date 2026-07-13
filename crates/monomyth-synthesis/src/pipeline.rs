@@ -250,10 +250,10 @@ pub async fn draft_law(
         .generate::<CandidateLaw>(&initial_prompt, CANDIDATE_SCHEMA_NAME)
         .await?;
 
-    // The framework stages this run targeted (the coverage sub-queries — for a
-    // `--coverage-framework campbell` run, the Campbell stage names), used as
-    // the yardstick for the advisory pre-score. Empty when no framework was
-    // given, in which case the pre-score is skipped (nothing to measure against).
+    // The framework stages this run targeted (the coverage sub-queries — for a ~keep
+    // `--coverage-framework campbell` run, the Campbell stage names), used as ~keep
+    // the yardstick for the advisory pre-score. Empty when no framework was ~keep
+    // given, in which case the pre-score is skipped (nothing to measure against). ~keep
     let framework_stages: Vec<&str> = request.sub_queries.iter().map(String::as_str).collect();
 
     let mut best: Option<IterationResult> = None;
@@ -499,7 +499,7 @@ fn build_refine_prompt(
 fn append_passages(prompt: &mut String, passages: &[Passage]) {
     for (index, passage) in passages.iter().enumerate() {
         let position = index + 1;
-        // `write!` to a `String` never fails, so the result is discarded.
+        // `write!` to a `String` never fails, so the result is discarded. ~keep
         let _ = writeln!(prompt, "\n[{position}] {}", passage.text);
     }
 }
@@ -543,7 +543,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut hex = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        // `write!` to a `String` never fails, so the result is discarded.
+        // `write!` to a `String` never fails, so the result is discarded. ~keep
         let _ = write!(hex, "{byte:02x}");
     }
     hex
@@ -566,17 +566,17 @@ fn stamp_artifact(
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            // Surface an honest "could not derive" abstention to the reviewer via
-            // the extensible fields map (ids stay contiguous 1..=n). Only the
-            // abstaining items carry the flag; a derivable item omits it.
+            // Surface an honest "could not derive" abstention to the reviewer via ~keep
+            // the extensible fields map (ids stay contiguous 1..=n). Only the ~keep
+            // abstaining items carry the flag; a derivable item omits it. ~keep
             let mut fields = std::collections::BTreeMap::new();
             if !item.derivable {
                 fields.insert("derivable".to_owned(), serde_json::Value::Bool(false));
             }
             LawItem {
-                // `index` is bounded by `candidate.items.len()`, which in
-                // practice is a handful of taxonomy entries; a `u16` overflow
-                // here would require an implausibly large candidate.
+                // `index` is bounded by `candidate.items.len()`, which in ~keep
+                // practice is a handful of taxonomy entries; a `u16` overflow ~keep
+                // here would require an implausibly large candidate. ~keep
                 id: u16::try_from(index + 1).unwrap_or(u16::MAX),
                 name: item.name.clone(),
                 description: item.description.clone(),

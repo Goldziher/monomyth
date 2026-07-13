@@ -267,7 +267,7 @@ fn content_checksum(text: &str) -> String {
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
         use std::fmt::Write as _;
-        // `write!` to a `String` never fails, so the result is discarded.
+        // `write!` to a `String` never fails, so the result is discarded. ~keep
         let _ = write!(hex, "{byte:02x}");
     }
     hex
@@ -535,10 +535,10 @@ mod tests {
 
     #[test]
     fn play_seed_path_honors_generation_config_not_hardcoded_defaults() {
-        // Force a room count outside the default 5..=9 band so the two worlds
-        // cannot coincide: this proves the play seed path routes the supplied
-        // config through generation, rather than silently regenerating with
-        // hardcoded defaults (the pre-remediation behavior).
+        // Force a room count outside the default 5..=9 band so the two worlds ~keep
+        // cannot coincide: this proves the play seed path routes the supplied ~keep
+        // config through generation, rather than silently regenerating with ~keep
+        // hardcoded defaults (the pre-remediation behavior). ~keep
         let tweaked = GenerationConfig {
             rooms_min: 12,
             rooms_max: 12,
@@ -626,8 +626,8 @@ mod tests {
 
     #[test]
     fn content_checksum_is_the_known_sha256_of_the_text() {
-        // The well-known sha256 of the empty string and of "abc" — a fixed
-        // vector, so a regression in the digest is caught immediately.
+        // The well-known sha256 of the empty string and of "abc" — a fixed ~keep
+        // vector, so a regression in the digest is caught immediately. ~keep
         assert_eq!(
             content_checksum(""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

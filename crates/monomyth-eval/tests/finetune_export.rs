@@ -37,7 +37,6 @@ fn export_should_produce_one_prose_free_example_per_spine_node() {
     for example in &examples {
         assert_eq!(example.axis, "campbell_macro");
         assert!(!example.text.is_empty(), "the hint text must be populated");
-        // The primary label always carries a permille entry in the distribution.
         assert_eq!(
             example.distribution.get(&example.primary).copied(),
             Some(1000),
@@ -56,7 +55,7 @@ fn export_should_preserve_the_goddess_temptress_scored_split() {
         .find(|example| example.primary == "The Meeting with the Goddess")
         .expect("the fixture has a Meeting-with-the-Goddess primary node");
 
-    // primary = 1000 (FULL), alternative WomanAsTemptress = 350 permille.
+    // primary = 1000 (FULL), alternative WomanAsTemptress = 350 permille. ~keep
     assert_eq!(
         split.distribution.get("The Meeting with the Goddess"),
         Some(&1000)

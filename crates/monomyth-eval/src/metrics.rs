@@ -249,12 +249,12 @@ impl DistScore {
 }
 
 #[cfg(test)]
-// Several assertions below compare against 0.0/1.0/-1.0 exactly: these are
-// values the metrics are designed to return exactly (e.g. `top1_accuracy` is
-// `f64::from(u8::from(bool))`, `histogram_intersection`/`kendall_tau` on
-// identical or disjoint inputs reduce to exact sums of exact terms), not
-// values reached by accumulated floating-point arithmetic. Epsilon comparison
-// is still used below wherever the expected value is itself a computed ratio.
+// Several assertions below compare against 0.0/1.0/-1.0 exactly: these are ~keep
+// values the metrics are designed to return exactly (e.g. `top1_accuracy` is ~keep
+// `f64::from(u8::from(bool))`, `histogram_intersection`/`kendall_tau` on ~keep
+// identical or disjoint inputs reduce to exact sums of exact terms), not ~keep
+// values reached by accumulated floating-point arithmetic. Epsilon comparison ~keep
+// is still used below wherever the expected value is itself a computed ratio. ~keep
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
@@ -310,7 +310,7 @@ mod tests {
 
         assert_eq!(histogram_intersection(&gold, &predicted), 0.0);
         assert_eq!(top1_accuracy(&gold, &predicted), 0.0);
-        // No shared support => kendall_tau's vacuous-agreement edge case.
+        // No shared support => kendall_tau's vacuous-agreement edge case. ~keep
         assert_eq!(kendall_tau(&gold, &predicted), 1.0);
     }
 

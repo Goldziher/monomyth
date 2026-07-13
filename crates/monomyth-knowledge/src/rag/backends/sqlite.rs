@@ -49,13 +49,13 @@ use tracing::instrument;
 #[allow(unsafe_code)]
 fn register_sqlite_vec_once() {
     static INIT: std::sync::Once = std::sync::Once::new();
-    // SAFETY: `sqlite_vec::sqlite3_vec_init` has the C ABI SQLite's auto-extension
-    // mechanism expects (`sqlite3_auto_extension`'s documented entry-point signature),
-    // so the transmute from function pointer to `AutoExtFn` is a same-signature cast,
-    // not a type change. `Once::call_once` guarantees `sqlite3_auto_extension` — which
-    // is itself safe to call concurrently per SQLite's own thread-safety contract — runs
-    // exactly once per process, matching the "register before the first `Connection::open*`"
-    // precondition documented above.
+    // SAFETY: `sqlite_vec::sqlite3_vec_init` has the C ABI SQLite's auto-extension ~keep
+    // mechanism expects (`sqlite3_auto_extension`'s documented entry-point signature), ~keep
+    // so the transmute from function pointer to `AutoExtFn` is a same-signature cast, ~keep
+    // not a type change. `Once::call_once` guarantees `sqlite3_auto_extension` — which ~keep
+    // is itself safe to call concurrently per SQLite's own thread-safety contract — runs ~keep
+    // exactly once per process, matching the "register before the first `Connection::open*`" ~keep
+    // precondition documented above. ~keep
     INIT.call_once(|| unsafe {
         type AutoExtFn = unsafe extern "C" fn(
             *mut rusqlite::ffi::sqlite3,
@@ -559,8 +559,8 @@ pub struct SqliteVectorStore {
 
 impl std::fmt::Debug for SqliteVectorStore {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // `rusqlite::Connection` does not implement `Debug`, so the store is
-        // summarized by its name rather than its connection internals.
+        // `rusqlite::Connection` does not implement `Debug`, so the store is ~keep
+        // summarized by its name rather than its connection internals. ~keep
         formatter
             .debug_struct("SqliteVectorStore")
             .field("name", &self.name)

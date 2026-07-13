@@ -73,8 +73,8 @@ pub struct PreScore {
 
 /// The `0.0..=1.0` ratio `numerator / denominator`, or `0.0` when the
 /// denominator is zero (an empty population scores zero, never a NaN).
-// The counts are item/stage/passage cardinalities — at most a few dozen, far
-// below f64's 2^52 exact-integer range — so the usize->f64 cast is exact here.
+// The counts are item/stage/passage cardinalities — at most a few dozen, far ~keep
+// below f64's 2^52 exact-integer range — so the usize->f64 cast is exact here. ~keep
 #[allow(clippy::cast_precision_loss)]
 fn ratio(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
@@ -121,8 +121,8 @@ pub fn pre_score(
         })
         .collect();
 
-    // Phase coverage + the first item index covering each covered stage, in
-    // framework order (for the ordering check below).
+    // Phase coverage + the first item index covering each covered stage, in ~keep
+    // framework order (for the ordering check below). ~keep
     let mut first_cover_indices: Vec<usize> = Vec::new();
     for stage in framework_stages {
         let stage_tokens = content_tokens(stage);
@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn out_of_order_items_lower_the_ordering_score() {
-        // Stage order is [Departure, Trials]; items place "Trials" first, so the
-        // covering indices are [1, 0] — one adjacent pair, not monotonic.
+        // Stage order is [Departure, Trials]; items place "Trials" first, so the ~keep
+        // covering indices are [1, 0] — one adjacent pair, not monotonic. ~keep
         let candidate = CandidateLaw {
             title: "Arc".to_owned(),
             items: vec![
@@ -291,7 +291,7 @@ mod tests {
         let scored = pre_score(&empty, &[], &[]);
         approx(scored.phase_coverage, 0.0);
         approx(scored.grounding_overlap, 0.0);
-        // No stages to violate ordering over, so ordering is the neutral 1.0.
+        // No stages to violate ordering over, so ordering is the neutral 1.0. ~keep
         approx(scored.ordering_monotonicity, 1.0);
     }
 }
