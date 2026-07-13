@@ -30,8 +30,14 @@ exclude = [
 disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 
 
+# The `uncomment` rule (flags commented-out code for removal) is disabled: on
+# this codebase it fires only on legitimate explanatory prose and config
+# comments — it cannot tell documentation from dead code, so it produced ~400
+# false positives and zero true ones. Dead code is caught in review instead
+# (see the dead-code convention). Config below is retained should it be
+# re-enabled with a stricter matcher.
 [lint.uncomment]
-enabled = true
+enabled = false
 remove_todos = false
 remove_fixme = false
 remove_docs = false
