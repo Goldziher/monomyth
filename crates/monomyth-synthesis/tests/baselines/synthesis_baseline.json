@@ -2,11 +2,11 @@
   "judge": {
     "count": 6,
     "max": 1.0,
-    "mean": 0.5166666666666667,
+    "mean": 0.5333333333333333,
     "min": 0.0,
-    "stddev": 0.39334745737353155
+    "stddev": 0.39860869143671324
   },
-  "semantic_max_cosine": 0.47861530092088217,
-  "semantic_mean_cosine": 0.43996907961268183,
-  "semantic_min_cosine": 0.4018401881734463
+  "semantic_max_cosine": 0.693360154141777,
+  "semantic_mean_cosine": 0.5794400442393493,
+  "semantic_min_cosine": 0.36092258111101705
 }

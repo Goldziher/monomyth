@@ -13,19 +13,18 @@
 //! - [`record_synthesis_judge_and_semantic_baseline_against_live_gemini`] —
 //!   `#[ignore]`d live-recording test, mirroring
 //!   `monomyth-gen/tests/live_fill.rs`. Judges the fixture candidate against
-//!   live Gemini, computes the semantic axis via `Knowledge::embed_texts` with a
-//!   deterministic offline embedder, classifies both against the committed
+//!   live Gemini, computes the semantic axis via `Knowledge::embed_texts` with
+//!   the real local-ONNX embedder, classifies both against the committed
 //!   baseline (logging only), rewrites the baseline, and asserts the recorded
 //!   cassette carries no secrets. Run manually to (re-)record.
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use monomyth_eval::{Baseline, BaselineComparison, cosine_similarity, score_semantic};
 use monomyth_frameworks::MonomythStage;
-use monomyth_knowledge::rag::pipeline::Embedder;
-use monomyth_knowledge::rag::{InMemoryVectorStore, RagResult};
-use monomyth_knowledge::{EMBEDDING_DIM, Knowledge, Ledger, Namespace, Passage};
+use monomyth_knowledge::rag::InMemoryVectorStore;
+use monomyth_knowledge::rag::pipeline::{CoreEmbedder, Embedder};
+use monomyth_knowledge::{Knowledge, Ledger, Namespace, Passage};
 use monomyth_synthesis::{CandidateItem, CandidateLaw, PreScore, pre_score};
 
 /// Assert two `f64`s are equal within a tight tolerance. The pre-score fields are
@@ -210,40 +209,18 @@ fn prescore_over_the_fixture_is_stable() {
     );
 }
 
-/// A deterministic, content-derived embedder over the collection dimension — no
-/// ONNX, no network. Mirrors the pattern already used by
-/// `monomyth-gen/tests/support/mod.rs` and `monomyth-synthesis/tests/pipeline.rs`
-/// for offline, reproducible embeddings.
-#[derive(Debug)]
-struct FakeEmbedder;
-
-#[async_trait]
-impl Embedder for FakeEmbedder {
-    async fn embed(&self, texts: Vec<String>) -> RagResult<Vec<Vec<f32>>> {
-        Ok(texts
-            .iter()
-            .map(|text| deterministic_vector(text))
-            .collect())
-    }
-}
-
-/// A deterministic, content-derived embedding vector: no ONNX, no network.
-fn deterministic_vector(text: &str) -> Vec<f32> {
-    let width = EMBEDDING_DIM as usize;
-    let mut vector = vec![0.0f32; width];
-    for (index, byte) in text.bytes().enumerate() {
-        vector[index % width] += f32::from(byte) / 255.0;
-    }
-    vector
-}
-
-/// A [`Knowledge`] layer over an in-memory store and the deterministic
-/// [`FakeEmbedder`], with nothing ingested. `embed_texts` is the only thing the
-/// live test calls on it, so no ingest is needed.
+/// A [`Knowledge`] layer over an in-memory store and the real local-ONNX
+/// [`CoreEmbedder`] — the exact embedder [`Knowledge::open`] builds in
+/// production. Nothing is ingested; `embed_texts` is the only thing the live
+/// recorder calls on it. Loading the ONNX model (and, on a cold cache,
+/// downloading it) is why this is reached only from the `#[ignore]` live
+/// recorder, never the deterministic CI path.
 fn embedding_knowledge() -> Knowledge {
     let store: Arc<dyn monomyth_knowledge::rag::VectorStore> =
         Arc::new(InMemoryVectorStore::new("synthesis-eval-baseline"));
-    let embedder: Arc<dyn Embedder> = Arc::new(FakeEmbedder);
+    let embedder: Arc<dyn Embedder> = Arc::new(CoreEmbedder {
+        config: xberg::EmbeddingConfig::default(),
+    });
     let ledger = Ledger::load_embedded().expect("embedded manifest parses");
     Knowledge::with(store, embedder, ledger)
 }
@@ -350,15 +327,14 @@ async fn record_synthesis_judge_and_semantic_baseline_against_live_gemini() {
     }
 }
 
-/// Compute the semantic axis offline (no network) via [`Knowledge::embed_texts`]
-/// over the deterministic content-derived [`FakeEmbedder`] — the same offline
-/// embedder the whole test suite uses, since the real ONNX [`CoreEmbedder`] is
-/// deliberately never loaded in tests. This is therefore a *content-overlap*
-/// proxy, a placeholder that exercises the full
-/// embed -> [`score_semantic`] -> baseline wiring; swapping in real embeddings
-/// (which would make this a true semantic signal) is a deliberate follow-up
-/// once the ONNX model is available in the test environment. Cosine each
-/// grounding passage against the candidate, then aggregate with
+/// Compute the semantic axis via [`Knowledge::embed_texts`] over the real
+/// local-ONNX [`CoreEmbedder`] loaded by [`embedding_knowledge`]: a true
+/// embedding-cosine signal, not the content-overlap proxy this once used.
+/// Because ONNX output is not bit-stable across platforms, this axis is only
+/// ever recorded and classified as a SOFT, logged baseline — never a CI-hard
+/// assertion (the deterministic gate lives in
+/// [`prescore_over_the_fixture_is_stable`], which touches no embeddings).
+/// Cosine each grounding passage against the candidate, then aggregate with
 /// [`score_semantic`].
 ///
 /// Also sanity-checks that [`cosine_similarity`] agrees with

@@ -7,50 +7,52 @@
         "criteria": [
           {
             "name": "Exhaustiveness",
-            "rationale": "Captures the provided grounding passages but fails to account for the full structural arc expected at the macro tier.",
-            "score": 60
+            "rationale": "Captures the four primary events present in the text but fails to account for the complete expected narrative arc.",
+            "score": 70
           },
           {
             "name": "Source grounding",
-            "rationale": "All included phases are directly supported by the grounding text.",
+            "rationale": "Every included phase is completely supported by the grounding passages with no invented details.",
             "score": 100
           },
           {
             "name": "Ordering & non-overlap",
-            "rationale": "Phases are presented in chronological narrative order without conceptual overlap.",
+            "rationale": "The phases appear in correct chronological narrative order and are mutually distinct.",
             "score": 100
           },
           {
             "name": "Abstraction",
-            "rationale": "Descriptions heavily rely on near-verbatim source wording rather than abstract structural vocabulary.",
+            "rationale": "Directly violates the abstraction constraint by lifting near-verbatim wording from the grounding passages.",
             "score": 10
           },
           {
             "name": "Tier fit",
-            "rationale": "Provides only a handful of phases rather than the expected dozen for a full macro-tier arc.",
+            "rationale": "Only provides four broad phases rather than the expected dozen distinct macro-phases for a full arc.",
             "score": 40
           },
           {
             "name": "Honest abstention",
-            "rationale": "Fails to use the [NOT DERIVABLE FROM GROUNDING] tag to acknowledge missing structural phases like the return.",
+            "rationale": "Completely fails to use the [NOT DERIVABLE FROM GROUNDING] tag for structurally expected missing phases like the return and restoration.",
             "score": 0
           }
         ],
         "instructions": [
-          "Rewrite all phase descriptions using abstract structural language instead of near-verbatim source quotes.",
-          "Include structurally expected phases for the return and restoration using the [NOT DERIVABLE FROM GROUNDING] tag."
+          "Rewrite all phase descriptions using purely abstract structural vocabulary rather than copying near-verbatim phrases from the source text.",
+          "Expand the taxonomy to reflect a full macro-tier arc of roughly a dozen phases, rather than just a handful.",
+          "Explicitly include structurally expected but missing phases (such as the Return and Restoration) and label them with the [NOT DERIVABLE FROM GROUNDING] tag."
         ],
         "missing_phases": [
-          "Return Flight",
-          "Final Resurrection",
+          "Meeting the Mentor",
+          "The Road Back",
+          "Return",
           "Restoration"
         ]
       },
       "schema_name": "JudgeVerdict",
       "usage": {
-        "completion_tokens": 253,
+        "completion_tokens": 306,
         "prompt_tokens": 666,
-        "total_tokens": 919
+        "total_tokens": 972
       }
     }
   ],
