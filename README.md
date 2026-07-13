@@ -8,9 +8,11 @@ instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey �
 the story spine.
 
 > Status: pre-1.0, under active development. **Built today:** the domain model and deterministic
-> engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer, a text frontend, and a
-> CLI. **Forthcoming** (see the roadmap): a layered configuration system, genre, an extraction
-> subsystem, user-uploaded corpora, and additional render adapters. It is an **engine**: a headless,
+> engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer with reference-path
+> keyword/NER enrichment, layered TOML configuration, build-time law synthesis, a benchmark-driven
+> evaluation harness, a long-form compose pipeline, an LLM-free extraction proof-of-concept, a text
+> frontend, and a CLI. **Forthcoming** (see the roadmap): genre as a config dimension, user-uploaded
+> corpora, and additional render adapters (a pixel-art frontend). It is an **engine**: a headless,
 > deterministic, corpus-grounded system that *produces and transforms* a serializable world/story
 > model. The CLI is a harness, not the product.
 >
@@ -31,13 +33,28 @@ it. The model is the shared contract and is strictly render-agnostic.
   branching narrative spine, maps, cast, items); a non-deterministic **content** pass (LLM) fills
   prose. Structure is reproducible from a seed; the LLM only fills content slots and can never invent
   structure.
-- **`monomyth-knowledge`** — the RAG layer, consuming [xberg](https://crates.io/crates/xberg-rag)
-  for document intelligence, chunking, embeddings, a vector store, and ship-gated retrieval.
+- **`monomyth-knowledge`** — the ship-gated RAG layer: the license ledger, an in-tree vector-store
+  base layer, and reference-path keyword/NER enrichment, over published
+  [xberg](https://crates.io/crates/xberg) for document intelligence, chunking, and embeddings.
 - **`monomyth-llm`** — a thin, typed structured-output client (`generate::<T>()`) the content pass
   prompts, keeping the LLM provider out of the engine's public API.
+- **`monomyth-contracts`** — the cross-plane seam traits (`Classifier`, `Extractor`,
+  `PassageRetriever`) that keep extraction, generation, and retrieval swappable (ADR-0013).
+- **`monomyth-config`** — layered TOML configuration: an override resolver over per-task model
+  routing and generation/synthesis/compose knobs; an unconfigured run reproduces the defaults
+  bit-for-bit (ADR-0015).
+- **`monomyth-synthesis`** — the build-time, judge-gated pipeline that drafts abstract "law"
+  taxonomies from reference-namespace priors for human review, never surfacing prose (ADR-0016/0024).
+- **`monomyth-eval`** — a deterministic, LLM-free benchmark-scoring harness plus an optional
+  embedding-cosine semantic axis and performance baselines (ADR-0023).
+- **`monomyth-extract`** — a hermetic, LLM-free RAG-softmax extraction proof-of-concept: text back
+  into the structured model (ADR-0018).
+- **`monomyth-compose`** — the long-form generation pipeline (Plan → Draft → Revise → Assemble) that
+  turns a finished `World` into grounded adventure prose, quarantined from the procedural RNG (ADR-0027).
 - **`monomyth-text`** — the text frontend (pure string rendering over the model). **`monomyth-pixel`**
   comes later; frontends depend on `monomyth-core` only.
-- **`monomyth-cli`** — a thin binary wiring it together: `gen`, `play`, `edit`, `ingest`, `retrieve`.
+- **`monomyth-cli`** — a thin binary wiring it together: `gen`, `play`, `edit`, `ingest`,
+  `retrieve`, `corpus`, `compose`, `eval`, `finetune-export`, and `synthesize`.
 
 Frontends and generation never depend on each other — the serialized world is the only thing that
 crosses between them, which is what makes the pixel-art frontend a drop-in later. See
@@ -70,6 +87,20 @@ cargo run -p monomyth-cli -- edit --world world.json --script edits.json
 
 # Also fill prose slots from the ship-gated corpus via the LLM (requires provider config).
 cargo run -p monomyth-cli -- gen --seed 42 --fill
+
+# Compose long-form adventure prose for a seed (Plan → Draft → Revise → Assemble; requires provider config).
+cargo run -p monomyth-cli -- compose --seed 42 --out adventure.md
+
+# Score an extractor against a ground-truth benchmark fixture, or export PD-gated fine-tune pairs.
+cargo run -p monomyth-cli -- eval --work odyssey_campbell_macro
+cargo run -p monomyth-cli -- finetune-export --work odyssey_campbell_macro --out pairs.jsonl
+
+# Draft a pre-review candidate "law" (an abstract taxonomy) from reference-namespace priors.
+cargo run -p monomyth-cli -- synthesize law --law three_act --domain myth --query "story structure"
+
+# Build, or audit against the license ledger, the ship-safe corpus declared in the manifest.
+cargo run -p monomyth-cli -- corpus build
+cargo run -p monomyth-cli -- corpus audit
 ```
 
 The same `seed` always reproduces a byte-identical world; the LLM content pass is quarantined from the
@@ -102,7 +133,8 @@ hard invariant enforced at ingest, retrieval, and CI. See
 ## Repository layout
 
 ```text
-crates/            Rust workspace: core, frameworks, gen, knowledge, llm, text, cli
+crates/            Rust workspace: core, frameworks, contracts, config, knowledge, llm, gen,
+                   synthesis, eval, extract, compose, text, cli
 artifacts/
   frameworks/      the domain schema: validated framework + crosswalk JSON (committed)
 corpus/            license & namespace ledger (manifest.json)
