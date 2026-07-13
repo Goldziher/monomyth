@@ -16,6 +16,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+monomyth-compose = { workspace = true }
 monomyth-config = { workspace = true }
 monomyth-contracts = { workspace = true }
 monomyth-core = { workspace = true }

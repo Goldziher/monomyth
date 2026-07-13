@@ -19,6 +19,7 @@ async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 dotenvy = "0.15"
+monomyth-compose = { path = "crates/monomyth-compose" }
 monomyth-config = { path = "crates/monomyth-config" }
 monomyth-contracts = { path = "crates/monomyth-contracts" }
 monomyth-core = { path = "crates/monomyth-core" }

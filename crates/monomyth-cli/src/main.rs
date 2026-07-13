@@ -10,6 +10,7 @@ use crate::cli::{Cli, Command, CorpusCommand, SynthesizeCommand};
 
 mod cli;
 mod commands;
+mod compose;
 mod evaluate;
 mod play;
 mod synthesize;
@@ -87,6 +88,9 @@ async fn main() -> Result<()> {
                 .await
             }
         },
+        Command::Compose { seed, out, json } => {
+            compose::run_compose(seed, out, json, cli.model, &cli.db).await
+        }
     }
 }
 

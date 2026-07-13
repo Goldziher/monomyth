@@ -25,8 +25,9 @@ const DEFAULT_CANDIDATES_DIR: &str = "./synthesis/candidates";
 #[derive(Debug, Parser)]
 #[command(name = "monomyth", version, about)]
 pub(crate) struct Cli {
-    /// `provider/model` routing string for the LLM content pass. Overrides the
-    /// configured `models.content` default when set.
+    /// `provider/model` routing string for the LLM content pass (`gen --fill`)
+    /// and the `compose` pipeline. Overrides the configured `models.content` /
+    /// `models.compose` default for whichever subcommand runs.
     #[arg(long, global = true)]
     pub(crate) model: Option<String>,
 
@@ -170,6 +171,21 @@ pub(crate) enum Command {
     Synthesize {
         #[command(subcommand)]
         command: SynthesizeCommand,
+    },
+
+    /// Compose long-form adventure prose for a seeded world through the Plan→Draft→Revise→Assemble pipeline.
+    Compose {
+        /// Seed for the deterministic procedural world the prose narrates.
+        #[arg(long)]
+        seed: u64,
+
+        /// Write the output here instead of stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+
+        /// Emit the full `LongFormDoc` as JSON (sections + prose) instead of just the prose text.
+        #[arg(long)]
+        json: bool,
     },
 }
 

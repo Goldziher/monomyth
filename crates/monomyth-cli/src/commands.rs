@@ -39,7 +39,7 @@ pub(crate) fn generate_world(seed: u64, config: &GenerationConfig) -> Result<Wor
 /// This is the one place the layered `monomyth-config` types cross into
 /// `monomyth-gen`, keeping the generator free of any config-crate dependency. It
 /// grows a field per knob as generation constants migrate to configuration.
-fn generation_config(config: &MonomythConfig) -> GenerationConfig {
+pub(crate) fn generation_config(config: &MonomythConfig) -> GenerationConfig {
     GenerationConfig {
         fork_chance_permille: *config.generation.fork_chance_permille.get(),
         beats_per_stage_min: *config.generation.beats_per_stage_min.get(),
