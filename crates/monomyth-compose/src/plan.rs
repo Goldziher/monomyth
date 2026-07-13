@@ -148,6 +148,9 @@ mod tests {
     #[test]
     fn should_return_empty_outline_error_when_spine_is_empty() {
         let world = world_with_empty_structure();
-        assert_eq!(plan(&world), Err(ComposeError::EmptyOutline));
+        assert!(
+            matches!(plan(&world), Err(ComposeError::EmptyOutline)),
+            "an empty spine must fail with ComposeError::EmptyOutline"
+        );
     }
 }

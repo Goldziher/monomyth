@@ -10,12 +10,16 @@ authors.workspace = true
 [dependencies]
 monomyth-core = { workspace = true }
 monomyth-frameworks = { workspace = true }
+monomyth-llm = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 monomyth-gen = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true
