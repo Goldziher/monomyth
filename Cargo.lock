@@ -2805,6 +2805,7 @@ name = "monomyth-compose"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dotenvy",
  "monomyth-core",
  "monomyth-eval",
  "monomyth-frameworks",
