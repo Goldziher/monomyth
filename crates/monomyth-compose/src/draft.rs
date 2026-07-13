@@ -15,7 +15,7 @@ use monomyth_llm::Llm;
 
 use crate::assemble::{LongFormDoc, SectionDraft, assemble};
 use crate::error::ComposeError;
-use crate::outline::{Outline, OutlineSection};
+use crate::outline::Outline;
 use crate::plan::plan;
 use crate::revise::draft_and_revise_section;
 use crate::settings::ComposeSettings;
@@ -23,39 +23,6 @@ use crate::settings::ComposeSettings;
 /// The separator threading previously-drafted sections' prose into the next
 /// section's `prior`, mirroring [`crate::assemble::assemble`]'s section separator.
 const PRIOR_SEPARATOR: &str = "\n\n";
-
-/// Build the per-section drafting instruction from a section's stage and
-/// synopsis hint.
-///
-/// Kept as a simple, documented builder rather than a template abstraction — this
-/// slice has exactly one prompt role (narrate this section). A template layer
-/// arrives once the Draft phase needs multiple distinct roles (e.g. draft vs.
-/// revise), per [`crate::generate`]'s prompt-role note.
-pub(crate) fn section_instruction(section: &OutlineSection) -> String {
-    format!(
-        "Narrate the \"{stage}\" beat of the story. Grounding hint: {hint}",
-        stage = section.stage.info().name,
-        hint = section.synopsis_hint,
-    )
-}
-
-/// Build the retrieval query text for `section`'s reference-grounding lookup.
-///
-/// Deliberately separate from [`section_instruction`]: a retrieval query is a
-/// short, keyword-ish string aimed at a vector search, while a drafting
-/// instruction is a narration directive aimed at the model. The two happen to
-/// share the same two source fields today, but they are conceptually distinct
-/// prompt roles, so this stays its own helper rather than being folded into
-/// `section_instruction` — extracting a shared builder is deferred until the
-/// two genuinely diverge (they already read differently: no quoting, no
-/// imperative framing).
-pub(crate) fn grounding_query(section: &OutlineSection) -> String {
-    format!(
-        "{stage}: {hint}",
-        stage = section.stage.info().name,
-        hint = section.synopsis_hint,
-    )
-}
 
 /// Draft every section of `outline` in spine order, threading each section's
 /// prose into the `prior` of the sections that follow it.

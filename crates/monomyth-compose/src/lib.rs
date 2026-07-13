@@ -30,6 +30,7 @@ pub mod error;
 pub mod generate;
 pub mod outline;
 pub mod plan;
+pub mod prompts;
 pub mod revise;
 pub mod settings;
 

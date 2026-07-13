@@ -14,10 +14,10 @@ use monomyth_knowledge::{Knowledge, KnowledgeQuery};
 use monomyth_llm::Llm;
 
 use crate::assemble::SectionDraft;
-use crate::draft::{grounding_query, section_instruction};
 use crate::error::ComposeError;
 use crate::generate::generate_long_form;
 use crate::outline::OutlineSection;
+use crate::prompts::{grounding_query, section_draft_prompt, section_revise_prompt};
 use crate::settings::ComposeSettings;
 
 /// The elementwise mean of `vectors`.
@@ -47,27 +47,6 @@ fn mean_vector(vectors: &[Vec<f32>]) -> Option<Vec<f32>> {
         *slot /= count;
     }
     Some(sum)
-}
-
-/// Build the instruction for a revision attempt: tell the model the previous
-/// attempt fell short of the grounding-faithfulness threshold and to stay
-/// closer to the grounding this time.
-///
-/// Kept as a simple, documented `format!` builder rather than a template
-/// abstraction. With two prompt roles now (draft, revise), a WS-E
-/// prompt-template layer is warranted as a follow-up — not built here.
-fn revise_instruction(
-    section: &OutlineSection,
-    previous: &str,
-    score: f64,
-    threshold: f64,
-) -> String {
-    format!(
-        "{base}\n\nThe previous attempt scored {score:.3} against the grounding-faithfulness \
-         threshold of {threshold:.3} and fell short. Revise the prose so it stays closer to the \
-         grounding passages while still narrating the same beat. Previous attempt:\n{previous}",
-        base = section_instruction(section),
-    )
 }
 
 /// One scored drafting attempt for a section: its text and its cosine score
@@ -130,7 +109,7 @@ async fn draft_single_unscored(
     prior: &str,
     settings: &ComposeSettings,
 ) -> Result<SectionDraft, ComposeError> {
-    let instruction = section_instruction(section);
+    let instruction = section_draft_prompt(section);
     let text = generate_long_form(llm, &instruction, grounding, prior, settings.max_turns).await?;
     Ok(SectionDraft {
         node_id: section.node_id,
@@ -156,8 +135,8 @@ async fn revise_loop(
 
     for _iteration in 0..=settings.max_revise_iterations {
         let instruction = match &best {
-            None => section_instruction(section),
-            Some(previous) => revise_instruction(
+            None => section_draft_prompt(section),
+            Some(previous) => section_revise_prompt(
                 section,
                 &previous.text,
                 previous.score,

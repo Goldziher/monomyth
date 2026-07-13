@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ComposeError;
+use crate::prompts;
 
 /// The `schemars`/`Llm::generate` schema name for [`Continuation`].
 const CONTINUATION_SCHEMA_NAME: &str = "compose_continuation";
@@ -29,10 +30,8 @@ pub const DEFAULT_MAX_TURNS: usize = 5;
 /// One turn's model output: a chunk of prose plus a signal for whether the
 /// section is finished.
 ///
-/// This is the sole prompt role this slice has (a single "continue the prose"
-/// instruction), so no template abstraction is introduced yet — that arrives
-/// once the Draft phase needs multiple distinct roles (e.g. outline-to-prose
-/// vs. revise) in a later slice.
+/// The prompt sent for each turn is built by [`crate::prompts::continuation_prompt`]
+/// (prompt role [`crate::prompts::PromptRole::Continuation`]).
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Continuation {
     /// The prose generated this turn, to be appended to the accumulated text.
@@ -71,7 +70,7 @@ pub async fn generate_long_form(
 
     let mut accumulated = String::new();
     for _turn in 0..max_turns {
-        let prompt = build_prompt(instruction, grounding, prior, &accumulated);
+        let prompt = prompts::continuation_prompt(instruction, grounding, prior, &accumulated);
         let Generated { value, .. } = llm
             .generate::<Continuation>(&prompt, CONTINUATION_SCHEMA_NAME)
             .await?;
@@ -93,55 +92,6 @@ fn append_turn(accumulated: &mut String, turn_text: &str) {
         accumulated.push_str("\n\n");
     }
     accumulated.push_str(turn_text);
-}
-
-/// Build the prompt for one turn: the instruction, the grounding passages
-/// (labelled and joined), and the prose accumulated so far.
-///
-/// Kept as a simple, documented private helper rather than a template
-/// abstraction — this slice has exactly one prompt role. A template
-/// abstraction arrives once the Draft phase needs multiple distinct roles.
-fn build_prompt(
-    instruction: &str,
-    grounding: &[String],
-    prior: &str,
-    generated_so_far: &str,
-) -> String {
-    use std::fmt::Write as _;
-
-    let mut prompt = String::new();
-    let _ = writeln!(prompt, "Instruction: {instruction}");
-
-    if !grounding.is_empty() {
-        prompt.push_str("\nGrounding:\n");
-        for passage in grounding {
-            let _ = writeln!(prompt, "- {passage}");
-        }
-    }
-
-    let so_far = combined_prose(prior, generated_so_far);
-    if so_far.is_empty() {
-        prompt.push_str("\nProse so far: (none; this is the opening turn)\n");
-    } else {
-        let _ = writeln!(prompt, "\nProse so far:\n{so_far}");
-    }
-
-    prompt.push_str(
-        "\nContinue the prose from where it leaves off. Report the new text you are adding \
-         (not the prose so far) and whether the section is now complete.",
-    );
-    prompt
-}
-
-/// Join `prior` and `generated_so_far` for display in the prompt, treating
-/// either half as optional.
-fn combined_prose(prior: &str, generated_so_far: &str) -> String {
-    match (prior.is_empty(), generated_so_far.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => generated_so_far.to_owned(),
-        (false, true) => prior.to_owned(),
-        (false, false) => format!("{prior}\n\n{generated_so_far}"),
-    }
 }
 
 #[cfg(test)]
