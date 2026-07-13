@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 monomyth-core = { workspace = true }
 monomyth-frameworks = { workspace = true }
+monomyth-knowledge = { workspace = true }
 monomyth-llm = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

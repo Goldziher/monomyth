@@ -2807,6 +2807,7 @@ dependencies = [
  "monomyth-core",
  "monomyth-frameworks",
  "monomyth-gen",
+ "monomyth-knowledge",
  "monomyth-llm",
  "schemars",
  "serde",

@@ -4,9 +4,11 @@
 //! composable spine. The multi-turn long-form generation primitive
 //! ([`crate::generate_long_form`]) adds two more: a caller misuse (asking for
 //! zero turns) and a wrapped [`LlmError`] from the underlying model call.
-//! Retrieval and revise-loop variants land with later slices, once those
-//! phases exist to fail — they are deliberately not added here.
+//! Draft's per-section reference-grounding retrieval adds a wrapped
+//! [`KnowledgeError`]. The revise-loop variant lands with a later slice, once
+//! that phase exists to fail — it is deliberately not added here.
 
+use monomyth_knowledge::KnowledgeError;
 use monomyth_llm::LlmError;
 use thiserror::Error;
 
@@ -16,7 +18,8 @@ use thiserror::Error;
 /// neither (it carries a [`monomyth_llm::BackendError`] and, on a parse
 /// failure, token usage — none of which are `Copy`, and a `BackendError`'s
 /// message-only equality would be a poor proxy for error identity, so `Eq` is
-/// dropped too).
+/// dropped too). [`ComposeError::Retrieval`] wraps [`KnowledgeError`], which is
+/// likewise neither.
 #[derive(Debug, Error)]
 pub enum ComposeError {
     /// The world's narrative spine has no nodes, so there is nothing to outline.
@@ -31,4 +34,8 @@ pub enum ComposeError {
     /// The underlying LLM call failed while generating long-form prose.
     #[error("generating long-form prose: {0}")]
     Generation(#[from] LlmError),
+
+    /// Retrieving reference-path grounding for a section failed.
+    #[error("retrieving reference grounding for a section: {0}")]
+    Retrieval(#[from] KnowledgeError),
 }
