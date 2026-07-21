@@ -7,8 +7,8 @@
 use std::io::{self, Write};
 
 use anyhow::{Context, Result};
+use monomyth_contracts::Renderer;
 use monomyth_core::{Action, Content, Direction, EntityId, ExamineTarget, ItemId, World, apply};
-use monomyth_text::{render_choices, render_events, render_intro, render_location};
 
 /// A parsed line: either an engine action to apply, or a request to quit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,16 +80,20 @@ pub(crate) fn parse_command(line: &str, world: &World) -> Result<PlayCommand, St
 
 /// Run the interactive loop over stdin until `quit`/`exit` or end of input.
 ///
+/// `renderer` is the medium selected at the composition root (ADR-0020); this
+/// loop never branches on medium itself, only calling the trait object's
+/// methods.
+///
 /// A parse error or [`monomyth_core::ActionError`] prints a message and continues;
 /// only an IO failure aborts.
 ///
 /// # Errors
 ///
 /// Fails only if reading a line from stdin fails.
-pub(crate) fn run_play(mut world: World) -> Result<()> {
-    println!("{}\n", render_intro(&world));
-    println!("{}", render_location(&world));
-    println!("\n{}", render_choices(&world));
+pub(crate) fn run_play(mut world: World, renderer: &dyn Renderer) -> Result<()> {
+    println!("{}\n", renderer.intro(&world));
+    println!("{}", renderer.location(&world));
+    println!("\n{}", renderer.choices(&world));
 
     let stdin = io::stdin();
     let mut line = String::new();
@@ -107,12 +111,12 @@ pub(crate) fn run_play(mut world: World) -> Result<()> {
             Ok(PlayCommand::Quit) => break,
             Ok(PlayCommand::Act(action)) => match apply(&mut world, action) {
                 Ok(events) => {
-                    let rendered = render_events(&events, &world);
-                    if !rendered.is_empty() {
-                        println!("{rendered}");
+                    let output = renderer.events(&events, &world);
+                    if !output.is_empty() {
+                        println!("{output}");
                     }
-                    println!("\n{}", render_location(&world));
-                    println!("\n{}", render_choices(&world));
+                    println!("\n{}", renderer.location(&world));
+                    println!("\n{}", renderer.choices(&world));
                 }
                 Err(error) => println!("{error}"),
             },
@@ -198,8 +202,8 @@ fn resolve_choice(argument: &str, world: &World) -> Result<PlayCommand, String> 
 
 /// Resolve the 1-based choice `index` at the cursor to an [`Action::Choose`].
 ///
-/// Numbering matches the renderer's `render_choices`, so what the player sees they
-/// can type. Index 0 and out-of-range indices report an error.
+/// Numbering matches the active [`Renderer`]'s `choices` output, so what the
+/// player sees they can type. Index 0 and out-of-range indices report an error.
 fn resolve_choice_index(index: usize, world: &World) -> Result<PlayCommand, String> {
     let choices = world
         .story

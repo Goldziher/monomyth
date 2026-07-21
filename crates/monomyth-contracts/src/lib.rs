@@ -16,15 +16,19 @@
 //!   distribution over one framework axis (e.g. a Campbell stage).
 //! - [`Extractor`] — the P-TRANSFORM inverse of generation (ADR-0018): derive a
 //!   valid [`World`](monomyth_core::World) from input.
+//! - [`Renderer`] — the P-RENDER seam (ADR-0020): turn a [`World`] into
+//!   medium-specific output, without a caller depending on any one frontend crate.
 //!
 //! Each trait is the seam its ADR calls for; concrete implementations (the
-//! RAG-softmax classifier, the structure-preserving extractor) live in
-//! `monomyth-extract`, and the retrieval adapter over `monomyth-knowledge` lives
-//! with its consumer, never here — this crate stays free of every heavy backend.
+//! RAG-softmax classifier, the structure-preserving extractor, the prose and
+//! terse renderers) live in their own crates (`monomyth-extract`,
+//! `monomyth-text`, `monomyth-render-terse`, …), and the retrieval adapter over
+//! `monomyth-knowledge` lives with its consumer, never here — this crate stays
+//! free of every heavy backend.
 
 use async_trait::async_trait;
 
-use monomyth_core::{ScoredOne, World};
+use monomyth_core::{Event, ScoredOne, World};
 
 /// One scored retrieval hit: the relevance the backend assigned to a passage for
 /// a query.
@@ -138,4 +142,50 @@ pub trait Extractor: Send + Sync {
     /// [`ExtractError`] if classification fails or the result is not a valid
     /// world.
     async fn extract(&self, skeleton: &World) -> Result<World, ExtractError>;
+}
+
+/// The P-RENDER seam (ADR-0020): turn a [`World`] and its [`Event`]s into
+/// medium-specific output — prose, a structured game format, `LitRPG`, detective
+/// fiction, or anything else selected by config.
+///
+/// A `Renderer` implementation is a peer over the same contract, not a special
+/// case of another one: `monomyth-text`'s prose renderer and a leaner medium
+/// (e.g. `monomyth-render-terse`) both implement this trait directly, and the
+/// composition root (`monomyth-cli`, a future launcher) picks one by
+/// configuration, never by a hard-coded medium branch anywhere else. Rendering
+/// is synchronous and pure — no IO, no network, no async runtime — because it is
+/// a deterministic projection of the already-materialized [`World`], unlike
+/// [`PassageRetriever`]/[`Classifier`]/[`Extractor`], which cross an IO or model
+/// boundary.
+///
+/// # Genre-free by design
+///
+/// This trait takes **no** `monomyth-genre`/`monomyth-config` type. Medium
+/// selection happens once, at the composition root, by constructing the chosen
+/// `Box<dyn Renderer>`; the trait itself only ever sees the pure contract
+/// (`World`/`Event`). This keeps `monomyth-contracts` free of an edge onto
+/// `monomyth-genre` — mirroring how [`Extractor`] takes only a [`World`] and
+/// leaves config/genre wiring to its caller — and it is what makes the "no medium
+/// branch outside the composition root" property checkable: a `Renderer` impl
+/// cannot special-case a genre from inside the trait method, because the genre
+/// never crosses the seam.
+pub trait Renderer: Send + Sync {
+    /// Render the world's introduction banner (title, seed, or equivalent).
+    fn intro(&self, world: &World) -> String;
+
+    /// Render the player's current location.
+    fn location(&self, world: &World) -> String;
+
+    /// Render a single [`Event`] as one line of medium-specific output.
+    fn event(&self, event: &Event, world: &World) -> String;
+
+    /// Render a slice of [`Event`]s, in order.
+    fn events(&self, events: &[Event], world: &World) -> String;
+
+    /// Render the branching narrative structure: the spine, fork points, and
+    /// endings.
+    fn structure(&self, world: &World) -> String;
+
+    /// Render the choices open at the current narrative cursor.
+    fn choices(&self, world: &World) -> String;
 }

@@ -9,14 +9,23 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use monomyth_config::{ConfigResolver, ModelRole, MonomythConfig, RuntimeOverrides};
+use monomyth_contracts::Renderer;
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
 use monomyth_gen::{ContentContext, GenerationConfig, Generator};
 use monomyth_genre::GenreProfile;
 use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
 use monomyth_llm::{BackendOptions, Llm};
-use monomyth_text::{render_intro, render_location, render_structure};
+use monomyth_render_terse::TerseRenderer;
+use monomyth_text::TextRenderer;
 use time::OffsetDateTime;
 use time::macros::format_description;
+
+/// The `render.medium` string that selects `monomyth-render-terse`'s
+/// [`TerseRenderer`]. Any other value (including an unrecognized one) selects
+/// `monomyth-text`'s [`TextRenderer`] — the prose medium is the fallback,
+/// mirroring `GenreKind::parse`'s fallback-to-myth behavior rather than
+/// treating an unknown medium as a hard input-validation error.
+const RENDER_MEDIUM_TERSE: &str = "terse";
 
 /// Generate a world's structure from `seed` under the resolved generation `config`.
 ///
@@ -53,24 +62,39 @@ pub(crate) fn generation_config(config: &MonomythConfig) -> GenerationConfig {
     }
 }
 
-/// Resolve the workspace configuration and project the generation knobs the
-/// `play` seed path consumes.
+/// Resolve the full workspace configuration from discovered files and defaults.
 ///
-/// `play` exposes no generation flags, so there are no runtime overrides — the
-/// result is the file-and-default resolution `gen` would use for the same seed,
-/// which is what keeps a `play`-from-seed world identical to the `gen`-from-seed
-/// world it replays.
+/// `play` and `edit` project this into the pieces they need
+/// ([`generation_config`] and [`build_renderer`]); `play` exposes no generation
+/// flags, so there are no runtime overrides — the result is the file-and-default
+/// resolution `gen` would use for the same seed, which is what keeps a
+/// `play`-from-seed world identical to the `gen`-from-seed world it replays.
 ///
 /// # Errors
 ///
 /// Fails if a discovered config file cannot be read/parsed, or resolves to an
 /// out-of-range value.
-pub(crate) fn resolve_generation_config() -> Result<GenerationConfig> {
-    let config = ConfigResolver::discover()
+pub(crate) fn resolve_config() -> Result<MonomythConfig> {
+    ConfigResolver::discover()
         .context("resolving configuration")?
         .resolve()
-        .context("validating configuration")?;
-    Ok(generation_config(&config))
+        .context("validating configuration")
+}
+
+/// Build the `Box<dyn Renderer>` the composition root selects by
+/// `config.render.medium` (ADR-0020, the P-RENDER plane): `"terse"` selects
+/// `monomyth-render-terse`'s [`TerseRenderer`], anything else (including an
+/// unrecognized medium) selects `monomyth-text`'s [`TextRenderer`].
+///
+/// This is the one place the layered `monomyth-config` types cross into a
+/// concrete renderer crate — every call site downstream (`gen`, `play`, `edit`)
+/// holds only the resulting trait object and never branches on medium itself.
+#[must_use]
+pub(crate) fn build_renderer(config: &MonomythConfig) -> Box<dyn Renderer> {
+    match config.render.medium.get().as_str() {
+        RENDER_MEDIUM_TERSE => Box::new(TerseRenderer),
+        _ => Box::new(TextRenderer),
+    }
 }
 
 /// Handle `gen`: build structure, optionally fill content, render, and serialize.
@@ -98,6 +122,7 @@ pub(crate) async fn run_gen(
         })
         .resolve()
         .context("validating configuration")?;
+    let renderer = build_renderer(&config);
     let generator = Generator::with_config(&generation_config(&config));
     let mut world = generator
         .generate_structure(seed)
@@ -123,9 +148,9 @@ pub(crate) async fn run_gen(
             .context("filling world content")?;
     }
 
-    println!("{}\n", render_intro(&world));
-    println!("{}\n", render_location(&world));
-    println!("{}", render_structure(&world));
+    println!("{}\n", renderer.intro(&world));
+    println!("{}\n", renderer.location(&world));
+    println!("{}", renderer.structure(&world));
 
     let serialized = serde_json::to_string_pretty(&world).context("serializing the world")?;
     match out {
@@ -173,7 +198,12 @@ pub(crate) fn apply_edit_script(
 ///
 /// Fails if the world or script cannot be read or parsed, if an edit is rejected
 /// (leaving the world untouched), or if serialization or writing the output fails.
-pub(crate) fn run_edit(world_path: &Path, script_path: &Path, out: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run_edit(
+    world_path: &Path,
+    script_path: &Path,
+    out: Option<PathBuf>,
+    renderer: &dyn Renderer,
+) -> Result<()> {
     let world_json = std::fs::read_to_string(world_path)
         .with_context(|| format!("reading world file {}", world_path.display()))?;
     let mut world = World::from_json_checked(&world_json)
@@ -197,7 +227,7 @@ pub(crate) fn run_edit(world_path: &Path, script_path: &Path, out: Option<PathBu
             eprintln!("  added node {id:?}");
         }
     }
-    eprintln!("\n{}", render_structure(&world));
+    eprintln!("\n{}", renderer.structure(&world));
 
     let serialized =
         serde_json::to_string_pretty(&world).context("serializing the edited world")?;
@@ -505,13 +535,14 @@ mod tests {
     use std::path::Path;
 
     use monomyth_core::NarrativeEdit;
+    use monomyth_core::doc_support::single_room_world;
 
     use monomyth_config::ConfigResolver;
     use monomyth_gen::{GenerationConfig, Generator};
 
     use super::{
-        apply_edit_script, build_ingest_input, content_checksum, generate_world, generation_config,
-        load_play_world, resolve_text,
+        apply_edit_script, build_ingest_input, build_renderer, content_checksum, generate_world,
+        generation_config, load_play_world, resolve_text,
     };
 
     #[test]
@@ -660,6 +691,49 @@ mod tests {
             Some(content_checksum("some myth text").as_str()),
             "the stamped checksum must be the sha256 of the ingested text"
         );
+    }
+
+    #[test]
+    fn build_renderer_selects_prose_by_default() {
+        let config = ConfigResolver::defaults()
+            .resolve()
+            .expect("defaults validate");
+        let renderer = build_renderer(&config);
+        let world = single_room_world();
+        assert_eq!(renderer.intro(&world), "[an untitled world]\n\nSeed: 0");
+    }
+
+    #[test]
+    fn build_renderer_selects_terse_medium_from_config() {
+        let path = std::env::temp_dir().join("monomyth-cli-test-render-terse.toml");
+        std::fs::write(&path, "[render]\nmedium = \"terse\"\n").expect("write temp config");
+        let config = ConfigResolver::discover_from(None, None, Some(&path))
+            .expect("valid toml")
+            .resolve()
+            .expect("in-range config validates");
+        std::fs::remove_file(&path).ok();
+
+        let renderer = build_renderer(&config);
+        let world = single_room_world();
+        assert_eq!(
+            renderer.intro(&world),
+            "title: [an untitled world]\nseed: 0"
+        );
+    }
+
+    #[test]
+    fn build_renderer_falls_back_to_prose_for_an_unrecognized_medium() {
+        let path = std::env::temp_dir().join("monomyth-cli-test-render-unknown.toml");
+        std::fs::write(&path, "[render]\nmedium = \"space-opera\"\n").expect("write temp config");
+        let config = ConfigResolver::discover_from(None, None, Some(&path))
+            .expect("valid toml")
+            .resolve()
+            .expect("in-range config validates");
+        std::fs::remove_file(&path).ok();
+
+        let renderer = build_renderer(&config);
+        let world = single_room_world();
+        assert_eq!(renderer.intro(&world), "[an untitled world]\n\nSeed: 0");
     }
 
     #[test]

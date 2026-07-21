@@ -2771,6 +2771,7 @@ dependencies = [
  "monomyth-genre",
  "monomyth-knowledge",
  "monomyth-llm",
+ "monomyth-render-terse",
  "monomyth-synthesis",
  "monomyth-text",
  "serde",
@@ -2937,6 +2938,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "monomyth-render-terse"
+version = "0.1.0"
+dependencies = [
+ "monomyth-contracts",
+ "monomyth-core",
+ "monomyth-frameworks",
+]
+
+[[package]]
 name = "monomyth-synthesis"
 version = "0.1.0"
 dependencies = [
@@ -2959,6 +2969,7 @@ dependencies = [
 name = "monomyth-text"
 version = "0.1.0"
 dependencies = [
+ "monomyth-contracts",
  "monomyth-core",
  "monomyth-frameworks",
 ]

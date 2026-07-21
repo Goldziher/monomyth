@@ -26,6 +26,7 @@ monomyth-gen = { workspace = true }
 monomyth-genre = { workspace = true }
 monomyth-knowledge = { workspace = true, features = ["acquire"] }
 monomyth-llm = { workspace = true }
+monomyth-render-terse = { workspace = true }
 monomyth-synthesis = { workspace = true }
 monomyth-text = { workspace = true }
 serde = { workspace = true }

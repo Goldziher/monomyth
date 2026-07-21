@@ -30,9 +30,9 @@
 //!
 //! Carried today: the `[generation]` (fork probability + beat/map/item/cast bounds),
 //! `[models]` (per-task routing), `[synthesis]` (judge-loop knobs), `[compose]`
-//! (long-form composition knobs), and `[genre]` (content-fill targeting, ADR-0017)
-//! sections. Later slices add the `[retrieval]`, `[paths]`, and `[knowledge]`
-//! sections the same way.
+//! (long-form composition knobs), `[genre]` (content-fill targeting, ADR-0017),
+//! and `[render]` (renderer medium selection, ADR-0020) sections. Later slices
+//! add the `[retrieval]`, `[paths]`, and `[knowledge]` sections the same way.
 
 #![forbid(unsafe_code)]
 
@@ -46,5 +46,6 @@ pub use layered::{LayerSource, Layered};
 pub use resolver::{ConfigResolver, RuntimeOverrides};
 pub use schema::{
     GenerationSection, GenerationSettings, GenreSection, GenreSettings, ModelRole, ModelsSection,
-    ModelsSettings, MonomythConfig, MonomythConfigFile, SynthesisSection, SynthesisSettings,
+    ModelsSettings, MonomythConfig, MonomythConfigFile, RenderSection, RenderSettings,
+    SynthesisSection, SynthesisSettings,
 };

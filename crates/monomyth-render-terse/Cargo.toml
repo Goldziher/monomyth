@@ -1,6 +1,6 @@
 [package]
-name = "monomyth-text"
-description = "The text frontend: a pure, deterministic string renderer over the monomyth domain model."
+name = "monomyth-render-terse"
+description = "A minimal, structured Renderer impl over the monomyth domain model (ADR-0020)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -30,6 +30,7 @@ monomyth-gen = { path = "crates/monomyth-gen" }
 monomyth-genre = { path = "crates/monomyth-genre" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
 monomyth-llm = { path = "crates/monomyth-llm" }
+monomyth-render-terse = { path = "crates/monomyth-render-terse" }
 monomyth-synthesis = { path = "crates/monomyth-synthesis" }
 monomyth-text = { path = "crates/monomyth-text" }
 opendal = { version = "0.57.0", default-features = false, features = ["services-fs"] }

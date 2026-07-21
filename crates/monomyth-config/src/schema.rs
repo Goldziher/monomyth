@@ -105,6 +105,16 @@ const DEFAULT_GENRE_NAME: &str = "myth";
 /// at all.
 const DEFAULT_GENRE_GROUNDING_TOP_K: u32 = 4;
 
+/// The system default for `render.medium`: the prose frontend, i.e. the only
+/// renderer that existed before medium selection was configurable (ADR-0020).
+///
+/// `monomyth-config` does not depend on `monomyth-contracts` or any renderer
+/// crate, so the medium is a plain string here; the composition root
+/// (`monomyth-cli`) is the one place that maps it to a concrete
+/// `Box<dyn Renderer>`, mirroring how [`DEFAULT_GENRE_NAME`] is projected into a
+/// `monomyth-genre::GenreKind` outside this crate.
+const DEFAULT_RENDER_MEDIUM: &str = "prose";
+
 /// A per-task model role: which configured model a caller resolves via
 /// [`MonomythConfig::model_for`].
 ///
@@ -139,6 +149,8 @@ pub struct MonomythConfigFile {
     pub compose: ComposeSection,
     /// The `[genre]` table.
     pub genre: GenreSection,
+    /// The `[render]` table.
+    pub render: RenderSection,
 }
 
 /// The `[generation]` table as it appears on disk.
@@ -239,6 +251,23 @@ pub struct GenreSection {
     pub grounding_top_k: Option<u32>,
 }
 
+/// The `[render]` table as it appears on disk: which `Renderer` medium
+/// (`monomyth-contracts`'s P-RENDER seam, ADR-0020) the composition root
+/// selects, mirroring `[genre]`'s shape.
+///
+/// Kept as a plain string rather than an enum or a `monomyth-contracts`/renderer
+/// crate type, so `monomyth-config` never gains an edge onto `monomyth-contracts`
+/// or any renderer crate — the dependency runs the other way: the composition
+/// root reads this resolved string and constructs the concrete `Box<dyn
+/// Renderer>` from it.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RenderSection {
+    /// The renderer medium identifier (e.g. `"prose"`, `"terse"`) that selects a
+    /// `Box<dyn Renderer>` at the composition root. Absent → the system default.
+    pub medium: Option<String>,
+}
+
 /// The fully-resolved configuration: every value tagged with the [`Layered`] source
 /// that set it.
 #[derive(Clone, Debug)]
@@ -253,6 +282,8 @@ pub struct MonomythConfig {
     pub compose: ComposeConfigSettings,
     /// Resolved genre-targeting knobs.
     pub genre: GenreSettings,
+    /// Resolved renderer-medium selection.
+    pub render: RenderSettings,
 }
 
 /// Resolved narrative-generation knobs.
@@ -327,6 +358,13 @@ pub struct GenreSettings {
     pub grounding_top_k: Layered<u32>,
 }
 
+/// Resolved renderer-medium selection.
+#[derive(Clone, Debug)]
+pub struct RenderSettings {
+    /// Resolved renderer medium identifier (e.g. `"prose"`, `"terse"`).
+    pub medium: Layered<String>,
+}
+
 impl Default for MonomythConfig {
     fn default() -> Self {
         Self {
@@ -361,6 +399,9 @@ impl Default for MonomythConfig {
             genre: GenreSettings {
                 name: Layered::system_default(DEFAULT_GENRE_NAME.to_owned()),
                 grounding_top_k: Layered::system_default(DEFAULT_GENRE_GROUNDING_TOP_K),
+            },
+            render: RenderSettings {
+                medium: Layered::system_default(DEFAULT_RENDER_MEDIUM.to_owned()),
             },
         }
     }
@@ -519,6 +560,9 @@ impl MonomythConfig {
         self.genre
             .grounding_top_k
             .override_with(file.genre.grounding_top_k, from);
+        self.render
+            .medium
+            .override_with(file.render.medium.clone(), from);
     }
 }
 
@@ -530,8 +574,8 @@ mod tests {
         DEFAULT_COMPOSE_REVISE_THRESHOLD, DEFAULT_CONTENT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE,
         DEFAULT_GENRE_GROUNDING_TOP_K, DEFAULT_GENRE_NAME, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN,
         DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS,
-        DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL,
-        ModelRole, MonomythConfig, MonomythConfigFile,
+        DEFAULT_PER_QUERY_TOP_K, DEFAULT_RENDER_MEDIUM, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN,
+        DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
     };
     use crate::error::ConfigError;
     use crate::layered::LayerSource;
@@ -872,6 +916,32 @@ mod tests {
         assert!(
             matches!(error, ConfigError::Invalid { ref field, .. } if field == "genre.grounding_top_k"),
             "the error must name genre.grounding_top_k, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_render_medium() {
+        let config = MonomythConfig::default();
+        assert_eq!(config.render.medium.get(), DEFAULT_RENDER_MEDIUM);
+        assert_eq!(config.render.medium.source(), LayerSource::SystemDefault);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_render_medium_at_its_layer() {
+        let file: MonomythConfigFile =
+            toml::from_str("[render]\nmedium = \"terse\"\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(config.render.medium.get(), "terse");
+        assert_eq!(config.render.medium.source(), LayerSource::ProjectOverride);
+    }
+
+    #[test]
+    fn unknown_render_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> = toml::from_str("[render]\nmedum = \"terse\"\n");
+        assert!(
+            result.is_err(),
+            "a misspelled [render] key must be rejected"
         );
     }
 

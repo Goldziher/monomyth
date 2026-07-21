@@ -24,12 +24,22 @@
 //! let world = single_room_world();
 //! assert_eq!(render_intro(&world), "[an untitled world]\n\nSeed: 0");
 //! ```
+//!
+//! # The `Renderer` impl
+//!
+//! [`TextRenderer`] is this crate's [`Renderer`](monomyth_contracts::Renderer)
+//! impl (ADR-0020, the P-RENDER plane): a thin, zero-behavior-change wrapper
+//! that delegates each method to the free function above it. The free functions
+//! stay `pub` for existing callers; `TextRenderer` exists so the composition
+//! root can select this medium by config, behind the trait object, alongside
+//! other media.
 
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
+use monomyth_contracts::Renderer;
 use monomyth_core::{
     Content, Direction, EdgeKind, EntityId, Event, ItemId, Location, LocationId, NarrativeNodeId,
     NarrativeStructure, World,
@@ -343,8 +353,42 @@ fn entity_name(world: &World, id: EntityId) -> Cow<'_, str> {
         })
 }
 
+/// The text frontend's [`Renderer`] impl (ADR-0020): a unit struct whose methods
+/// each delegate to this crate's free `render_*` functions, so selecting the
+/// prose medium at the composition root is a matter of boxing this type behind
+/// `dyn Renderer` — no behavior differs from calling the free functions directly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextRenderer;
+
+impl Renderer for TextRenderer {
+    fn intro(&self, world: &World) -> String {
+        render_intro(world)
+    }
+
+    fn location(&self, world: &World) -> String {
+        render_location(world)
+    }
+
+    fn event(&self, event: &Event, world: &World) -> String {
+        render_event(event, world)
+    }
+
+    fn events(&self, events: &[Event], world: &World) -> String {
+        render_events(events, world)
+    }
+
+    fn structure(&self, world: &World) -> String {
+        render_structure(world)
+    }
+
+    fn choices(&self, world: &World) -> String {
+        render_choices(world)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use monomyth_contracts::Renderer;
     use monomyth_core::doc_support::single_room_world;
     use monomyth_core::{
         Content, ContentKind, ContentPrompt, Direction, Entity, EntityKind, Event, Item, Location,
@@ -352,7 +396,7 @@ mod tests {
     };
 
     use super::{
-        render_choices, render_event, render_events, render_intro, render_location,
+        TextRenderer, render_choices, render_event, render_events, render_intro, render_location,
         render_structure,
     };
 
@@ -652,5 +696,28 @@ mod tests {
 
         world.state.cursor = end;
         assert_eq!(render_choices(&world), "The story has reached an ending.");
+    }
+
+    #[test]
+    fn text_renderer_matches_the_free_functions_byte_for_byte() {
+        let world = filled_world();
+        let renderer = TextRenderer;
+
+        assert_eq!(renderer.intro(&world), render_intro(&world));
+        assert_eq!(renderer.location(&world), render_location(&world));
+        assert_eq!(renderer.structure(&world), render_structure(&world));
+        assert_eq!(renderer.choices(&world), render_choices(&world));
+
+        let event = Event::Moved {
+            from: world.player.location,
+            to: other_location(&world),
+        };
+        assert_eq!(renderer.event(&event, &world), render_event(&event, &world));
+
+        let events = [Event::Waited, Event::Waited];
+        assert_eq!(
+            renderer.events(&events, &world),
+            render_events(&events, &world)
+        );
     }
 }
