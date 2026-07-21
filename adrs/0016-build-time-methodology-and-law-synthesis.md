@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-11
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -84,7 +84,11 @@ Reference ingest writes exclusively to the reference collection — a test asser
 document is unreachable through the ship-only retrieval path (`KnowledgeQuery::surfaceable`/
 `is_surfaceable`). Synthesized artifacts carry `Tier::System` and pass the existing ledger-invariant
 tests (no non-`ship` tier in the `ship` namespace). Each synthesized artifact has a recorded human
-reviewer before it is committed — enforced by process/code review, not currently automated.
+reviewer before it is committed: `monomyth_frameworks::load_law` refuses an empty
+`synthesis.reviewed_by` (`LawError::MissingReviewer`), and the `synthesize promote` CLI command is the
+gated path that stamps the reviewer, re-runs the anti-leak gate on the reviewed candidate, validates
+via `load_law`, and only then writes the artifact into `artifacts/laws/` and registers it — refusing
+an empty reviewer, a verbatim overlap, or an already-promoted law.
 
 ## Pros and Cons of the Options
 

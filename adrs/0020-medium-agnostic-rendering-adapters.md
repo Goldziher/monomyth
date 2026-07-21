@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-11
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -65,11 +65,16 @@ Rendering stays a leaf: nothing downstream of `Renderer` feeds back into P-CONTR
 
 ### Confirmation
 
-Two `Renderer` implementations (`monomyth-text` and a second, minimal medium) run over the same
-serialized `World`, selected purely by config — no code path branches on medium outside the
-composition root. A `cargo tree` / code-review check confirms renderer crates depend only on
-`monomyth-core`'s public API (plus `monomyth-contracts`/`monomyth-config`/`monomyth-genre` as needed)
-and never on each other.
+Realized: the `Renderer` seam lives in `monomyth-contracts` (synchronous and genre-free — medium
+selection stays at the composition root, so contracts gains no `-genre` edge; see ADR-0028 for the
+inverse lesson). Two impls run over the same serialized `World`: `monomyth-text`'s `TextRenderer` (a
+thin, byte-identical wrapper over the existing `render_*` free fns — a test asserts the equality) and
+`monomyth-render-terse`'s `TerseRenderer`, a second minimal medium. A `[render].medium` config value
+selects between them at the CLI composition root (`build_renderer` in `monomyth-cli`), which is the
+only place any code branches on medium — `gen`/`play`/`edit` hold only a `Box<dyn Renderer>`. The
+renderer crates depend on `monomyth-core` + `monomyth-contracts` only and never on each other;
+`monomyth-core` gains no inbound edge (`crates/monomyth-core/tests/boundaries.rs`), and the
+determinism goldens are unchanged (rendering is outside the RNG path).
 
 ## Pros and Cons of the Options
 
