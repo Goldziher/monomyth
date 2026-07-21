@@ -28,6 +28,16 @@ ignore = [
     # Unmaintained transitive deps pulled through xberg's tokenizers/hf-hub/indicatif chain.
     "RUSTSEC-2024-0436", # paste — no longer maintained
     "RUSTSEC-2025-0119", # number_prefix — unmaintained
+    # quick-xml DoS advisories via opendal-core (O(N²) attribute scan / unbounded namespace
+    # allocation on untrusted XML). opendal-core pulls quick-xml unconditionally, so it is in the
+    # graph, but the vulnerable parsers are called only by opendal's XML object-store services
+    # (S3/GCS/Azure list responses) — reachable ONLY via the reserved acquire-s3/gcs/azblob
+    # features. The default and `--features acquire` builds enable only `services-fs`, which never
+    # parses XML, so no runtime path reaches quick-xml. No fix satisfies opendal-core's `^0.39.3`
+    # requirement (patched in quick-xml >= 0.41.0) and 0.57.0 is the latest opendal. Revisit when
+    # opendal bumps quick-xml or before any cloud acquire feature is wired up.
+    "RUSTSEC-2026-0194", # quick-xml — O(N²) duplicate-attribute check
+    "RUSTSEC-2026-0195", # quick-xml — unbounded namespace-declaration allocation
     # NOTE: the rsa "Marvin Attack" advisory (RUSTSEC-2023-0071) is deliberately NOT listed here.
     # cargo-deny's feature-aware graph resolves the reserved acquire-s3/gcs/azblob cloud features
     # as off, so rsa never enters the graph it checks ("no crate matched" if listed). It reaches

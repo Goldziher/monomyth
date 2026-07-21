@@ -90,7 +90,8 @@ impl BlobStore {
             .map_err(|source| AcquireError::Cache {
                 path: root_display,
                 source,
-            })?;
+            })?
+            .finish();
         Ok(Self { operator })
     }
 
