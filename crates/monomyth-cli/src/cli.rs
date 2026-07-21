@@ -20,6 +20,10 @@ const DEFAULT_EXTRACTOR: &str = "rag-softmax";
 /// Deliberately outside `artifacts/`: a candidate here is PRE-REVIEW and must
 /// never be mistaken for a committed, ship-safe law artifact (ADR-0016).
 const DEFAULT_CANDIDATES_DIR: &str = "./synthesis/candidates";
+/// Default directory holding committed, human-reviewed law artifacts and
+/// their index (ADR-0016). The only directory `synthesize promote` may
+/// legitimately write into.
+const DEFAULT_LAWS_DIR: &str = "./artifacts/laws";
 
 /// monomyth: an adventure generation engine, composed into a playable text slice.
 #[derive(Debug, Parser)]
@@ -167,7 +171,9 @@ pub(crate) enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Draft a pre-review candidate law artifact from reference-namespace priors (ADR-0016).
+    /// Draft or promote a structural law artifact (ADR-0016): `law` drafts a
+    /// pre-review candidate from reference-namespace priors; `promote`
+    /// promotes a human-reviewed candidate into `artifacts/laws/`.
     Synthesize {
         #[command(subcommand)]
         command: SynthesizeCommand,
@@ -225,6 +231,26 @@ pub(crate) enum SynthesizeCommand {
         /// Directory to write the candidate into (must NOT be under artifacts/).
         #[arg(long, default_value = DEFAULT_CANDIDATES_DIR)]
         out: PathBuf,
+    },
+
+    /// Promote a human-reviewed candidate law into `artifacts/laws/` (ADR-0016).
+    ///
+    /// Stamps `synthesis.reviewed_by`, re-runs the anti-leak gate against the
+    /// candidate's recorded review-context sidecar, validates the stamped
+    /// result via `monomyth_frameworks::load_law`, and only then writes the
+    /// promoted artifact and registers it in the laws index. Refuses a law id
+    /// that is already promoted.
+    Promote {
+        /// Path to the pre-review candidate artifact (e.g. `synthesis/candidates/foo.json`).
+        candidate: PathBuf,
+
+        /// Identity of the human reviewer approving this candidate for commit.
+        #[arg(long)]
+        reviewed_by: String,
+
+        /// Directory holding the committed law artifacts and their index.
+        #[arg(long, default_value = DEFAULT_LAWS_DIR)]
+        laws_dir: PathBuf,
     },
 }
 

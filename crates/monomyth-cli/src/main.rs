@@ -93,6 +93,15 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
+            SynthesizeCommand::Promote {
+                candidate,
+                reviewed_by,
+                laws_dir,
+            } => synthesize::run_synthesize_promote(synthesize::SynthesizePromoteArgs {
+                candidate,
+                reviewed_by,
+                laws_dir,
+            }),
         },
         Command::Compose { seed, out, json } => {
             compose::run_compose(seed, out, json, cli.model, &cli.db).await

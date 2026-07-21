@@ -1,25 +1,32 @@
-//! The `synthesize law` subcommand: draft a pre-review candidate law artifact
-//! from reference-namespace priors (ADR-0016 Phase 2d).
+//! The `synthesize law` and `synthesize promote` subcommands (ADR-0016 Phases
+//! 2d/2e).
 //!
 //! `monomyth-synthesis::draft_law` produces a [`monomyth_synthesis::DraftedLaw`]
 //! whose `artifact.synthesis.reviewed_by` is always empty — structurally
 //! incapable of loading via [`monomyth_frameworks::load_law`] until a human
-//! reviews it. This module's whole job is to make that review boundary
+//! reviews it. `synthesize law`'s whole job is to make that review boundary
 //! impossible to miss: candidates are written to a gitignored `synthesis/`
 //! directory, never to `artifacts/`, and every run ends with a REVIEW-REQUIRED
-//! banner on stderr spelling out the promotion steps.
+//! banner on stderr pointing at `synthesize promote`.
+//!
+//! `synthesize promote` is the other half of that boundary: it stamps a
+//! human-supplied reviewer identity onto a candidate, re-runs the anti-leak
+//! gate (a human edit could reintroduce verbatim wording), validates the
+//! result via [`monomyth_frameworks::load_law`], and only then writes into
+//! `artifacts/laws/` — the one path in this module that is allowed to.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use monomyth_config::{ConfigResolver, ModelRole, RuntimeOverrides};
+use monomyth_frameworks::{LawArtifact, load_law};
 use monomyth_knowledge::Knowledge;
 use monomyth_llm::{BackendOptions, Llm};
 use monomyth_synthesis::{
     CoverageFramework, DraftRequest, DraftedLaw, JudgeVerdict, LoopConfig, PreScore,
-    coverage_sub_queries, draft_law,
+    coverage_sub_queries, draft_law, verify_no_verbatim,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::macros::format_description;
 
@@ -124,13 +131,14 @@ fn review_required_banner(
          \n\
          To promote this candidate:\n\
          1. Read the candidate and its .context.json; compare wording against the recorded \
-         sources.\n\
-         2. Edit wording as needed — the model's authority was the abstract idea only.\n\
-         3. Set synthesis.reviewed_by to your identity.\n\
-         4. Move the file into artifacts/laws/ and add an entry to artifacts/laws/index.json.\n\
-         5. Run the framework validator.\n",
+         sources, and edit wording as needed — the model's authority was the abstract idea \
+         only.\n\
+         2. Run `monomyth synthesize promote {} --reviewed-by <your identity>` — it re-runs \
+         the anti-leak gate, validates via monomyth_frameworks::load_law, and writes into \
+         artifacts/laws/ (updating its index).\n",
         artifact_path.display(),
         context_path.display(),
+        artifact_path.display(),
     )
 }
 
@@ -324,6 +332,267 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
     Ok(())
 }
 
+/// The subset of a written review-context sidecar's passages needed to
+/// re-run the anti-leak gate at promotion time.
+///
+/// Deliberately narrower than [`ReviewContext`]/[`ContextPassage`] (which are
+/// write-only, for `synthesize law`): unknown JSON fields are ignored on
+/// deserialize, so this reads a real sidecar without requiring every
+/// optional provenance field the writer emits (`verdict`, `pre_score`,
+/// `usage`, ...).
+#[derive(Debug, Deserialize)]
+struct SidecarPassage {
+    /// The declaring source id, named on an anti-leak hit.
+    source_id: String,
+    /// The full passage text the anti-leak gate re-checks the candidate against.
+    text: String,
+}
+
+/// The subset of a written review-context sidecar needed at promotion time.
+#[derive(Debug, Deserialize)]
+struct SidecarReviewContext {
+    /// The reference passages retrieved as grounding, in retrieval order.
+    passages: Vec<SidecarPassage>,
+}
+
+/// One entry of `<laws-dir>/index.json`'s `laws` array.
+#[derive(Debug, Deserialize, Serialize)]
+struct LawIndexEntry {
+    /// Machine-readable law id.
+    law: String,
+    /// Number of items in the law.
+    count: usize,
+    /// Shippability namespace (always `"ship"` for a valid promoted law).
+    namespace: String,
+    /// Licensing tier (always `"system"` for a valid promoted law).
+    tier: String,
+}
+
+/// `<laws-dir>/index.json`'s shape, mirroring `artifacts/frameworks/index.json`.
+#[derive(Debug, Deserialize, Serialize)]
+struct LawIndex {
+    /// Human-readable index title.
+    index: String,
+    /// Human-readable explanatory note.
+    note: String,
+    /// The registered laws, in registration order.
+    laws: Vec<LawIndexEntry>,
+}
+
+/// Reject an empty or whitespace-only reviewer identity.
+///
+/// This is the human-review gate itself: promotion must name a real person
+/// who reviewed the candidate's wording, not merely record that *a* value was
+/// passed.
+///
+/// # Errors
+///
+/// Fails if `reviewed_by` is empty or contains only whitespace.
+fn require_reviewer_identity(reviewed_by: &str) -> Result<()> {
+    if reviewed_by.trim().is_empty() {
+        bail!(
+            "--reviewed-by must not be empty or whitespace-only; promotion requires a human \
+             reviewer's identity"
+        );
+    }
+    Ok(())
+}
+
+/// Derive a candidate artifact's review-context sidecar path: `<stem>.context.json`
+/// beside the candidate itself, matching what `synthesize law` writes.
+///
+/// # Errors
+///
+/// Fails if `candidate_path` has no usable UTF-8 file stem.
+fn sidecar_path_for(candidate_path: &Path) -> Result<PathBuf> {
+    let stem = candidate_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .with_context(|| {
+            format!(
+                "candidate path {} has no usable file stem",
+                candidate_path.display()
+            )
+        })?;
+    let parent = candidate_path.parent().unwrap_or_else(|| Path::new(""));
+    Ok(parent.join(format!("{stem}.context.json")))
+}
+
+/// Read and parse a candidate artifact as a [`LawArtifact`].
+///
+/// # Errors
+///
+/// Fails if `candidate_path` cannot be read or does not parse as a [`LawArtifact`].
+fn read_candidate_artifact(candidate_path: &Path) -> Result<LawArtifact> {
+    let json = std::fs::read_to_string(candidate_path)
+        .with_context(|| format!("reading candidate artifact {}", candidate_path.display()))?;
+    serde_json::from_str(&json).with_context(|| {
+        format!(
+            "parsing candidate artifact {} as a law artifact",
+            candidate_path.display()
+        )
+    })
+}
+
+/// Read and parse a candidate's review-context sidecar.
+///
+/// # Errors
+///
+/// Fails if `sidecar_path` cannot be read or does not parse as a [`SidecarReviewContext`].
+fn read_sidecar_context(sidecar_path: &Path) -> Result<SidecarReviewContext> {
+    let json = std::fs::read_to_string(sidecar_path)
+        .with_context(|| format!("reading review context {}", sidecar_path.display()))?;
+    serde_json::from_str(&json)
+        .with_context(|| format!("parsing review context {}", sidecar_path.display()))
+}
+
+/// Read `<laws-dir>/index.json`.
+///
+/// # Errors
+///
+/// Fails if `index_path` cannot be read or does not parse as a [`LawIndex`].
+fn read_laws_index(index_path: &Path) -> Result<LawIndex> {
+    let json = std::fs::read_to_string(index_path)
+        .with_context(|| format!("reading laws index {}", index_path.display()))?;
+    serde_json::from_str(&json)
+        .with_context(|| format!("parsing laws index {}", index_path.display()))
+}
+
+/// Refuse promotion if `law_id` is already promoted: either its artifact file
+/// already exists in `laws_dir`, or it is already registered in `index`.
+///
+/// Idempotency guard: a promoted law must never be silently overwritten or
+/// double-registered.
+///
+/// # Errors
+///
+/// Fails if `law_id` is already promoted by either measure.
+fn refuse_if_already_promoted(laws_dir: &Path, law_id: &str, index: &LawIndex) -> Result<()> {
+    let law_path = laws_dir.join(format!("{law_id}.json"));
+    if law_path.exists() {
+        bail!(
+            "law {law_id:?} is already promoted: {} already exists",
+            law_path.display()
+        );
+    }
+    if index.laws.iter().any(|entry| entry.law == law_id) {
+        bail!(
+            "law {law_id:?} is already registered in {}",
+            laws_dir.join("index.json").display()
+        );
+    }
+    Ok(())
+}
+
+/// Collect every item's name and description text: what the anti-leak gate
+/// re-checks against the recorded grounding.
+fn item_texts(artifact: &LawArtifact) -> Vec<&str> {
+    artifact
+        .items
+        .iter()
+        .flat_map(|item| [item.name.as_str(), item.description.as_str()])
+        .collect()
+}
+
+/// Collect `(source_id, text)` reference chunks from a sidecar's passages.
+fn reference_chunks(sidecar: &SidecarReviewContext) -> Vec<(&str, &str)> {
+    sidecar
+        .passages
+        .iter()
+        .map(|passage| (passage.source_id.as_str(), passage.text.as_str()))
+        .collect()
+}
+
+/// The resolved arguments for [`run_synthesize_promote`].
+pub(crate) struct SynthesizePromoteArgs {
+    /// Path to the pre-review candidate artifact to promote.
+    pub(crate) candidate: PathBuf,
+    /// Identity of the human reviewer approving this candidate for commit.
+    pub(crate) reviewed_by: String,
+    /// Directory holding the committed law artifacts and their index.
+    pub(crate) laws_dir: PathBuf,
+}
+
+/// Handle `synthesize promote`: stamp a human-reviewed candidate, re-verify
+/// it, and promote it into `laws_dir` (ADR-0016 Phase 2e).
+///
+/// Order of operations, each a fail-fast gate before the next:
+/// 1. reject a blank `--reviewed-by` (the review gate itself), before any
+///    filesystem work;
+/// 2. read the candidate and its review-context sidecar;
+/// 3. stamp `synthesis.reviewed_by` — every other `synthesis` field,
+///    including `candidate_sha256`, is left untouched, since it records how
+///    the candidate was drafted, not how it was reviewed;
+/// 4. re-run the anti-leak gate against the recorded grounding passages,
+///    since a human edit could reintroduce verbatim wording;
+/// 5. validate the stamped result via `monomyth_frameworks::load_law`, the
+///    framework validator;
+/// 6. refuse if the law is already promoted (idempotency);
+/// 7. write the artifact into `laws_dir` and register it in the index.
+///
+/// # Errors
+///
+/// Fails on a blank `--reviewed-by`, if the candidate or its sidecar cannot
+/// be read or parsed, if [`monomyth_synthesis::verify_no_verbatim`] finds a
+/// verbatim overlap, if [`monomyth_frameworks::load_law`] rejects the stamped
+/// result, if the law is already promoted, if the laws index cannot be read,
+/// or if any write fails.
+pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> {
+    let SynthesizePromoteArgs {
+        candidate,
+        reviewed_by,
+        laws_dir,
+    } = args;
+
+    require_reviewer_identity(&reviewed_by)?;
+
+    let mut artifact = read_candidate_artifact(&candidate)?;
+    let sidecar = read_sidecar_context(&sidecar_path_for(&candidate)?)?;
+
+    artifact.synthesis.reviewed_by = reviewed_by;
+
+    verify_no_verbatim(&item_texts(&artifact), &reference_chunks(&sidecar)).with_context(|| {
+        format!(
+            "anti-leak re-check failed for law {:?}; a human edit must not reintroduce verbatim \
+             wording from the recorded sources",
+            artifact.law
+        )
+    })?;
+
+    let stamped_json =
+        serde_json::to_string_pretty(&artifact).context("serializing the stamped law artifact")?;
+    load_law(&stamped_json).with_context(|| {
+        format!(
+            "promoted law {:?} failed monomyth_frameworks::load_law validation",
+            artifact.law
+        )
+    })?;
+
+    let index_path = laws_dir.join("index.json");
+    let mut index = read_laws_index(&index_path)?;
+    refuse_if_already_promoted(&laws_dir, &artifact.law, &index)?;
+
+    std::fs::create_dir_all(&laws_dir)
+        .with_context(|| format!("creating laws directory {}", laws_dir.display()))?;
+    let law_path = laws_dir.join(format!("{}.json", artifact.law));
+    std::fs::write(&law_path, &stamped_json)
+        .with_context(|| format!("writing promoted law artifact {}", law_path.display()))?;
+
+    index.laws.push(LawIndexEntry {
+        law: artifact.law.clone(),
+        count: artifact.count,
+        namespace: artifact.namespace.clone(),
+        tier: artifact.tier.clone(),
+    });
+    let index_json =
+        serde_json::to_string_pretty(&index).context("serializing the updated laws index")?;
+    std::fs::write(&index_path, index_json)
+        .with_context(|| format!("writing updated laws index {}", index_path.display()))?;
+
+    println!("promoted law {:?} -> {}", artifact.law, law_path.display());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -333,7 +602,10 @@ mod tests {
     use monomyth_knowledge::{Namespace, Passage};
     use monomyth_synthesis::CandidateLaw;
 
-    use super::{DraftedLaw, rejects_forbidden_out_dir, review_required_banner, write_candidate};
+    use super::{
+        DraftedLaw, SynthesizePromoteArgs, rejects_forbidden_out_dir, review_required_banner,
+        run_synthesize_promote, write_candidate,
+    };
 
     #[test]
     fn should_refuse_a_path_directly_under_artifacts() {
@@ -518,6 +790,192 @@ mod tests {
         assert!(
             banner.contains("Judge score: 82/100 after 2 iteration(s)"),
             "banner must surface the judge score and iteration count"
+        );
+    }
+
+    /// Write a minimal fixture candidate law + review-context sidecar into
+    /// `dir`, returning the candidate's path.
+    ///
+    /// Deliberately hand-rolled JSON rather than routed through
+    /// [`write_candidate`]/[`DraftedLaw`]: promotion only cares about the
+    /// on-disk shapes (a [`LawArtifact`] JSON file plus a `passages`
+    /// sidecar), not how a real draft run produced them.
+    fn write_fixture_candidate(
+        dir: &Path,
+        law_id: &str,
+        item_description: &str,
+        sidecar_text: &str,
+    ) -> std::path::PathBuf {
+        let candidate_json = format!(
+            r#"{{
+  "law": "{law_id}",
+  "title": "Fixture Law",
+  "license": "idea/taxonomy only; test fixture",
+  "namespace": "ship",
+  "tier": "system",
+  "domain": "myth",
+  "tier_note": "test fixture",
+  "synthesis": {{
+    "reference_source_ids": ["fixture_source"],
+    "model": "test/stub-model",
+    "generated": "2026-07-21",
+    "reviewed_by": "",
+    "candidate_sha256": "deadbeef"
+  }},
+  "count": 1,
+  "items": [
+    {{ "id": 1, "name": "Setup", "description": {item_description:?} }}
+  ]
+}}"#
+        );
+        let candidate_path = dir.join(format!("{law_id}.json"));
+        std::fs::write(&candidate_path, candidate_json).expect("fixture candidate writes");
+
+        let sidecar_json = format!(
+            r#"{{"passages": [{{"source_id": "fixture_source", "text": {sidecar_text:?}}}]}}"#
+        );
+        let sidecar_path = dir.join(format!("{law_id}.context.json"));
+        std::fs::write(&sidecar_path, sidecar_json).expect("fixture sidecar writes");
+
+        candidate_path
+    }
+
+    /// Write a minimal `index.json` fixture (empty `laws` array) into `laws_dir`.
+    fn write_fixture_index(laws_dir: &Path) {
+        std::fs::create_dir_all(laws_dir).expect("laws dir creates");
+        std::fs::write(
+            laws_dir.join("index.json"),
+            r#"{"index": "test index", "note": "test note", "laws": []}"#,
+        )
+        .expect("index fixture writes");
+    }
+
+    #[test]
+    fn should_reject_promotion_with_an_empty_reviewed_by_before_touching_the_filesystem() {
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: std::path::PathBuf::from("/nonexistent/candidate.json"),
+            reviewed_by: String::new(),
+            laws_dir: std::path::PathBuf::from("/nonexistent/laws"),
+        })
+        .expect_err("an empty reviewer must be rejected before any file IO");
+        assert!(error.to_string().contains("--reviewed-by"));
+    }
+
+    #[test]
+    fn should_reject_promotion_with_a_whitespace_only_reviewed_by() {
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: std::path::PathBuf::from("/nonexistent/candidate.json"),
+            reviewed_by: "   ".to_owned(),
+            laws_dir: std::path::PathBuf::from("/nonexistent/laws"),
+        })
+        .expect_err("a whitespace-only reviewer must be rejected before any file IO");
+        assert!(error.to_string().contains("--reviewed-by"));
+    }
+
+    #[test]
+    fn should_promote_a_fixture_candidate_and_update_the_index() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "fixture_law",
+            "A harmless made-up description with no overlap.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("promotion of a clean fixture candidate succeeds");
+
+        let law_path = laws_dir.join("fixture_law.json");
+        assert!(law_path.exists(), "promoted law file must exist");
+
+        let law_json = std::fs::read_to_string(&law_path).expect("law file reads back");
+        let loaded = load_law(&law_json).expect("promoted law must load_law cleanly");
+        assert_eq!(loaded.law, "fixture_law");
+        assert_eq!(loaded.synthesis.reviewed_by, "alice");
+        assert_eq!(
+            loaded.synthesis.candidate_sha256.as_deref(),
+            Some("deadbeef"),
+            "promotion must not recompute candidate_sha256"
+        );
+
+        let index_json =
+            std::fs::read_to_string(laws_dir.join("index.json")).expect("index reads back");
+        let index: serde_json::Value =
+            serde_json::from_str(&index_json).expect("index is valid JSON");
+        let laws = index["laws"].as_array().expect("laws array");
+        assert!(
+            laws.iter()
+                .any(|entry| entry["law"] == "fixture_law" && entry["count"] == 1),
+            "index must gain an entry for the promoted law"
+        );
+    }
+
+    #[test]
+    fn should_reject_promotion_when_item_text_verbatim_overlaps_the_sidecar() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let overlapping_description =
+            "the suppliant implores a power in authority to grant a boon of mercy";
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "leaky_law",
+            overlapping_description,
+            "The Suppliant implores a Power in authority to grant a boon of mercy.",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("a verbatim 8-word overlap must be rejected on re-check");
+
+        assert!(
+            format!("{error:#}").to_lowercase().contains("anti-leak"),
+            "error must name the anti-leak re-check, got: {error:#}"
+        );
+        assert!(
+            !laws_dir.join("leaky_law.json").exists(),
+            "a rejected candidate must not be written into laws_dir"
+        );
+    }
+
+    #[test]
+    fn should_refuse_to_promote_an_already_promoted_law() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "dup_law",
+            "A harmless made-up description with no overlap at all.",
+            "some unrelated reference passage text about a wholly different subject entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path.clone(),
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("first promotion succeeds");
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "bob".to_owned(),
+            laws_dir,
+        })
+        .expect_err("a second promotion of the same law must be refused");
+
+        assert!(
+            error.to_string().contains("already"),
+            "error must explain the law is already promoted, got: {error}"
         );
     }
 }

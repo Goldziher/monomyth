@@ -22,6 +22,7 @@ monomyth-contracts = { workspace = true }
 monomyth-core = { workspace = true }
 monomyth-eval = { workspace = true }
 monomyth-extract = { workspace = true }
+monomyth-frameworks = { workspace = true }
 monomyth-gen = { workspace = true }
 monomyth-genre = { workspace = true }
 monomyth-knowledge = { workspace = true, features = ["acquire"] }
@@ -37,7 +38,6 @@ tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
-monomyth-frameworks = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
