@@ -80,3 +80,9 @@ in `monomyth-knowledge` assert provenance is stored and read back. The default-f
 Extends ADR-0006 (Rust consolidation) and depends on ADR-0007 (xberg owns chunking) and ADR-0005
 (licensing + provenance). Fine-grained ATU/Thompson enrichment from the CC-BY-SA `trilogy` dataset is
 separate downstream work.
+
+**Amended by ADR-0012:** the raw-blob storage mechanism decided here (`corpus/raw/<hash>.bin` via a
+direct cached `http` fetch) was later generalized to an OpenDAL operator so the same cache abstracts
+over a local filesystem now and cloud buckets later. The acquisition pipeline's shape — the Rust
+`acquire` module, the fetch → normalize → ingest flow, and always-on stored provenance — is unchanged;
+only *where* the cached blobs live moved behind OpenDAL. `status` stays `accepted`.

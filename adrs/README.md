@@ -45,6 +45,8 @@ changed decision is a *new* ADR that supersedes the old one (never an edit).
 | [0022](./0022-scored-weighted-classification-attributes.md) | Scored / weighted classification attributes | accepted |
 | [0023](./0023-benchmark-driven-evaluation.md) | Benchmark-driven evaluation + ground-truth corpus | accepted |
 | [0024](./0024-llm-judge-feedback-loop-synthesis.md) | LLM-as-judge feedback loop for reference→law synthesis | accepted |
-| [0025](./0025-reference-retrieval-quality.md) | Reference retrieval quality: dedup, multi-query coverage (hybrid deferred) | accepted |
+| [0025](./0025-reference-retrieval-quality.md) | Reference retrieval quality: dedup, multi-query coverage, hybrid RRF | accepted |
 | [0026](./0026-reference-path-first-rag-enrichment.md) | Reference-path-first RAG enrichment (keywords + entities) | accepted |
 | [0027](./0027-long-form-compose-pipeline.md) | Long-form compose pipeline | accepted |
+| [0028](./0028-genre-classifier-in-genre-crate.md) | GenreClassifier seam in monomyth-genre (contracts-edge exception) | accepted |
+| [0029](./0029-quick-xml-advisory-posture.md) | quick-xml advisory posture under opendal services-fs | accepted |

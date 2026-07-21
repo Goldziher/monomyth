@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-11
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -71,12 +71,20 @@ crate boundary and the constraint so the contract does not churn once extraction
 
 ### Confirmation
 
-A round-trip test (extract a minimal example text → `World` → generate from that `World`) exercises
-the shared write/validate surface once the crate has a first impl. Any case where extraction cannot
-represent source structure in the current contract is written up as an ADR-0014 addendum proposing a
-`SCHEMA_VERSION` bump — never patched directly into `monomyth-core`. Code review enforces that
-`monomyth-extract` never depends on `monomyth-core` internals beyond its public `NarrativeEdit`/
-`validate` surface.
+Partially realized: `monomyth-extract` ships with a **classify-only** first slice —
+`RagSoftmaxClassifier` (softmax over `MonomythStage` descriptors, grounded via a `PassageRetriever`)
+and `StageReclassifyingExtractor`, which takes a skeleton `World` whose structure is given and
+re-derives its stage classifications through `NarrativeEdit::SetNodeStage` + `apply_edits`, gated by
+`World::validate`. It is wired via the CLI `eval` command and measured against a gold fixture on the
+classification axis alone (ADR-0023). This narrowed the seam: `Extractor::extract` landed taking a
+skeleton `World`, not raw source text — the "trait signature is speculative" consequence above
+materialized, and the `monomyth-contracts` doc records the skeleton scope. **Still future work:** the
+text→`World` *structure*-derivation half (segmenting raw source into narrative nodes/edges) that would
+close the full round trip. Any case where extraction cannot represent source structure in the current
+contract is written up as an ADR-0014 addendum proposing a `SCHEMA_VERSION` bump — never patched
+directly into `monomyth-core`. The boundary that `monomyth-extract` touches only `monomyth-core`'s
+public `NarrativeEdit`/`validate` surface is enforced by code review and the plane-boundary guard
+(ADR-0013).
 
 ## Pros and Cons of the Options
 

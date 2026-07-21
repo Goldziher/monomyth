@@ -1,10 +1,10 @@
 ---
 status: accepted
-date: 2026-07-12
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
-# Reference retrieval quality: dedup, over-fetch, multi-query coverage (hybrid deferred)
+# Reference retrieval quality: dedup, over-fetch, multi-query coverage (hybrid landed)
 
 ## Context and Problem Statement
 

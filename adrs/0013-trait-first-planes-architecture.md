@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-11
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -61,18 +61,20 @@ composition roots (`monomyth-cli`, `monomyth-text`) name concrete impls, and onl
   `World`, so the model stays medium- and genre-agnostic.
 - Good, because a new backend/strategy/medium is one feature-gated trait impl plus a composition-root
   wire-up, with no call-site churn.
-- Bad, because it adds crates (`monomyth-contracts`, `monomyth-config`, later `-genre`, `-extract`)
-  and the discipline to route boundaries through traits; mitigated by trait-ifying *only* plane
-  boundaries, never within a crate.
+- Bad, because it adds crates (`monomyth-contracts`, `monomyth-config`, `monomyth-genre`,
+  `monomyth-extract`) and the discipline to route boundaries through traits; mitigated by trait-ifying
+  *only* plane boundaries, never within a crate.
 
 ### Confirmation
 
-A `cargo tree` CI check asserts `monomyth-core` has no inbound dependency on
-`monomyth-config`/`monomyth-genre`/`monomyth-contracts` (the pivot depends on nothing). Code review
-enforces that impl crates do not depend on each other across plane boundaries — only on
-`monomyth-contracts` traits — with composition roots as the sole exception. The plane vocabulary and
-the "core depends on nothing" rule are documented in `docs/architecture.md` and the `.ai-rulez`
-guidelines (ADR-0021).
+The "core depends on nothing" rule is now machine-enforced two ways: a hermetic
+`crates/monomyth-core/tests/boundaries.rs` test (`core_does_not_depend_on_config_genre_or_contracts`)
+reconstructs the intra-workspace dependency graph from the manifests and asserts `monomyth-core` has
+no path to `monomyth-config`/`monomyth-genre`/`monomyth-contracts`, and a mirrored `cargo tree` step
+in CI guards the same invariant. Code review enforces that impl crates do not depend on each other
+across plane boundaries — only on `monomyth-contracts` traits — with composition roots as the sole
+exception. The plane vocabulary and the rule are documented in `docs/architecture.md` and the
+`.ai-rulez` guidelines (ADR-0021).
 
 ## Pros and Cons of the Options
 

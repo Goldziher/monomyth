@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-11
+date: 2026-07-21
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -66,11 +66,16 @@ under differ, and those live outside the contract entirely.
 
 ### Confirmation
 
-A `cargo tree` check asserts `monomyth-core` has no inbound dependency on `monomyth-genre` (mirroring
-ADR-0013's `-config`/`-contracts` check). A serialization-unchanged test generates worlds under two
-different `GenreProfile` values and asserts both serialize to the same `World`/`Story` *shape*
-(schema-identical; content differs). Generated content under a non-myth profile (e.g. detective)
-measurably differs from the myth default, confirming targeting actually reaches content-fill.
+Realized: `monomyth-genre` ships `GenreProfile`/`GenreKind` (`profile.rs`) and the deferred
+`GenreClassifier`/`StubGenreClassifier` (`classifier.rs`); the resolved profile is projected into
+`monomyth-gen`'s `ContentConfig` and wired into content-fill at the CLI composition root
+(`monomyth-cli`'s `run_gen`). `monomyth-core`'s lack of a `-genre` edge is machine-enforced by
+`crates/monomyth-core/tests/boundaries.rs` (ADR-0013), not just a `cargo tree` check. The genre tests
+assert a non-myth profile (detective) yields different `ContentConfig` instructions than the myth
+default, confirming targeting reaches content-fill, while the procedural determinism golden stays
+byte-identical (config biases content prompts but never the RNG). One deviation from the "seam traits
+live in `monomyth-contracts`" rule — `GenreClassifier` lives in `monomyth-genre` — is recorded in
+ADR-0028.
 
 ## Pros and Cons of the Options
 
@@ -99,6 +104,7 @@ measurably differs from the myth default, confirming targeting actually reaches 
 
 Instantiates ADR-0013's X-GENRE cross-cutting concern. Consumes ADR-0015 (the config resolver genre
 values are layered through). Constrained by ADR-0014 (the contract-purity invariant this ADR is the
-concrete guard for). Scope note: this ADR covers genre's representation and its two transform roles —
-the `GenreClassifier`'s internal ML/heuristic design is out of scope, deferred to when extraction
-(ADR-0018) makes classification meaningful.
+concrete guard for). The decision to place the `GenreClassifier` seam in `monomyth-genre` rather than
+`monomyth-contracts` is recorded in ADR-0028. Scope note: this ADR covers genre's representation and
+its two transform roles — the `GenreClassifier`'s internal ML/heuristic design is out of scope,
+deferred to when extraction (ADR-0018) makes classification meaningful.
