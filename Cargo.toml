@@ -27,6 +27,7 @@ monomyth-eval = { path = "crates/monomyth-eval" }
 monomyth-extract = { path = "crates/monomyth-extract" }
 monomyth-frameworks = { path = "crates/monomyth-frameworks" }
 monomyth-gen = { path = "crates/monomyth-gen" }
+monomyth-genre = { path = "crates/monomyth-genre" }
 monomyth-knowledge = { path = "crates/monomyth-knowledge" }
 monomyth-llm = { path = "crates/monomyth-llm" }
 monomyth-synthesis = { path = "crates/monomyth-synthesis" }

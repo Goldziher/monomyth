@@ -89,6 +89,22 @@ const DEFAULT_COMPOSE_REVISE_THRESHOLD: f64 = 0.6;
 /// The system default for `compose.max_revise_iterations`.
 const DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS: usize = 2;
 
+/// The system default for `genre.name`: the myth flavor, i.e. the behavior every
+/// content-fill pass had before genre targeting existed.
+///
+/// Duplicates `monomyth-genre`'s `GenreProfile` default for the duration of the
+/// migration; the two must agree, guarded by `monomyth-genre`'s test asserting the
+/// resolved-default genre config equals `GenreProfile::default()`.
+/// `monomyth-config` does not depend on `monomyth-genre`, so the value cannot
+/// simply be imported.
+const DEFAULT_GENRE_NAME: &str = "myth";
+/// The system default for `genre.grounding_top_k`.
+///
+/// Duplicates `monomyth-gen`'s `ContentConfig::default` grounding breadth so an
+/// unconfigured myth profile grounds identically to a run with no genre targeting
+/// at all.
+const DEFAULT_GENRE_GROUNDING_TOP_K: u32 = 4;
+
 /// A per-task model role: which configured model a caller resolves via
 /// [`MonomythConfig::model_for`].
 ///
@@ -121,6 +137,8 @@ pub struct MonomythConfigFile {
     pub synthesis: SynthesisSection,
     /// The `[compose]` table.
     pub compose: ComposeSection,
+    /// The `[genre]` table.
+    pub genre: GenreSection,
 }
 
 /// The `[generation]` table as it appears on disk.
@@ -203,6 +221,24 @@ pub struct ComposeSection {
     pub max_revise_iterations: Option<usize>,
 }
 
+/// The `[genre]` table as it appears on disk: which genre profile biases
+/// content-fill targeting, mirroring `monomyth-genre::GenreProfile`.
+///
+/// Kept as plain scalars (a name string, a numeric knob) rather than an enum or
+/// the `monomyth-genre` type itself, so `monomyth-config` never depends on
+/// `monomyth-genre` — the dependency runs the other way, `GenreProfile` is
+/// constructed *from* the resolved [`GenreSettings`].
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct GenreSection {
+    /// The genre identifier (e.g. `"myth"`, `"detective"`, `"litrpg"`) that
+    /// selects a `monomyth-genre::GenreProfile`. Absent → the system default.
+    pub name: Option<String>,
+    /// Number of ship-safe passages retrieved to ground each content slot under
+    /// this genre. Absent → the system default.
+    pub grounding_top_k: Option<u32>,
+}
+
 /// The fully-resolved configuration: every value tagged with the [`Layered`] source
 /// that set it.
 #[derive(Clone, Debug)]
@@ -215,6 +251,8 @@ pub struct MonomythConfig {
     pub synthesis: SynthesisSettings,
     /// Resolved long-form composition pipeline knobs.
     pub compose: ComposeConfigSettings,
+    /// Resolved genre-targeting knobs.
+    pub genre: GenreSettings,
 }
 
 /// Resolved narrative-generation knobs.
@@ -279,6 +317,16 @@ pub struct ComposeConfigSettings {
     pub max_revise_iterations: Layered<usize>,
 }
 
+/// Resolved genre-targeting knobs.
+#[derive(Clone, Debug)]
+pub struct GenreSettings {
+    /// Resolved genre identifier (e.g. `"myth"`, `"detective"`, `"litrpg"`).
+    pub name: Layered<String>,
+    /// Resolved number of grounding passages retrieved per content slot under
+    /// this genre.
+    pub grounding_top_k: Layered<u32>,
+}
+
 impl Default for MonomythConfig {
     fn default() -> Self {
         Self {
@@ -309,6 +357,10 @@ impl Default for MonomythConfig {
                 max_revise_iterations: Layered::system_default(
                     DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS,
                 ),
+            },
+            genre: GenreSettings {
+                name: Layered::system_default(DEFAULT_GENRE_NAME.to_owned()),
+                grounding_top_k: Layered::system_default(DEFAULT_GENRE_GROUNDING_TOP_K),
             },
         }
     }
@@ -377,6 +429,13 @@ impl MonomythConfig {
             return Err(ConfigError::Invalid {
                 field: "compose.revise_threshold".to_owned(),
                 reason: format!("must be finite, got {revise_threshold}"),
+            });
+        }
+        let genre_grounding_top_k = *self.genre.grounding_top_k.get();
+        if genre_grounding_top_k < 1 {
+            return Err(ConfigError::Invalid {
+                field: "genre.grounding_top_k".to_owned(),
+                reason: format!("must be at least 1, got {genre_grounding_top_k}"),
             });
         }
         Ok(())
@@ -456,6 +515,10 @@ impl MonomythConfig {
         self.compose
             .max_revise_iterations
             .override_with(file.compose.max_revise_iterations, from);
+        self.genre.name.override_with(file.genre.name.clone(), from);
+        self.genre
+            .grounding_top_k
+            .override_with(file.genre.grounding_top_k, from);
     }
 }
 
@@ -465,9 +528,10 @@ mod tests {
         DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_COMPOSE_GROUNDING_TOP_K,
         DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS, DEFAULT_COMPOSE_MAX_TURNS, DEFAULT_COMPOSE_MODEL,
         DEFAULT_COMPOSE_REVISE_THRESHOLD, DEFAULT_CONTENT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE,
-        DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN, DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING,
-        DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN,
-        DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
+        DEFAULT_GENRE_GROUNDING_TOP_K, DEFAULT_GENRE_NAME, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN,
+        DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS,
+        DEFAULT_PER_QUERY_TOP_K, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN, DEFAULT_SYNTHESIS_MODEL,
+        ModelRole, MonomythConfig, MonomythConfigFile,
     };
     use crate::error::ConfigError;
     use crate::layered::LayerSource;
@@ -763,6 +827,51 @@ mod tests {
         assert!(
             result.is_err(),
             "a misspelled [synthesis] key must be rejected"
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_genre_knobs() {
+        let config = MonomythConfig::default();
+        assert_eq!(config.genre.name.get(), DEFAULT_GENRE_NAME);
+        assert_eq!(
+            *config.genre.grounding_top_k.get(),
+            DEFAULT_GENRE_GROUNDING_TOP_K
+        );
+        assert_eq!(config.genre.name.source(), LayerSource::SystemDefault);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_genre_knobs_at_its_layer() {
+        let file: MonomythConfigFile =
+            toml::from_str("[genre]\nname = \"detective\"\ngrounding_top_k = 6\n")
+                .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(config.genre.name.get(), "detective");
+        assert_eq!(*config.genre.grounding_top_k.get(), 6);
+        assert_eq!(config.genre.name.source(), LayerSource::ProjectOverride);
+    }
+
+    #[test]
+    fn unknown_genre_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> =
+            toml::from_str("[genre]\nnaem = \"detective\"\n");
+        assert!(result.is_err(), "a misspelled [genre] key must be rejected");
+    }
+
+    #[test]
+    fn a_zero_genre_grounding_top_k_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[genre]\ngrounding_top_k = 0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("0 grounding_top_k retrieves no priors to ground on");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "genre.grounding_top_k"),
+            "the error must name genre.grounding_top_k, got {error:?}"
         );
     }
 

@@ -23,6 +23,7 @@ monomyth-core = { workspace = true }
 monomyth-eval = { workspace = true }
 monomyth-extract = { workspace = true }
 monomyth-gen = { workspace = true }
+monomyth-genre = { workspace = true }
 monomyth-knowledge = { workspace = true, features = ["acquire"] }
 monomyth-llm = { workspace = true }
 monomyth-synthesis = { workspace = true }

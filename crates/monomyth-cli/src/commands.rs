@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use monomyth_config::{ConfigResolver, ModelRole, MonomythConfig, RuntimeOverrides};
 use monomyth_core::{EditOutcome, NarrativeEdit, World};
-use monomyth_gen::{ContentConfig, ContentContext, GenerationConfig, Generator};
+use monomyth_gen::{ContentContext, GenerationConfig, Generator};
+use monomyth_genre::GenreProfile;
 use monomyth_knowledge::{BuildOptions, IngestInput, Knowledge, KnowledgeQuery, SourceOutcome};
 use monomyth_llm::{BackendOptions, Llm};
 use monomyth_text::{render_intro, render_location, render_structure};
@@ -109,11 +110,12 @@ pub(crate) async fn run_gen(
         let knowledge = Knowledge::open(db)
             .await
             .context("opening the knowledge store")?;
+        let genre_profile = GenreProfile::from(&config.genre);
         let context = ContentContext {
             llm: &llm,
             knowledge: &knowledge,
             model: content_model,
-            config: &ContentConfig::default(),
+            config: &genre_profile.content_config(),
         };
         generator
             .fill_content(&mut world, &context)

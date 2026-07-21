@@ -1,0 +1,22 @@
+[package]
+name = "monomyth-genre"
+description = "Genre as a config-resolved dimension (ADR-0017): GenreProfile targeting plus the GenreClassifier seam."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+monomyth-config = { workspace = true }
+monomyth-gen = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints]
+workspace = true
