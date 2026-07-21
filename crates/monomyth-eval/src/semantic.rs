@@ -183,9 +183,9 @@ mod tests {
     #[test]
     fn score_semantic_should_aggregate_mean_min_max() {
         let report = score_semantic(&[
-            (vec![1.0, 0.0], vec![1.0, 0.0]),  
-            (vec![1.0, 0.0], vec![0.0, 1.0]),  
-            (vec![1.0, 0.0], vec![-1.0, 0.0]), 
+            (vec![1.0, 0.0], vec![1.0, 0.0]),
+            (vec![1.0, 0.0], vec![0.0, 1.0]),
+            (vec![1.0, 0.0], vec![-1.0, 0.0]),
         ]);
         assert_eq!(report.pairs, 3);
         assert_close(report.mean_cosine, 0.0);

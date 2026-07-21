@@ -474,7 +474,6 @@ mod tests {
         world.story.structure.spine()
     }
 
-
     #[test]
     fn identical_structures_should_align_perfectly() {
         let gold = linear_world(&[
@@ -512,7 +511,6 @@ mod tests {
         assert!((stage_score.top1_accuracy - 1.0).abs() < EPSILON);
     }
 
-
     #[test]
     fn predicted_missing_a_middle_node_should_leave_it_unmatched_and_align_the_ends() {
         let gold = linear_world(&[
@@ -546,7 +544,6 @@ mod tests {
         assert!((report.structural_f1 - expected_f1).abs() < EPSILON);
     }
 
-
     #[test]
     fn predicted_extra_node_should_leave_it_unmatched_and_reduce_precision() {
         let gold = linear_world(&[
@@ -577,7 +574,6 @@ mod tests {
         assert!((report.structural_recall - 1.0).abs() < EPSILON);
         assert!((report.structural_precision - (2.0 / 3.0)).abs() < EPSILON);
     }
-
 
     /// gold = [A(CallToAdventure), B(SupernaturalAid), C(CrossingTheFirstThreshold)],
     /// predicted = [A(CallToAdventure), B(TheRoadOfTrials), C(CrossingTheFirstThreshold)]
@@ -634,7 +630,6 @@ mod tests {
         assert!((stage_score.histogram_intersection - (2.0 / 3.0)).abs() < EPSILON);
     }
 
-
     /// gold = [A, B, C], predicted = [B, A, C] (A and B's stages are swapped in
     /// position). A monotonic aligner cannot un-swap adjacent nodes: matching
     /// gold-A to predicted-A and gold-B to predicted-B would require a
@@ -689,7 +684,6 @@ mod tests {
         let stage_score = report.axes.get("stage").expect("stage axis always present");
         assert!((stage_score.histogram_intersection - (1.0 / 3.0)).abs() < EPSILON);
     }
-
 
     /// gold node: `ScoredOne { primary: TheMeetingWithTheGoddess, alternatives:
     /// {WomanAsTemptress: 350} }` vs a predicted node that scores
@@ -753,7 +747,6 @@ mod tests {
         );
     }
 
-
     /// `NarrativeStructure::spine` always yields at least the root (it pushes
     /// `current` before checking for an out-edge), and `NarrativeStructure::validate`
     /// requires a non-empty `endings` set, so a zero-node spine is not
@@ -801,7 +794,6 @@ mod tests {
         assert!(report.structural_f1.is_finite(), "f1 must never be NaN");
         assert!(!report.structural_f1.is_nan(), "f1 must never be NaN");
     }
-
 
     #[test]
     fn alignment_scorer_report_fingerprint_should_be_deterministic() {
