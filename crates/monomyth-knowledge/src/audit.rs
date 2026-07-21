@@ -16,7 +16,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::error::KnowledgeError;
-use crate::ledger::{Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION};
+use crate::ledger::{Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, USER_COLLECTION};
 use crate::rag::pipeline::retrieve as pipeline_retrieve;
 use crate::rag::{RetrieveQuery, RetrievedChunk};
 use crate::{META_DOMAIN, META_LICENSE, META_NAMESPACE, META_SOURCE_ID, META_TIER};
@@ -160,6 +160,7 @@ fn audit_document(
     let expected_collection = match entry.namespace {
         Namespace::Ship => SHIP_COLLECTION,
         Namespace::Reference => REFERENCE_COLLECTION,
+        Namespace::User => USER_COLLECTION,
     };
     if expected_collection != collection {
         return Err(KnowledgeError::AuditViolation {

@@ -336,6 +336,7 @@ mod tests {
         assert!(!is_exportable_tier(Tier::Copyright));
         assert!(!is_exportable_tier(Tier::Reference));
         assert!(!is_exportable_tier(Tier::System));
+        assert!(!is_exportable_tier(Tier::UserLicensed));
     }
 
     #[test]

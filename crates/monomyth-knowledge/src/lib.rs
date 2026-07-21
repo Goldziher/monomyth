@@ -79,7 +79,7 @@ pub use crate::acquire::{
 };
 pub use crate::error::KnowledgeError;
 pub use crate::ledger::{
-    Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, SourceEntry, Tier,
+    Ledger, Namespace, REFERENCE_COLLECTION, SHIP_COLLECTION, SourceEntry, Tier, USER_COLLECTION,
 };
 
 /// Embedding dimension of the default (`balanced`) `CoreEmbedder` preset.
@@ -1063,6 +1063,7 @@ fn build_passage(
     let expected = match collection {
         SHIP_COLLECTION => Some(Namespace::Ship),
         REFERENCE_COLLECTION => Some(Namespace::Reference),
+        USER_COLLECTION => Some(Namespace::User),
         _ => None,
     };
     if let Some(expected) = expected

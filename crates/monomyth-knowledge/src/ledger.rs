@@ -19,6 +19,8 @@ const MANIFEST_JSON: &str = include_str!("../../../corpus/manifest.json");
 pub const SHIP_COLLECTION: &str = "ship";
 /// Collection holding reference-only material (priors only; never surfaced).
 pub const REFERENCE_COLLECTION: &str = "reference";
+/// Collection holding user-uploaded material (non-surfaceable by default; see ADR-0019).
+pub const USER_COLLECTION: &str = "user";
 
 /// Which of the two trust domains a source belongs to.
 ///
@@ -31,6 +33,9 @@ pub enum Namespace {
     Ship,
     /// Copyrighted or `NonCommercial` — informs generation only; never redistributed.
     Reference,
+    /// User-uploaded media — non-surfaceable by default, never auto-promoted to
+    /// `Ship`; informs generation only until a human decision says otherwise (ADR-0019).
+    User,
 }
 
 impl Namespace {
@@ -40,6 +45,7 @@ impl Namespace {
         match self {
             Namespace::Ship => SHIP_COLLECTION,
             Namespace::Reference => REFERENCE_COLLECTION,
+            Namespace::User => USER_COLLECTION,
         }
     }
 
@@ -52,6 +58,7 @@ impl Namespace {
         match self {
             Namespace::Ship => "ship",
             Namespace::Reference => "reference",
+            Namespace::User => "user",
         }
     }
 }
@@ -77,6 +84,9 @@ pub enum Tier {
     Copyright,
     /// Research/mixed-license — reference-only.
     Reference,
+    /// User-uploaded content under a user-granted license — non-surfaceable by
+    /// default, never exported, never auto-promoted to ship (ADR-0019).
+    UserLicensed,
 }
 
 impl Tier {
@@ -96,6 +106,7 @@ impl Tier {
             Tier::Noncommercial => "noncommercial",
             Tier::Copyright => "copyright",
             Tier::Reference => "reference",
+            Tier::UserLicensed => "user_licensed",
         }
     }
 }
@@ -218,11 +229,12 @@ mod tests {
     fn should_map_namespace_to_collection() {
         assert_eq!(Namespace::Ship.collection(), SHIP_COLLECTION);
         assert_eq!(Namespace::Reference.collection(), REFERENCE_COLLECTION);
+        assert_eq!(Namespace::User.collection(), USER_COLLECTION);
     }
 
     #[test]
     fn wire_token_matches_serde() {
-        for namespace in [Namespace::Ship, Namespace::Reference] {
+        for namespace in [Namespace::Ship, Namespace::Reference, Namespace::User] {
             let serialized = serde_json::to_value(namespace).expect("namespace serializes");
             assert_eq!(
                 serialized,
@@ -243,6 +255,7 @@ mod tests {
             Tier::Noncommercial,
             Tier::Copyright,
             Tier::Reference,
+            Tier::UserLicensed,
         ] {
             let serialized = serde_json::to_value(tier).expect("tier serializes");
             assert_eq!(
@@ -383,5 +396,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn user_namespace_and_tier_are_non_ship_by_construction() {
+        // The manifest declares no `user` sources yet (upload flow is Phase 4, ~keep
+        // ADR-0019), so a ledger-iteration invariant would be vacuous. Assert the ~keep
+        // enum shape directly: the user trust domain must be distinct from ship, ~keep
+        // route to its own collection, and its tier must never be ship-safe. ~keep
+        assert_ne!(Namespace::User, Namespace::Ship);
+        assert_eq!(Namespace::User.collection(), USER_COLLECTION);
+        assert_ne!(Namespace::User.collection(), SHIP_COLLECTION);
+
+        let ship_safe = matches!(
+            Tier::UserLicensed,
+            Tier::System | Tier::PublicDomain | Tier::Cc0 | Tier::Permissive | Tier::ShareAlike
+        );
+        assert!(!ship_safe, "UserLicensed must never be a ship-safe tier");
     }
 }

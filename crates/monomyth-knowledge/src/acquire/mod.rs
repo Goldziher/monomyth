@@ -310,6 +310,11 @@ fn classify_entry(entry: &SourceEntry, mode: AcquireMode) -> EntryDisposition {
         (AcquireMode::InspectReference, Namespace::Ship) => {
             EntryDisposition::Filtered("ship namespace: use `corpus build`, not inspect")
         }
+        // User-uploaded media is never fetched from the ledger; it arrives through ~keep
+        // the (Phase-4) upload flow, so neither acquisition mode handles it (ADR-0019). ~keep
+        (_, Namespace::User) => {
+            EntryDisposition::Filtered("user namespace: uploaded, never corpus-acquired")
+        }
     }
 }
 

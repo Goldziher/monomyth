@@ -34,6 +34,9 @@ pub(crate) enum StoragePrefix {
     /// Reference/unverified material — informs generation only, never
     /// ingested into the ship collection.
     Reference,
+    /// User-uploaded material — non-surfaceable by default, never ingested
+    /// into the ship collection (ADR-0019).
+    User,
 }
 
 impl StoragePrefix {
@@ -42,21 +45,23 @@ impl StoragePrefix {
         match self {
             Self::Ship => "ship",
             Self::Reference => "reference",
+            Self::User => "user",
         }
     }
 }
 
 impl From<Namespace> for StoragePrefix {
     /// `Namespace::Ship` maps to `Self::Ship`, `Namespace::Reference` to
-    /// `Self::Reference`. The match is exhaustive over `Namespace`'s two
-    /// variants: adding a third will not compile until this mapping is
-    /// extended, forcing a deliberate ship-vs-reference decision at the type
-    /// level rather than letting a new namespace silently fall through to a
-    /// default prefix.
+    /// `Self::Reference`, `Namespace::User` to `Self::User`. The match is
+    /// exhaustive over `Namespace`: adding a further variant will not compile
+    /// until this mapping is extended, forcing a deliberate trust-domain
+    /// decision at the type level rather than letting a new namespace silently
+    /// fall through to a default prefix.
     fn from(namespace: Namespace) -> Self {
         match namespace {
             Namespace::Ship => Self::Ship,
             Namespace::Reference => Self::Reference,
+            Namespace::User => Self::User,
         }
     }
 }
