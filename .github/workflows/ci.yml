@@ -59,6 +59,27 @@ jobs:
         working-directory: monomyth
         run: cargo metadata --locked --format-version 1 > /dev/null
 
+      - name: Plane boundaries (ADR-0013/0017)
+        working-directory: monomyth
+        run: |
+          set -euo pipefail
+          # The pivot crate monomyth-core must have no dependency (direct or
+          # transitive) on the config / genre / contracts planes. Scan core's own
+          # dependency tree so a not-yet-existent crate (monomyth-genre) simply
+          # never appears rather than causing a vacuous pass.
+          tree="$(cargo tree --locked -p monomyth-core --edges normal --prefix none)"
+          violations=""
+          for forbidden in monomyth-config monomyth-contracts monomyth-genre; do
+            if printf '%s\n' "$tree" | grep -qE "^${forbidden} "; then
+              violations="${violations} ${forbidden}"
+            fi
+          done
+          if [ -n "$violations" ]; then
+            echo "ADR-0013/0017 violation: monomyth-core must not depend on:${violations}" >&2
+            exit 1
+          fi
+          echo "plane boundaries OK: monomyth-core depends on none of config/genre/contracts"
+
       - name: Format
         working-directory: monomyth
         run: |

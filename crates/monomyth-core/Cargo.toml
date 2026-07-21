@@ -17,5 +17,8 @@ serde_json = { workspace = true }
 slotmap = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+toml = { workspace = true }
+
 [lints]
 workspace = true
