@@ -12,6 +12,7 @@ mod cli;
 mod commands;
 mod compose;
 mod evaluate;
+mod extract;
 mod play;
 mod synthesize;
 
@@ -105,6 +106,9 @@ async fn main() -> Result<()> {
         },
         Command::Compose { seed, out, json } => {
             compose::run_compose(seed, out, json, cli.model, &cli.db).await
+        }
+        Command::Extract { input, out, genre } => {
+            extract::run_extract(input, out, genre, cli.model).await
         }
     }
 }

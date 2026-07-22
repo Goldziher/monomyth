@@ -193,6 +193,23 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Derive a minimal world structure from raw source text via a single
+    /// structured LLM call (ADR-0018 Phase 3, `MinimalStructureExtractor`).
+    Extract {
+        /// Path to a file whose contents are the source text to extract from.
+        #[arg(long)]
+        input: PathBuf,
+
+        /// Write the serialized world here instead of to stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+
+        /// Genre framing to bias the extraction prompt (`myth`, `detective`, `litrpg`).
+        /// Unrecognized names fall back to `myth`. Defaults to `myth` when omitted.
+        #[arg(long)]
+        genre: Option<String>,
+    },
 }
 
 /// `synthesize` subcommands.
