@@ -6,15 +6,10 @@
 //! caller-specified filename when given; otherwise pick the first file in the
 //! metadata's `files` array whose name ends in `.txt`.
 //!
-//! Not yet dispatched from [`crate::acquire::mod`]: the manifest declares no
-//! specific archive.org identifier for `bae_reports`, the one ledger source
-//! that would use this fetcher, so wiring one in without a real identifier
-//! would risk a silent 404 against a made-up one. The fetcher itself is real
-//! and unit-tested; only its call site is pending.
-#![allow(
-    dead_code,
-    reason = "fetcher is real and tested; dispatch is pending a real archive.org identifier for bae_reports"
-)]
+//! Dispatched from [`crate::acquire::dispatch`] for `bae_reports`, using a
+//! verified archive.org identifier declared at the dispatch call site (the
+//! manifest's `url` for this source is the bare `https://archive.org`
+//! domain, not a per-item link).
 
 use serde::Deserialize;
 

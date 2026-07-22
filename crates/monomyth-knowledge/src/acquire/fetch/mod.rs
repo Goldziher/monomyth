@@ -1,18 +1,24 @@
 //! Per-family fetchers: Gutendex (Project Gutenberg discovery + download),
-//! `HuggingFace` datasets-server (paginated JSON rows), and archive.org
-//! (metadata + file download).
+//! `HuggingFace` datasets-server (paginated JSON rows), archive.org
+//! (metadata + file download), a GitHub repository directory (Contents API),
+//! a SPARQL 1.1 endpoint (Wikidata/DBpedia), a Zenodo/DOI record (metadata +
+//! optional zip extraction), and a plain HTML page (visible-text extraction).
 //!
-//! There are exactly three fetcher families, each with its own request shape,
-//! pagination scheme, and result mapping, and the orchestrator in
-//! [`crate::acquire`] dispatches to them by ledger source id rather than by
-//! any shared trait method. A `Fetcher` trait would buy dynamic dispatch we
-//! do not need — the orchestrator already knows statically which family a
-//! given source id belongs to — so this module favors free functions per
-//! family over a trait with three implementors called through one interface.
+//! Each family has its own request shape, pagination scheme, and result
+//! mapping, and the dispatch table in [`crate::acquire::dispatch`] routes to
+//! them by ledger source id rather than by any shared trait method. A
+//! `Fetcher` trait would buy dynamic dispatch we do not need — the dispatch
+//! table already knows statically which family a given source id belongs to
+//! — so this module favors free functions per family over a trait with many
+//! implementors called through one interface.
 
-mod archive;
+pub(crate) mod archive;
+pub(crate) mod git;
 pub(crate) mod gutendex;
+pub(crate) mod html;
 pub(crate) mod huggingface;
+pub(crate) mod sparql;
+pub(crate) mod zenodo;
 
 /// A single fetched work, mapping 1:1 onto [`crate::IngestInput`]'s
 /// provenance-bearing fields.

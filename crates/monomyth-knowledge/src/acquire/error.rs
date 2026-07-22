@@ -70,4 +70,28 @@ pub enum AcquireError {
         /// Why no fetcher is available.
         reason: &'static str,
     },
+
+    /// Reading a downloaded zip archive (e.g. a Zenodo record file) failed.
+    #[error("zip archive error while {what}")]
+    Zip {
+        /// What operation on the archive failed.
+        what: &'static str,
+        /// The underlying `zip` crate error.
+        #[source]
+        source: zip::result::ZipError,
+    },
+
+    /// A zip archive member (or the running total across members)
+    /// decompressed past its configured size cap — the zip-bomb guard.
+    /// DEFLATE can expand a small compressed member far past
+    /// [`Self::TooLarge`]'s compressed-bytes cap, so a declared (and
+    /// attacker-controlled) uncompressed size is never trusted; this is
+    /// raised only after a bounded read has actually hit the cap.
+    #[error("{what} exceeded the {limit}-byte decompressed size cap")]
+    ZipTooLarge {
+        /// What was capped: a member's description, or the running total.
+        what: String,
+        /// The byte cap that was exceeded.
+        limit: u64,
+    },
 }
