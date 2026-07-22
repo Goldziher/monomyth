@@ -527,14 +527,23 @@ fn refuse_if_already_promoted(laws_dir: &Path, law_id: &str, index: &LawIndex) -
     Ok(())
 }
 
-/// Collect every item's name and description text: what the anti-leak gate
-/// re-checks against the recorded grounding.
-fn item_texts(artifact: &LawArtifact) -> Vec<&str> {
-    artifact
-        .items
-        .iter()
-        .flat_map(|item| [item.name.as_str(), item.description.as_str()])
-        .collect()
+/// Collect every free-text field the anti-leak gate must re-check against the
+/// recorded grounding: the artifact's `title` and `tier_note`, plus every
+/// item's name and description.
+///
+/// `title` and `tier_note` are reviewer-editable free text exactly like an
+/// item's `description` — a human edit to either during review can just as
+/// easily reintroduce verbatim source wording, so omitting them from the gate
+/// would leave a leak path open that the item-only check never covers.
+fn candidate_leak_texts(artifact: &LawArtifact) -> Vec<&str> {
+    let mut texts = vec![artifact.title.as_str(), artifact.tier_note.as_str()];
+    texts.extend(
+        artifact
+            .items
+            .iter()
+            .flat_map(|item| [item.name.as_str(), item.description.as_str()]),
+    );
+    texts
 }
 
 /// Collect `(source_id, text)` reference chunks from a sidecar's passages.
@@ -596,11 +605,22 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
             candidate.display()
         )
     })?;
-    let sidecar = read_sidecar_context(&sidecar_path_for(&candidate)?)?;
+    let sidecar_path = sidecar_path_for(&candidate)?;
+    let sidecar = read_sidecar_context(&sidecar_path)?;
 
     artifact.synthesis.reviewed_by = reviewed_by;
 
-    verify_no_verbatim(&item_texts(&artifact), &reference_chunks(&sidecar)).with_context(|| {
+    let reference_chunks = reference_chunks(&sidecar);
+    if reference_chunks.is_empty() {
+        bail!(
+            "cannot re-verify law {:?}: sidecar {} records no grounding passages; an empty or \
+             tampered passages array must not silently disable the anti-leak gate",
+            artifact.law,
+            sidecar_path.display()
+        );
+    }
+
+    verify_no_verbatim(&candidate_leak_texts(&artifact), &reference_chunks).with_context(|| {
         format!(
             "anti-leak re-check failed for law {:?}; a human edit must not reintroduce verbatim \
              wording from the recorded sources",
@@ -925,6 +945,54 @@ mod tests {
         candidate_path
     }
 
+    /// Write a fixture candidate law + review-context sidecar into `dir` with
+    /// full control over `title`, `tier_note`, and the sidecar's passages —
+    /// needed to exercise the anti-leak gate against fields
+    /// [`write_fixture_candidate`] hardcodes.
+    fn write_fixture_candidate_full(
+        dir: &Path,
+        law_id: &str,
+        title: &str,
+        tier_note: &str,
+        item_description: &str,
+        sidecar_passages: &[(&str, &str)],
+    ) -> std::path::PathBuf {
+        let candidate_json = format!(
+            r#"{{
+  "law": "{law_id}",
+  "title": {title:?},
+  "license": "idea/taxonomy only; test fixture",
+  "namespace": "ship",
+  "tier": "system",
+  "domain": "myth",
+  "tier_note": {tier_note:?},
+  "synthesis": {{
+    "reference_source_ids": ["fixture_source"],
+    "model": "test/stub-model",
+    "generated": "2026-07-21",
+    "reviewed_by": "",
+    "candidate_sha256": "deadbeef"
+  }},
+  "count": 1,
+  "items": [
+    {{ "id": 1, "name": "Setup", "description": {item_description:?} }}
+  ]
+}}"#
+        );
+        let candidate_path = dir.join(format!("{law_id}.json"));
+        std::fs::write(&candidate_path, candidate_json).expect("fixture candidate writes");
+
+        let passages_json: Vec<String> = sidecar_passages
+            .iter()
+            .map(|(source_id, text)| format!(r#"{{"source_id": {source_id:?}, "text": {text:?}}}"#))
+            .collect();
+        let sidecar_json = format!(r#"{{"passages": [{}]}}"#, passages_json.join(", "));
+        let sidecar_path = dir.join(format!("{law_id}.context.json"));
+        std::fs::write(&sidecar_path, sidecar_json).expect("fixture sidecar writes");
+
+        candidate_path
+    }
+
     /// Write a minimal `index.json` fixture (empty `laws` array) into `laws_dir`.
     fn write_fixture_index(laws_dir: &Path) {
         std::fs::create_dir_all(laws_dir).expect("laws dir creates");
@@ -1030,6 +1098,98 @@ mod tests {
             !laws_dir.join("leaky_law.json").exists(),
             "a rejected candidate must not be written into laws_dir"
         );
+    }
+
+    #[test]
+    fn should_reject_promotion_when_title_verbatim_overlaps_the_sidecar() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let overlapping_title = "The Suppliant implores a Power in authority to grant a boon";
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "leaky_title_law",
+            overlapping_title,
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[(
+                "fixture_source",
+                "The Suppliant implores a Power in authority to grant a boon of mercy.",
+            )],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("a verbatim overlap in the artifact title must be rejected on re-check");
+
+        assert!(
+            format!("{error:#}").to_lowercase().contains("anti-leak"),
+            "error must name the anti-leak re-check, got: {error:#}"
+        );
+        assert!(!laws_dir.join("leaky_title_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_tier_note_verbatim_overlaps_the_sidecar() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let overlapping_tier_note = "the suppliant implores a power in authority to grant a boon";
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "leaky_tier_note_law",
+            "Fixture Law",
+            overlapping_tier_note,
+            "A harmless made-up description with no overlap at all here.",
+            &[(
+                "fixture_source",
+                "The Suppliant implores a Power in authority to grant a boon of mercy.",
+            )],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("a verbatim overlap in the artifact tier_note must be rejected on re-check");
+
+        assert!(
+            format!("{error:#}").to_lowercase().contains("anti-leak"),
+            "error must name the anti-leak re-check, got: {error:#}"
+        );
+        assert!(!laws_dir.join("leaky_tier_note_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_sidecar_records_no_grounding_passages() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "unguarded_law",
+            "Fixture Law",
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("an empty sidecar passages array must not silently disable the anti-leak gate");
+
+        assert!(
+            error.to_string().to_lowercase().contains("grounding"),
+            "error must explain the sidecar records no grounding passages, got: {error}"
+        );
+        assert!(!laws_dir.join("unguarded_law.json").exists());
     }
 
     #[test]
