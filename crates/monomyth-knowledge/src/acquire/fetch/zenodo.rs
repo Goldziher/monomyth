@@ -22,6 +22,20 @@ use crate::acquire::http::{self, FetchContext};
 /// everything else (binaries, source files, project files) is skipped.
 const TEXT_LIKE_EXTENSIONS: [&str; 5] = ["csv", "tsv", "json", "md", "txt"];
 
+/// Per-member decompressed-size cap enforced while extracting a zip archive
+/// (see [`extract_zip_text`]). DEFLATE can expand a small compressed member
+/// roughly 1000:1, so `http::MAX_RESPONSE_BYTES` — which bounds the
+/// *compressed* download — does not bound a member's *decompressed* size.
+/// This cap is enforced via a bounded `Read` regardless of what the
+/// member's (attacker-controlled) declared uncompressed-size field claims —
+/// the zip-bomb guard.
+const MAX_ZIP_MEMBER_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Total decompressed-bytes cap across every member extracted from one zip
+/// archive, so many members that are each individually under
+/// [`MAX_ZIP_MEMBER_BYTES`] cannot still sum to an unbounded total.
+const MAX_ZIP_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
+
 /// A Zenodo record's file listing, narrowed to what this fetcher uses.
 #[derive(Debug, Deserialize)]
 struct RecordResponse {
@@ -133,7 +147,25 @@ fn is_text_like(filename: &str) -> bool {
 /// Extract every text-like member of a zip archive (see
 /// [`TEXT_LIKE_EXTENSIONS`]) and concatenate them as
 /// `"== <member name> ==\n<content>\n\n"` blocks, in archive order.
+///
+/// # Errors
+///
+/// Returns [`AcquireError::Zip`] if the archive or a member cannot be read,
+/// or [`AcquireError::ZipTooLarge`] if a member's decompressed size (or the
+/// running total across members) exceeds [`MAX_ZIP_MEMBER_BYTES`] /
+/// [`MAX_ZIP_TOTAL_BYTES`] — the zip-bomb guard.
 fn extract_zip_text(bytes: &[u8]) -> Result<String, AcquireError> {
+    extract_zip_text_capped(bytes, MAX_ZIP_MEMBER_BYTES, MAX_ZIP_TOTAL_BYTES)
+}
+
+/// [`extract_zip_text`]'s implementation, parametrized by cap so a hermetic
+/// test can exercise the zip-bomb guard against a small fixture and a small
+/// cap rather than actually decompressing tens of megabytes.
+fn extract_zip_text_capped(
+    bytes: &[u8],
+    per_member_cap: u64,
+    total_cap: u64,
+) -> Result<String, AcquireError> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|source| AcquireError::Zip {
             what: "opening zip archive",
@@ -141,6 +173,7 @@ fn extract_zip_text(bytes: &[u8]) -> Result<String, AcquireError> {
         })?;
 
     let mut out = String::new();
+    let mut total_read: u64 = 0;
     for index in 0..archive.len() {
         let mut member = archive
             .by_index(index)
@@ -152,13 +185,48 @@ fn extract_zip_text(bytes: &[u8]) -> Result<String, AcquireError> {
             continue;
         }
         let name = member.name().to_owned();
-        let mut content = String::new();
-        member
-            .read_to_string(&mut content)
+
+        if total_read >= total_cap {
+            return Err(AcquireError::ZipTooLarge {
+                what: "total decompressed size across zip members".to_owned(),
+                limit: total_cap,
+            });
+        }
+
+        // Read one byte past the cap: this bounds the read itself (never the ~keep
+        // member's full, attacker-controlled decompressed size) while still ~keep
+        // distinguishing a member exactly at the cap (allowed) from one that ~keep
+        // truly exceeds it (rejected below). ~keep
+        let mut raw = Vec::new();
+        (&mut member)
+            .take(per_member_cap.saturating_add(1))
+            .read_to_end(&mut raw)
             .map_err(|error| AcquireError::Zip {
-                what: "decoding zip member as UTF-8",
+                what: "reading zip member",
                 source: zip::result::ZipError::Io(error),
             })?;
+        if u64::try_from(raw.len()).unwrap_or(u64::MAX) > per_member_cap {
+            return Err(AcquireError::ZipTooLarge {
+                what: format!("decompressed zip member '{name}'"),
+                limit: per_member_cap,
+            });
+        }
+
+        total_read += u64::try_from(raw.len()).unwrap_or(u64::MAX);
+        if total_read > total_cap {
+            return Err(AcquireError::ZipTooLarge {
+                what: "total decompressed size across zip members".to_owned(),
+                limit: total_cap,
+            });
+        }
+
+        let content = String::from_utf8(raw).map_err(|error| AcquireError::Zip {
+            what: "decoding zip member as UTF-8",
+            source: zip::result::ZipError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                error,
+            )),
+        })?;
         out.push_str("== ");
         out.push_str(&name);
         out.push_str(" ==\n");
@@ -262,5 +330,71 @@ mod tests {
 
         let text = extract_zip_text(&bytes).expect("archive reads back");
         assert_eq!(text, "== data.csv ==\na,b\n1,2\n\n\n");
+    }
+
+    /// The zip-bomb guard: a member whose decompressed content exceeds the
+    /// per-member cap must be rejected, and the read itself must be bounded
+    /// (a small cap here stands in for [`MAX_ZIP_MEMBER_BYTES`] so this test
+    /// stays fast and hermetic rather than actually decompressing 64 MiB).
+    #[test]
+    fn extract_zip_text_capped_rejects_a_member_over_the_per_member_cap() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("bomb.csv", options).expect("start_file");
+        writer
+            .write_all(&[b'a'; 1024])
+            .expect("write oversized member");
+        let cursor = writer.finish().expect("finish archive");
+        let bytes = cursor.into_inner();
+
+        let error = extract_zip_text_capped(&bytes, 100, 10_000).expect_err("must be rejected");
+        match error {
+            AcquireError::ZipTooLarge { what, limit } => {
+                assert_eq!(what, "decompressed zip member 'bomb.csv'");
+                assert_eq!(limit, 100);
+            }
+            other => panic!("expected ZipTooLarge, got {other:?}"),
+        }
+    }
+
+    /// The zip-bomb guard's second axis: several members each under the
+    /// per-member cap must still be rejected once their running total
+    /// exceeds the total cap.
+    #[test]
+    fn extract_zip_text_capped_rejects_a_total_over_the_total_cap() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        for name in ["a.csv", "b.csv", "c.csv"] {
+            writer.start_file(name, options).expect("start_file");
+            writer.write_all(&[b'a'; 40]).expect("write member");
+        }
+        let cursor = writer.finish().expect("finish archive");
+        let bytes = cursor.into_inner();
+
+        // Each member (40 bytes) is well under the per-member cap (100), but ~keep
+        // three of them (120 bytes) exceed the total cap (100). ~keep
+        let error = extract_zip_text_capped(&bytes, 100, 100).expect_err("must be rejected");
+        match error {
+            AcquireError::ZipTooLarge { what, limit } => {
+                assert_eq!(what, "total decompressed size across zip members");
+                assert_eq!(limit, 100);
+            }
+            other => panic!("expected ZipTooLarge, got {other:?}"),
+        }
+    }
+
+    /// A member exactly at the cap must be accepted, not falsely rejected —
+    /// pins the "read one byte past the cap" boundary logic.
+    #[test]
+    fn extract_zip_text_capped_accepts_a_member_exactly_at_the_cap() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("exact.csv", options).expect("start_file");
+        writer.write_all(&[b'a'; 100]).expect("write member");
+        let cursor = writer.finish().expect("finish archive");
+        let bytes = cursor.into_inner();
+
+        let text = extract_zip_text_capped(&bytes, 100, 10_000).expect("must be accepted");
+        assert_eq!(text, format!("== exact.csv ==\n{}\n\n", "a".repeat(100)));
     }
 }
