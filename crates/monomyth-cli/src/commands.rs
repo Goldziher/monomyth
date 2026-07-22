@@ -21,11 +21,13 @@ use time::OffsetDateTime;
 use time::macros::format_description;
 
 /// The `render.medium` string that selects `monomyth-render-terse`'s
-/// [`TerseRenderer`]. Any other value (including an unrecognized one) selects
-/// `monomyth-text`'s [`TextRenderer`] — the prose medium is the fallback,
-/// mirroring `GenreKind::parse`'s fallback-to-myth behavior rather than
-/// treating an unknown medium as a hard input-validation error.
+/// [`TerseRenderer`].
 const RENDER_MEDIUM_TERSE: &str = "terse";
+
+/// The `render.medium` string that selects `monomyth-text`'s [`TextRenderer`]
+/// — also `monomyth-config`'s system default for `render.medium`, so a
+/// config with no `[render]` table at all still resolves.
+const RENDER_MEDIUM_PROSE: &str = "prose";
 
 /// Generate a world's structure from `seed` under the resolved generation `config`.
 ///
@@ -82,18 +84,27 @@ pub(crate) fn resolve_config() -> Result<MonomythConfig> {
 }
 
 /// Build the `Box<dyn Renderer>` the composition root selects by
-/// `config.render.medium` (ADR-0020, the P-RENDER plane): `"terse"` selects
-/// `monomyth-render-terse`'s [`TerseRenderer`], anything else (including an
-/// unrecognized medium) selects `monomyth-text`'s [`TextRenderer`].
+/// `config.render.medium` (ADR-0020, the P-RENDER plane): `"prose"` selects
+/// `monomyth-text`'s [`TextRenderer`], `"terse"` selects
+/// `monomyth-render-terse`'s [`TerseRenderer`].
 ///
 /// This is the one place the layered `monomyth-config` types cross into a
 /// concrete renderer crate — every call site downstream (`gen`, `play`, `edit`)
 /// holds only the resulting trait object and never branches on medium itself.
-#[must_use]
-pub(crate) fn build_renderer(config: &MonomythConfig) -> Box<dyn Renderer> {
+///
+/// # Errors
+///
+/// Fails if `config.render.medium` is neither [`RENDER_MEDIUM_PROSE`] nor
+/// [`RENDER_MEDIUM_TERSE`] — an unrecognized medium is a configuration
+/// mistake, not something to silently paper over by falling back to prose.
+pub(crate) fn build_renderer(config: &MonomythConfig) -> Result<Box<dyn Renderer>> {
     match config.render.medium.get().as_str() {
-        RENDER_MEDIUM_TERSE => Box::new(TerseRenderer),
-        _ => Box::new(TextRenderer),
+        RENDER_MEDIUM_PROSE => Ok(Box::new(TextRenderer)),
+        RENDER_MEDIUM_TERSE => Ok(Box::new(TerseRenderer)),
+        other => bail!(
+            "unrecognized render.medium {other:?}; valid values are {RENDER_MEDIUM_PROSE:?} and \
+             {RENDER_MEDIUM_TERSE:?}"
+        ),
     }
 }
 
@@ -122,7 +133,7 @@ pub(crate) async fn run_gen(
         })
         .resolve()
         .context("validating configuration")?;
-    let renderer = build_renderer(&config);
+    let renderer = build_renderer(&config)?;
     let generator = Generator::with_config(&generation_config(&config));
     let mut world = generator
         .generate_structure(seed)
@@ -698,7 +709,7 @@ mod tests {
         let config = ConfigResolver::defaults()
             .resolve()
             .expect("defaults validate");
-        let renderer = build_renderer(&config);
+        let renderer = build_renderer(&config).expect("the default medium resolves");
         let world = single_room_world();
         assert_eq!(renderer.intro(&world), "[an untitled world]\n\nSeed: 0");
     }
@@ -713,7 +724,7 @@ mod tests {
             .expect("in-range config validates");
         std::fs::remove_file(&path).ok();
 
-        let renderer = build_renderer(&config);
+        let renderer = build_renderer(&config).expect("\"terse\" resolves");
         let world = single_room_world();
         assert_eq!(
             renderer.intro(&world),
@@ -722,18 +733,39 @@ mod tests {
     }
 
     #[test]
-    fn build_renderer_falls_back_to_prose_for_an_unrecognized_medium() {
-        let path = std::env::temp_dir().join("monomyth-cli-test-render-unknown.toml");
-        std::fs::write(&path, "[render]\nmedium = \"space-opera\"\n").expect("write temp config");
+    fn build_renderer_selects_prose_medium_explicitly_from_config() {
+        let path = std::env::temp_dir().join("monomyth-cli-test-render-prose.toml");
+        std::fs::write(&path, "[render]\nmedium = \"prose\"\n").expect("write temp config");
         let config = ConfigResolver::discover_from(None, None, Some(&path))
             .expect("valid toml")
             .resolve()
             .expect("in-range config validates");
         std::fs::remove_file(&path).ok();
 
-        let renderer = build_renderer(&config);
+        let renderer = build_renderer(&config).expect("\"prose\" resolves");
         let world = single_room_world();
         assert_eq!(renderer.intro(&world), "[an untitled world]\n\nSeed: 0");
+    }
+
+    #[test]
+    fn build_renderer_errors_for_an_unrecognized_medium() {
+        let path = std::env::temp_dir().join("monomyth-cli-test-render-unknown.toml");
+        std::fs::write(&path, "[render]\nmedium = \"bogus\"\n").expect("write temp config");
+        let config = ConfigResolver::discover_from(None, None, Some(&path))
+            .expect("valid toml")
+            .resolve()
+            .expect("in-range config validates");
+        std::fs::remove_file(&path).ok();
+
+        // `Box<dyn Renderer>` is not `Debug`, so `Result::expect_err` cannot be used
+        // here; destructure instead of unwrap-then-discard the `Ok` case explicitly.
+        let Err(error) = build_renderer(&config) else {
+            panic!("an unrecognized medium must not silently fall back");
+        };
+        assert!(
+            error.to_string().contains("bogus"),
+            "error must name the bad value, got: {error}"
+        );
     }
 
     #[test]

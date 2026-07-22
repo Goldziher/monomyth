@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-13
+date: 2026-07-22
 decision-makers: Na'aman Hirschfeld
 ---
 
@@ -87,10 +87,15 @@ Delivered in slices:
   deriving the outline from the spine. Pure and deterministic — no LLM, no IO — so it de-risks the
   crate seam without touching any cassette or golden. Snapshot/property tests pin the outline against a
   seeded world.
-- **Slice 2 — Draft + the multi-turn primitive** (deferred): `generate_long_form` over the
-  `StructuredBackend` seam, per-section grounding, and the `record`/`replay` cassette pair.
-- **Slice 3 — Revise** (deferred): the semantic-scored feedback loop.
-- **Slice 4 — Assemble + `compose()` end-to-end + CLI wiring** (deferred).
+- **Slice 2 — Draft + the multi-turn primitive** (realized): `generate_long_form`
+  (`monomyth_compose::generate`) over the `StructuredBackend` seam, per-section grounding, and the
+  `record`/`replay` cassette pair.
+- **Slice 3 — Revise** (realized): the semantic-scored feedback loop (`monomyth_compose::revise`),
+  driving `draft_and_revise_section` to convergence or a missing-info note.
+- **Slice 4 — Assemble + `compose()` end-to-end + CLI wiring** (realized): `assemble` stitches
+  revised sections into a `LongFormDoc` (`monomyth_compose::assemble`); `compose()`
+  (`monomyth_compose::draft`) runs plan → draft/revise → assemble end-to-end; `monomyth-cli`'s
+  `compose` subcommand (`crates/monomyth-cli/src/compose.rs`) wires it into the binary.
 
 ### Consequences
 
@@ -113,10 +118,15 @@ Delivered in slices:
 Slice 1: `cargo test -p monomyth-compose` pins the Plan phase deterministically (a seeded world yields
 a fixed outline — one section per spine node, stages in spine order); `cargo test --workspace` plus
 both determinism goldens (gen `0x65f6_6a4b_a541_5419`, eval `0xe852_73b6_ce90_fe55`) confirm the new
-crate perturbs nothing. Later slices add a CI-hard offline `replay_compose` test (loading a committed
-cassette via `ReplayBackend`) alongside an `#[ignore]` live recording path, mirroring
-`monomyth-gen/tests/{live,replay}_fill.rs`; a soft, logged baseline tracks the semantic axis without
-gating CI.
+crate perturbs nothing.
+
+Slices 2-4 (realized): `crates/monomyth-compose/tests/compose_replay.rs` is the CI-hard offline test,
+loading the committed `tests/cassettes/compose_seed42_gemini.json` via `ReplayBackend` end-to-end
+through `compose()`; `crates/monomyth-compose/tests/compose_live.rs` is the `#[ignore]`d live
+recording path, mirroring `monomyth-gen/tests/{live,replay}_fill.rs`. `monomyth-cli`'s `compose`
+subcommand exercises the same pipeline from the binary. `cargo test --workspace` and both determinism
+goldens remain green — compose's LLM phases stay quarantined behind the `StructuredBackend` seam and
+never touch the procedural RNG or the eval fingerprint.
 
 ## Pros and Cons of the Options
 

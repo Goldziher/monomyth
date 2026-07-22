@@ -153,7 +153,8 @@ fn review_required_banner(
 ///
 /// # Errors
 ///
-/// Fails if `out_dir` cannot be created, either file cannot be serialized, or
+/// Fails if `law_id` is not a safe path component ([`validate_law_slug`]), if
+/// `out_dir` cannot be created, if either file cannot be serialized, or if
 /// either file cannot be written.
 fn write_candidate(
     drafted: &DraftedLaw,
@@ -161,6 +162,14 @@ fn write_candidate(
     query: &str,
     out_dir: &Path,
 ) -> Result<PathBuf> {
+    // `law_id` here is an operator-typed `--law` CLI argument, not adversarial content
+    // read from a file, so it is a lower-trust-boundary case than `run_synthesize_promote`'s
+    // `artifact.law` — but validating it before building any path is cheap, keeps every
+    // `<...>.join(format!("{law_id}.json"))` call site in this module held to the same
+    // invariant, and a mistyped `--law` value fails fast with a clear message instead of
+    // writing outside `out_dir`.
+    validate_law_slug(law_id).with_context(|| format!("--law {law_id:?} is not a safe law id"))?;
+
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("creating candidate directory {}", out_dir.display()))?;
 
@@ -418,6 +427,49 @@ fn sidecar_path_for(candidate_path: &Path) -> Result<PathBuf> {
     Ok(parent.join(format!("{stem}.context.json")))
 }
 
+/// Maximum length, in bytes, of a law slug (`artifact.law`). Bounds the
+/// filename component built from it; 64 bytes comfortably fits every real law
+/// id (e.g. `monomyth_macro_arc`) with headroom.
+const MAX_LAW_SLUG_LEN: usize = 64;
+
+/// Validate that `slug` is safe to interpolate into a filesystem path
+/// component: non-empty, at most [`MAX_LAW_SLUG_LEN`] bytes, and composed
+/// only of ASCII lowercase letters, digits, and underscores (`^[a-z0-9_]+$`).
+///
+/// `artifact.law` is reviewer-controlled free text read from a candidate JSON
+/// file, not a value this process generated. [`run_synthesize_promote`] and
+/// [`refuse_if_already_promoted`] both build filesystem paths by
+/// interpolating it directly (`laws_dir.join(format!("{law}.json"))`);
+/// without this check a crafted slug such as `"../frameworks/x"` or an
+/// absolute path escapes `laws_dir` (CWE-22 path traversal). A byte-level
+/// allowlist scan rather than a `regex` dependency: the language is trivial
+/// enough that pulling in a regex engine for it is not worth it.
+///
+/// # Errors
+///
+/// Fails if `slug` is empty, exceeds [`MAX_LAW_SLUG_LEN`] bytes, or contains
+/// any byte outside `[a-z0-9_]`.
+fn validate_law_slug(slug: &str) -> Result<()> {
+    if slug.is_empty() {
+        bail!("law id must not be empty");
+    }
+    if slug.len() > MAX_LAW_SLUG_LEN {
+        bail!(
+            "law id {slug:?} is {} bytes, exceeding the {MAX_LAW_SLUG_LEN}-byte limit",
+            slug.len()
+        );
+    }
+    let is_valid_byte =
+        |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_';
+    if !slug.bytes().all(is_valid_byte) {
+        bail!(
+            "law id {slug:?} must match ^[a-z0-9_]+$ (lowercase ascii letters, digits, underscore \
+             only)"
+        );
+    }
+    Ok(())
+}
+
 /// Read and parse a candidate artifact as a [`LawArtifact`].
 ///
 /// # Errors
@@ -446,53 +498,136 @@ fn read_sidecar_context(sidecar_path: &Path) -> Result<SidecarReviewContext> {
         .with_context(|| format!("parsing review context {}", sidecar_path.display()))
 }
 
-/// Read `<laws-dir>/index.json`.
+/// The `index` field of a freshly bootstrapped `index.json`, written the
+/// first time `synthesize promote` runs against a `laws_dir` that has no
+/// index yet.
+const BOOTSTRAP_INDEX_TITLE: &str = "Synthesized laws";
+
+/// The `note` field of a freshly bootstrapped `index.json`.
+const BOOTSTRAP_INDEX_NOTE: &str = "Build-time-synthesized, human-reviewed structural laws (ADR-0016). Auto-created by \
+     `synthesize promote`.";
+
+/// Read `<laws-dir>/index.json`, treating a missing file as an empty index.
+///
+/// A missing `index.json` is not an error: it is exactly the state of a
+/// brand-new `laws_dir` before its first promotion, and `synthesize promote`
+/// must be able to bootstrap that first promotion rather than requiring some
+/// other step to pre-create an empty index.
 ///
 /// # Errors
 ///
-/// Fails if `index_path` cannot be read or does not parse as a [`LawIndex`].
+/// Fails if `index_path` exists but cannot be read, or does not parse as a
+/// [`LawIndex`].
 fn read_laws_index(index_path: &Path) -> Result<LawIndex> {
-    let json = std::fs::read_to_string(index_path)
-        .with_context(|| format!("reading laws index {}", index_path.display()))?;
+    let json = match std::fs::read_to_string(index_path) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LawIndex {
+                index: BOOTSTRAP_INDEX_TITLE.to_owned(),
+                note: BOOTSTRAP_INDEX_NOTE.to_owned(),
+                laws: Vec::new(),
+            });
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("reading laws index {}", index_path.display()));
+        }
+    };
     serde_json::from_str(&json)
         .with_context(|| format!("parsing laws index {}", index_path.display()))
 }
 
-/// Refuse promotion if `law_id` is already promoted: either its artifact file
-/// already exists in `laws_dir`, or it is already registered in `index`.
+/// Refuse promotion if `law_id` is already registered in `index` — the
+/// authoritative record of what is promoted.
 ///
-/// Idempotency guard: a promoted law must never be silently overwritten or
-/// double-registered.
+/// An on-disk `<law_id>.json` that exists but is *not* indexed is reported to
+/// stderr as an unindexed-orphan warning rather than a hard block. Index
+/// membership, not file existence, is authoritative: a law file can exist
+/// without being indexed only if a prior promotion was interrupted between
+/// writing the artifact and updating the index (or the file was placed there
+/// by hand), and treating that as a permanent block would wedge recovery —
+/// the file can never be indexed and can never be overwritten either.
 ///
 /// # Errors
 ///
-/// Fails if `law_id` is already promoted by either measure.
+/// Fails if `law_id` is already registered in `index`.
 fn refuse_if_already_promoted(laws_dir: &Path, law_id: &str, index: &LawIndex) -> Result<()> {
-    let law_path = laws_dir.join(format!("{law_id}.json"));
-    if law_path.exists() {
-        bail!(
-            "law {law_id:?} is already promoted: {} already exists",
-            law_path.display()
-        );
-    }
     if index.laws.iter().any(|entry| entry.law == law_id) {
         bail!(
             "law {law_id:?} is already registered in {}",
             laws_dir.join("index.json").display()
         );
     }
+    let law_path = laws_dir.join(format!("{law_id}.json"));
+    if law_path.exists() {
+        eprintln!(
+            "warning: {} exists but law {law_id:?} is not registered in the index; treating it \
+             as an unindexed orphan (likely an interrupted prior promotion) and overwriting it",
+            law_path.display()
+        );
+    }
     Ok(())
 }
 
-/// Collect every item's name and description text: what the anti-leak gate
-/// re-checks against the recorded grounding.
-fn item_texts(artifact: &LawArtifact) -> Vec<&str> {
-    artifact
-        .items
-        .iter()
-        .flat_map(|item| [item.name.as_str(), item.description.as_str()])
-        .collect()
+/// Write `contents` to `path` atomically: write to a sibling temporary file
+/// in the same directory, then `rename` it over `path`. A crash or a
+/// concurrent reader can therefore never observe a partially-written law
+/// artifact or index — `rename` within a single filesystem is atomic, unlike
+/// a direct [`std::fs::write`], which can leave a truncated file behind if
+/// the process is interrupted mid-write.
+///
+/// # Errors
+///
+/// Fails if `path` has no parent directory, if the temporary file cannot be
+/// written, or if the rename fails.
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("{} has no usable UTF-8 file name", path.display()))?;
+    let temp_path = parent.join(format!(".{file_name}.tmp-{}", std::process::id()));
+    std::fs::write(&temp_path, contents)
+        .with_context(|| format!("writing temporary file {}", temp_path.display()))?;
+    std::fs::rename(&temp_path, path).with_context(|| {
+        format!(
+            "renaming {} into place at {}",
+            temp_path.display(),
+            path.display()
+        )
+    })
 }
+
+/// Collect every free-text field the anti-leak gate must re-check against the
+/// recorded grounding: the artifact's `title` and `tier_note`, plus every
+/// item's name and description.
+///
+/// `title` and `tier_note` are reviewer-editable free text exactly like an
+/// item's `description` — a human edit to either during review can just as
+/// easily reintroduce verbatim source wording, so omitting them from the gate
+/// would leave a leak path open that the item-only check never covers.
+fn candidate_leak_texts(artifact: &LawArtifact) -> Vec<&str> {
+    let mut texts = vec![artifact.title.as_str(), artifact.tier_note.as_str()];
+    texts.extend(
+        artifact
+            .items
+            .iter()
+            .flat_map(|item| [item.name.as_str(), item.description.as_str()]),
+    );
+    texts
+}
+
+/// Minimum whitespace-split word count a sidecar passage must have to produce
+/// at least one shingle in the anti-leak gate.
+///
+/// Mirrors `monomyth_synthesis::antileak::SHINGLE_N` (currently 8), which is
+/// private to that module: a passage shorter than the shingle width yields
+/// zero shingles, so [`monomyth_synthesis::verify_no_verbatim`] silently finds
+/// nothing to compare it against — the same neutered-gate failure mode as an
+/// empty `passages` array. Update this constant if `SHINGLE_N` changes.
+const MIN_SHINGLE_WORDS: usize = 8;
 
 /// Collect `(source_id, text)` reference chunks from a sidecar's passages.
 fn reference_chunks(sidecar: &SidecarReviewContext) -> Vec<(&str, &str)> {
@@ -516,27 +651,53 @@ pub(crate) struct SynthesizePromoteArgs {
 /// Handle `synthesize promote`: stamp a human-reviewed candidate, re-verify
 /// it, and promote it into `laws_dir` (ADR-0016 Phase 2e).
 ///
+/// **Concurrency:** each individual write (the law artifact, the index) is
+/// atomic ([`write_atomic`]), but the index read-modify-write as a whole is
+/// not locked across the two. Two `synthesize promote` invocations racing
+/// against the same `laws_dir` can both read the same `index.json`, and
+/// whichever writes its updated index last wins — silently dropping the
+/// other's new entry (its law *file* still lands via `write_atomic`, so it
+/// becomes exactly the unindexed-orphan case [`refuse_if_already_promoted`]
+/// already recovers from on a later run, just via a race instead of a crash).
+/// This is acceptable for a sequential, reviewer-driven CLI command — nobody
+/// is expected to run two promotions concurrently against the same laws
+/// directory — so no locking is implemented; if that assumption ever stops
+/// holding, add a `source.lock`-style advisory lock around the read-index →
+/// write-index span.
+///
 /// Order of operations, each a fail-fast gate before the next:
 /// 1. reject a blank `--reviewed-by` (the review gate itself), before any
 ///    filesystem work;
-/// 2. read the candidate and its review-context sidecar;
-/// 3. stamp `synthesis.reviewed_by` — every other `synthesis` field,
+/// 2. read the candidate, then validate its `law` id ([`validate_law_slug`])
+///    before any path is built from it;
+/// 3. read the candidate's review-context sidecar;
+/// 4. stamp `synthesis.reviewed_by` — every other `synthesis` field,
 ///    including `candidate_sha256`, is left untouched, since it records how
 ///    the candidate was drafted, not how it was reviewed;
-/// 4. re-run the anti-leak gate against the recorded grounding passages,
-///    since a human edit could reintroduce verbatim wording;
-/// 5. validate the stamped result via `monomyth_frameworks::load_law`, the
+/// 5. re-run the anti-leak gate against the recorded grounding passages
+///    ([`candidate_leak_texts`]), since a human edit could reintroduce
+///    verbatim wording — and refuse to promote at all if the sidecar records
+///    no *usable* passages (empty, or every passage under the
+///    [`MIN_SHINGLE_WORDS`] shingle width), rather than silently treating
+///    that as nothing to check;
+/// 6. validate the stamped result via `monomyth_frameworks::load_law`, the
 ///    framework validator;
-/// 6. refuse if the law is already promoted (idempotency);
-/// 7. write the artifact into `laws_dir` and register it in the index.
+/// 7. bootstrap `laws_dir` (a brand-new directory has no index yet) and read
+///    its index, treating a missing `index.json` as empty;
+/// 8. refuse if the law is already registered in the index (idempotency) —
+///    an unindexed orphan law file is a warning, not a hard block;
+/// 9. atomically write the artifact into `laws_dir` and register it in the
+///    index ([`write_atomic`]).
 ///
 /// # Errors
 ///
-/// Fails on a blank `--reviewed-by`, if the candidate or its sidecar cannot
-/// be read or parsed, if [`monomyth_synthesis::verify_no_verbatim`] finds a
-/// verbatim overlap, if [`monomyth_frameworks::load_law`] rejects the stamped
-/// result, if the law is already promoted, if the laws index cannot be read,
-/// or if any write fails.
+/// Fails on a blank `--reviewed-by`, if the candidate declares an unsafe
+/// `law` id, if the candidate or its sidecar cannot be read or parsed, if the
+/// sidecar records no grounding passages, if
+/// [`monomyth_synthesis::verify_no_verbatim`] finds a verbatim overlap, if
+/// [`monomyth_frameworks::load_law`] rejects the stamped result, if the law
+/// is already registered in the index, if the laws directory cannot be
+/// created, if an existing laws index cannot be read, or if any write fails.
 pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> {
     let SynthesizePromoteArgs {
         candidate,
@@ -547,11 +708,36 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
     require_reviewer_identity(&reviewed_by)?;
 
     let mut artifact = read_candidate_artifact(&candidate)?;
-    let sidecar = read_sidecar_context(&sidecar_path_for(&candidate)?)?;
+    validate_law_slug(&artifact.law).with_context(|| {
+        format!(
+            "candidate {} declares an unsafe law id",
+            candidate.display()
+        )
+    })?;
+    let sidecar_path = sidecar_path_for(&candidate)?;
+    let sidecar = read_sidecar_context(&sidecar_path)?;
 
-    artifact.synthesis.reviewed_by = reviewed_by;
+    // Persist the trimmed identity: require_reviewer_identity already trims to check
+    // for emptiness, and the untrimmed raw value should never reach the artifact.
+    reviewed_by
+        .trim()
+        .clone_into(&mut artifact.synthesis.reviewed_by);
 
-    verify_no_verbatim(&item_texts(&artifact), &reference_chunks(&sidecar)).with_context(|| {
+    let reference_chunks = reference_chunks(&sidecar);
+    let has_usable_passage = reference_chunks
+        .iter()
+        .any(|(_, text)| text.split_whitespace().count() >= MIN_SHINGLE_WORDS);
+    if !has_usable_passage {
+        bail!(
+            "cannot re-verify law {:?}: sidecar {} records no usable grounding passages (empty, \
+             or every passage is under the {MIN_SHINGLE_WORDS}-word anti-leak shingle width); an \
+             empty or tampered passages array must not silently disable the anti-leak gate",
+            artifact.law,
+            sidecar_path.display()
+        );
+    }
+
+    verify_no_verbatim(&candidate_leak_texts(&artifact), &reference_chunks).with_context(|| {
         format!(
             "anti-leak re-check failed for law {:?}; a human edit must not reintroduce verbatim \
              wording from the recorded sources",
@@ -568,14 +754,18 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
         )
     })?;
 
+    // Bootstrap the directory before reading its index: a brand-new `laws_dir`
+    // (nothing promoted into it yet) has no `index.json`, and read_laws_index's
+    // missing-file fallback only helps once the directory itself is there to look in.
+    std::fs::create_dir_all(&laws_dir)
+        .with_context(|| format!("creating laws directory {}", laws_dir.display()))?;
+
     let index_path = laws_dir.join("index.json");
     let mut index = read_laws_index(&index_path)?;
     refuse_if_already_promoted(&laws_dir, &artifact.law, &index)?;
 
-    std::fs::create_dir_all(&laws_dir)
-        .with_context(|| format!("creating laws directory {}", laws_dir.display()))?;
     let law_path = laws_dir.join(format!("{}.json", artifact.law));
-    std::fs::write(&law_path, &stamped_json)
+    write_atomic(&law_path, &stamped_json)
         .with_context(|| format!("writing promoted law artifact {}", law_path.display()))?;
 
     index.laws.push(LawIndexEntry {
@@ -586,7 +776,7 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
     });
     let index_json =
         serde_json::to_string_pretty(&index).context("serializing the updated laws index")?;
-    std::fs::write(&index_path, index_json)
+    write_atomic(&index_path, &index_json)
         .with_context(|| format!("writing updated laws index {}", index_path.display()))?;
 
     println!("promoted law {:?} -> {}", artifact.law, law_path.display());
@@ -604,8 +794,44 @@ mod tests {
 
     use super::{
         DraftedLaw, SynthesizePromoteArgs, rejects_forbidden_out_dir, review_required_banner,
-        run_synthesize_promote, write_candidate,
+        run_synthesize_promote, validate_law_slug, write_candidate,
     };
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_parent_directory_segment() {
+        assert!(validate_law_slug("../frameworks/x").is_err());
+    }
+
+    #[test]
+    fn should_reject_an_absolute_path_law_slug() {
+        assert!(validate_law_slug("/abs/x").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_path_separator() {
+        assert!(validate_law_slug("a/b").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_dot() {
+        assert!(validate_law_slug("a.b").is_err());
+    }
+
+    #[test]
+    fn should_reject_an_empty_law_slug() {
+        assert!(validate_law_slug("").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_over_the_length_limit() {
+        let overlong = "a".repeat(65);
+        assert!(validate_law_slug(&overlong).is_err());
+    }
+
+    #[test]
+    fn should_accept_a_well_formed_law_slug() {
+        assert!(validate_law_slug("monomyth_macro_arc").is_ok());
+    }
 
     #[test]
     fn should_refuse_a_path_directly_under_artifacts() {
@@ -747,6 +973,31 @@ mod tests {
     }
 
     #[test]
+    fn should_reject_writing_a_candidate_with_an_unsafe_law_id() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let drafted = sample_drafted_law();
+
+        let error = write_candidate(&drafted, "../escape", "a sample query", temp_dir.path())
+            .expect_err("an unsafe --law id must be rejected before any file is written");
+
+        assert!(
+            format!("{error:#}").contains("law id"),
+            "error must name the law id validation failure, got: {error:#}"
+        );
+        // The validation must run before any file is written under `out_dir` — self-contained,
+        // unlike probing a path outside `temp_dir` in the shared system temp root. `temp_dir`
+        // itself already exists (`tempfile::tempdir` creates it eagerly), so check it stayed
+        // empty rather than checking for its absence.
+        assert_eq!(
+            std::fs::read_dir(temp_dir.path())
+                .expect("temp_dir reads back")
+                .count(),
+            0,
+            "no file must be written under out_dir when the law id is rejected"
+        );
+    }
+
+    #[test]
     fn default_config_synthesis_knobs_match_loop_config_default() {
         use monomyth_config::ConfigResolver;
         use monomyth_synthesis::LoopConfig;
@@ -840,6 +1091,54 @@ mod tests {
         candidate_path
     }
 
+    /// Write a fixture candidate law + review-context sidecar into `dir` with
+    /// full control over `title`, `tier_note`, and the sidecar's passages —
+    /// needed to exercise the anti-leak gate against fields
+    /// [`write_fixture_candidate`] hardcodes.
+    fn write_fixture_candidate_full(
+        dir: &Path,
+        law_id: &str,
+        title: &str,
+        tier_note: &str,
+        item_description: &str,
+        sidecar_passages: &[(&str, &str)],
+    ) -> std::path::PathBuf {
+        let candidate_json = format!(
+            r#"{{
+  "law": "{law_id}",
+  "title": {title:?},
+  "license": "idea/taxonomy only; test fixture",
+  "namespace": "ship",
+  "tier": "system",
+  "domain": "myth",
+  "tier_note": {tier_note:?},
+  "synthesis": {{
+    "reference_source_ids": ["fixture_source"],
+    "model": "test/stub-model",
+    "generated": "2026-07-21",
+    "reviewed_by": "",
+    "candidate_sha256": "deadbeef"
+  }},
+  "count": 1,
+  "items": [
+    {{ "id": 1, "name": "Setup", "description": {item_description:?} }}
+  ]
+}}"#
+        );
+        let candidate_path = dir.join(format!("{law_id}.json"));
+        std::fs::write(&candidate_path, candidate_json).expect("fixture candidate writes");
+
+        let passages_json: Vec<String> = sidecar_passages
+            .iter()
+            .map(|(source_id, text)| format!(r#"{{"source_id": {source_id:?}, "text": {text:?}}}"#))
+            .collect();
+        let sidecar_json = format!(r#"{{"passages": [{}]}}"#, passages_json.join(", "));
+        let sidecar_path = dir.join(format!("{law_id}.context.json"));
+        std::fs::write(&sidecar_path, sidecar_json).expect("fixture sidecar writes");
+
+        candidate_path
+    }
+
     /// Write a minimal `index.json` fixture (empty `laws` array) into `laws_dir`.
     fn write_fixture_index(laws_dir: &Path) {
         std::fs::create_dir_all(laws_dir).expect("laws dir creates");
@@ -917,6 +1216,34 @@ mod tests {
     }
 
     #[test]
+    fn should_persist_a_trimmed_reviewed_by() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "trimmed_reviewer_law",
+            "A harmless made-up description with no overlap.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "  alice  ".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("promotion with a padded reviewer identity succeeds");
+
+        let law_json = std::fs::read_to_string(laws_dir.join("trimmed_reviewer_law.json"))
+            .expect("law file reads back");
+        let loaded = load_law(&law_json).expect("promoted law must load_law cleanly");
+        assert_eq!(
+            loaded.synthesis.reviewed_by, "alice",
+            "the persisted reviewer identity must be trimmed of surrounding whitespace"
+        );
+    }
+
+    #[test]
     fn should_reject_promotion_when_item_text_verbatim_overlaps_the_sidecar() {
         let temp_dir = tempfile::tempdir().expect("tempdir creates");
         let overlapping_description =
@@ -945,6 +1272,199 @@ mod tests {
             !laws_dir.join("leaky_law.json").exists(),
             "a rejected candidate must not be written into laws_dir"
         );
+    }
+
+    #[test]
+    fn should_reject_promotion_when_title_verbatim_overlaps_the_sidecar() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let overlapping_title = "The Suppliant implores a Power in authority to grant a boon";
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "leaky_title_law",
+            overlapping_title,
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[(
+                "fixture_source",
+                "The Suppliant implores a Power in authority to grant a boon of mercy.",
+            )],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("a verbatim overlap in the artifact title must be rejected on re-check");
+
+        assert!(
+            format!("{error:#}").to_lowercase().contains("anti-leak"),
+            "error must name the anti-leak re-check, got: {error:#}"
+        );
+        assert!(!laws_dir.join("leaky_title_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_tier_note_verbatim_overlaps_the_sidecar() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let overlapping_tier_note = "the suppliant implores a power in authority to grant a boon";
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "leaky_tier_note_law",
+            "Fixture Law",
+            overlapping_tier_note,
+            "A harmless made-up description with no overlap at all here.",
+            &[(
+                "fixture_source",
+                "The Suppliant implores a Power in authority to grant a boon of mercy.",
+            )],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("a verbatim overlap in the artifact tier_note must be rejected on re-check");
+
+        assert!(
+            format!("{error:#}").to_lowercase().contains("anti-leak"),
+            "error must name the anti-leak re-check, got: {error:#}"
+        );
+        assert!(!laws_dir.join("leaky_tier_note_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_sidecar_records_no_grounding_passages() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "unguarded_law",
+            "Fixture Law",
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err("an empty sidecar passages array must not silently disable the anti-leak gate");
+
+        assert!(
+            error.to_string().to_lowercase().contains("grounding"),
+            "error must explain the sidecar records no grounding passages, got: {error}"
+        );
+        assert!(!laws_dir.join("unguarded_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_every_sidecar_passage_is_too_short_to_shingle() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        // Present, non-empty passages, but each is under the anti-leak gate's shingle
+        // width: they yield zero shingles, so the re-check would silently pass anything
+        // — exactly as neutered as an empty passages array.
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "short_passage_law",
+            "Fixture Law",
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[("fixture_source", "too short"), ("other_source", "")],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err(
+            "passages present but all too short to shingle must not silently disable the \
+             anti-leak gate",
+        );
+
+        assert!(
+            error.to_string().to_lowercase().contains("grounding"),
+            "error must explain the sidecar records no usable grounding passages, got: {error}"
+        );
+        assert!(!laws_dir.join("short_passage_law.json").exists());
+    }
+
+    #[test]
+    fn should_promote_the_first_law_into_a_fresh_laws_directory() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "bootstrap_law",
+            "A harmless made-up description with no overlap at all here.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        // Deliberately does not exist yet, and no index.json fixture is written: the
+        // very first `synthesize promote` into a brand-new repo must bootstrap both.
+        let laws_dir = temp_dir.path().join("laws");
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("promoting the first law into a fresh laws directory succeeds");
+
+        assert!(laws_dir.join("bootstrap_law.json").exists());
+        let index_json =
+            std::fs::read_to_string(laws_dir.join("index.json")).expect("index reads back");
+        let index: serde_json::Value =
+            serde_json::from_str(&index_json).expect("index is valid JSON");
+        assert!(
+            index["laws"]
+                .as_array()
+                .expect("laws array")
+                .iter()
+                .any(|entry| entry["law"] == "bootstrap_law"),
+            "index must gain an entry for the promoted law"
+        );
+    }
+
+    #[test]
+    fn should_recover_from_an_unindexed_orphan_law_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "orphan_law",
+            "A harmless made-up description with no overlap at all here.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+        // Simulate an interrupted prior promotion: the law file landed on disk but the
+        // process crashed before the index write registered it.
+        std::fs::write(
+            laws_dir.join("orphan_law.json"),
+            "stale content from a crashed run",
+        )
+        .expect("orphan fixture writes");
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("an unindexed orphan law file must not permanently block re-promotion");
+
+        let law_json =
+            std::fs::read_to_string(laws_dir.join("orphan_law.json")).expect("law file reads back");
+        let loaded = load_law(&law_json).expect("the recovered promotion must load_law cleanly");
+        assert_eq!(loaded.synthesis.reviewed_by, "alice");
     }
 
     #[test]
