@@ -18,7 +18,7 @@ use super::error::AcquireError;
 use super::fetch::git::RepoDirSpec;
 use super::fetch::gutendex::{self, SearchBy};
 use super::fetch::huggingface::{self, DatasetSpec};
-use super::fetch::{FetchedWork, archive, git};
+use super::fetch::{FetchedWork, archive, git, sparql};
 use super::http::{self, CacheMode, FetchContext};
 use super::storage;
 
@@ -86,6 +86,12 @@ enum Route {
     Archive { identifier: &'static str },
     /// List and download a GitHub repository directory's text-like data files.
     Git(RepoDirSpec),
+    /// Run a SPARQL query against an endpoint and render the result rows.
+    Sparql {
+        endpoint: &'static str,
+        query: &'static str,
+        title: &'static str,
+    },
     /// No fetcher family is wired up (or configured) for this source id.
     NoFetcher(&'static str),
 }
@@ -135,9 +141,16 @@ fn route(entry: &SourceEntry) -> Result<Route, AcquireError> {
             dir: TRILOGY_DATA_DIR.to_owned(),
         })),
         "bag_of_tales" => Ok(Route::NoFetcher("DOI/zenodo URL; no generic DOI resolver")),
-        "wikidata_myth" | "dbpedia_myth" => Ok(Route::NoFetcher(
-            "SPARQL endpoint; no generic SPARQL fetcher",
-        )),
+        "wikidata_myth" => Ok(Route::Sparql {
+            endpoint: sparql::WIKIDATA_ENDPOINT,
+            query: sparql::WIKIDATA_MYTH_QUERY,
+            title: "Wikidata mythology subset",
+        }),
+        "dbpedia_myth" => Ok(Route::Sparql {
+            endpoint: sparql::DBPEDIA_ENDPOINT,
+            query: sparql::DBPEDIA_MYTH_QUERY,
+            title: "DBpedia Deity/MythologicalFigure abstracts",
+        }),
         "iapsop" => Ok(Route::NoFetcher(
             "plain HTTP site with no structured API; no generic HTML fetcher",
         )),
@@ -179,6 +192,15 @@ pub(crate) async fn fetch_for_source(
             let effective_limit = limit.unwrap_or(git::DEFAULT_LIMIT);
             let works = git::fetch_dir(&ctx, &spec, effective_limit, retrieved).await?;
             Ok(works)
+        }
+        Route::Sparql {
+            endpoint,
+            query,
+            title,
+        } => {
+            let work =
+                sparql::fetch(&ctx, endpoint, query, Some(title.to_owned()), retrieved).await?;
+            Ok(vec![work])
         }
         Route::NoFetcher(reason) => Err(DispatchOutcome::NoFetcher { reason }),
     }
@@ -365,6 +387,22 @@ mod tests {
                 assert_eq!(spec.dir, TRILOGY_DATA_DIR);
             }
             _ => panic!("expected Route::Git for 'trilogy'"),
+        }
+    }
+
+    /// The dispatch point of this family being wired: `wikidata_myth` and
+    /// `dbpedia_myth` now resolve to a real fetcher (the sparql family), not
+    /// [`Route::NoFetcher`].
+    #[test]
+    fn route_resolves_wikidata_myth_and_dbpedia_myth_to_the_sparql_family() {
+        let ledger = ledger();
+        for id in ["wikidata_myth", "dbpedia_myth"] {
+            let entry = ledger.get(id).expect("declared");
+            let resolved = route(entry).unwrap_or_else(|error| panic!("{id}: {error}"));
+            assert!(
+                matches!(resolved, Route::Sparql { .. }),
+                "'{id}' must route to the sparql family"
+            );
         }
     }
 }
