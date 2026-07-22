@@ -28,53 +28,62 @@ impl PromptTemplate {
     }
 
     /// Substitute every `{name}` placeholder in the template body with its
-    /// matching value from `vars`. Substitutions are applied in order and each
-    /// one replaces every remaining occurrence of `{name}`, so for a repeated
-    /// `name` the first entry in `vars` wins (later entries for the same key
-    /// find no placeholder left to replace).
+    /// matching value from `vars`, in a single pass over the *original* body.
+    ///
+    /// This is deliberately not "substitute, then substitute again on the
+    /// result": a value is copied into the output verbatim and never rescanned
+    /// for `{placeholder}` syntax, so a value that happens to contain literal
+    /// `{`/`}` text (e.g. mythic-source prose, or a value equal to another
+    /// placeholder's spelling) cannot be reinterpreted as template syntax and
+    /// silently consume or corrupt another substitution. For a name that
+    /// occurs more than once in `vars`, the first matching entry wins at every
+    /// occurrence of that placeholder in the body.
     ///
     /// # Errors
     ///
-    /// Returns [`LlmError::Template`] naming this template's `id` and the first
-    /// `{placeholder}`-shaped span still present after every substitution has
-    /// run — i.e. a variable the caller forgot to supply.
+    /// Returns [`LlmError::Template`] naming this template's `id` and the
+    /// first `{placeholder}`-shaped span in the *original* body that has no
+    /// matching entry in `vars` — i.e. a variable the caller forgot to supply.
     pub fn render(&self, vars: &[(&str, &str)]) -> Result<String, LlmError> {
-        let mut rendered = self.body.to_owned();
-        for (name, value) in vars {
-            rendered = rendered.replace(&format!("{{{name}}}"), value);
+        let body = self.body;
+        let bytes = body.as_bytes();
+        let mut rendered = String::with_capacity(body.len());
+        // Byte index of the start of the not-yet-flushed plain-text run. ~keep
+        // Slicing on this (rather than pushing individual bytes) keeps every ~keep
+        // copy on a UTF-8 char boundary, since '{'/'}'/alnum/'_' are all ~keep
+        // single-byte ASCII and never occur as a multi-byte sequence's ~keep
+        // continuation byte. ~keep
+        let mut flushed = 0;
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] == b'{' {
+                let start = index + 1;
+                let mut end = start;
+                while end < bytes.len()
+                    && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
+                {
+                    end += 1;
+                }
+                if end > start && end < bytes.len() && bytes[end] == b'}' {
+                    let name = &body[start..end];
+                    let Some((_, value)) = vars.iter().find(|(key, _)| *key == name) else {
+                        return Err(LlmError::Template {
+                            template_id: self.id,
+                            placeholder: name.to_owned(),
+                        });
+                    };
+                    rendered.push_str(&body[flushed..index]);
+                    rendered.push_str(value);
+                    index = end + 1;
+                    flushed = index;
+                    continue;
+                }
+            }
+            index += 1;
         }
-        if let Some(placeholder) = first_unresolved_placeholder(&rendered) {
-            return Err(LlmError::Template {
-                template_id: self.id,
-                placeholder,
-            });
-        }
+        rendered.push_str(&body[flushed..]);
         Ok(rendered)
     }
-}
-
-/// The first `{identifier}`-shaped span in `text` — `{` followed by one or
-/// more ASCII alphanumerics/`_`, closed by `}` — or `None` if none remain.
-///
-/// A bare `{` that is not shaped like a placeholder (e.g. literal JSON braces
-/// in the template body) is not reported.
-fn first_unresolved_placeholder(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'{' {
-            let start = index + 1;
-            let mut end = start;
-            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-                end += 1;
-            }
-            if end > start && end < bytes.len() && bytes[end] == b'}' {
-                return Some(text[start..end].to_owned());
-            }
-        }
-        index += 1;
-    }
-    None
 }
 
 #[cfg(test)]
@@ -137,5 +146,34 @@ mod tests {
             .render(&[("hero", "Enkidu"), ("unused", "ignored")])
             .expect("an unused variable is harmless");
         assert_eq!(rendered, "Hail Enkidu.");
+    }
+
+    #[test]
+    fn a_value_containing_placeholder_syntax_is_not_reinterpreted() {
+        // A single-pass render must never rescan a substituted value for ~keep
+        // `{placeholder}` syntax: `hero`'s value here is literally the text ~keep
+        // `{realm}`, and it must survive verbatim rather than being consumed ~keep
+        // by `realm`'s own substitution. ~keep
+        let template = PromptTemplate::new("greet", "Foretell {hero}'s departure to {realm}.");
+        let rendered = template
+            .render(&[("hero", "{realm}"), ("realm", "the underworld")])
+            .expect("both placeholders are supplied");
+        assert_eq!(
+            rendered, "Foretell {realm}'s departure to the underworld.",
+            "hero's literal {{realm}} value must not be re-substituted"
+        );
+    }
+
+    #[test]
+    fn an_unresolved_placeholder_still_returns_a_template_error() {
+        let template = PromptTemplate::new("greet", "Foretell {hero}'s departure to {realm}.");
+        let error = template
+            .render(&[("hero", "Gilgamesh")])
+            .expect_err("realm was never supplied");
+        assert!(
+            matches!(error, LlmError::Template { template_id, ref placeholder }
+                if template_id == "greet" && placeholder == "realm"),
+            "expected LlmError::Template naming 'realm', got {error:?}"
+        );
     }
 }
