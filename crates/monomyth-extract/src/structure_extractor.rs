@@ -11,6 +11,17 @@
 //! proves): exactly one node, exactly one location, no edges, no entities, no
 //! items, no quests. Scaling extraction to multi-beat structure is future work.
 //!
+//! # Grounding scope
+//!
+//! Unlike [`StageReclassifyingExtractor`](crate::StageReclassifyingExtractor),
+//! which grounds each classification through a
+//! [`PassageRetriever`](monomyth_contracts::PassageRetriever), this slice
+//! deliberately skips ADR-0018's RAG-grounding driver: the stage catalog is
+//! inlined directly into the prompt ([`stage_catalog`]) and no corpus passages
+//! are retrieved. That keeps this slice's dependency surface — and its
+//! cassette — to exactly one LLM call; wiring retrieval-grounded extraction
+//! back in is future work, not parity this slice claims.
+//!
 //! # Write surface
 //!
 //! The extracted node's *content* (label, stage, synopsis hint; situation,
@@ -30,6 +41,15 @@
 //! edit vocabulary at all (mirroring `monomyth-gen`'s `MapPass`), so it is
 //! constructed directly. The assembled result is gated by [`World::validate`]
 //! before it is ever returned — exactly like generation's own output.
+//!
+//! One field stays a hint rather than filled content: [`NodeSpec::new`] always
+//! wraps its `synopsis_hint` in [`Content::Empty`] — there is no `NodeSpec`
+//! constructor that produces a *filled* synopsis slot — so the extracted
+//! synopsis text is committed as the node's [`ContentKind::Synopsis`] grounding
+//! hint, not as already-generated prose. A later content-fill pass (ADR-0002)
+//! still owns turning that hint into the node's actual synopsis prose. The
+//! extracted [`Location`] name/description have no such constraint and are
+//! committed [`Content::Filled`] directly.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -49,6 +69,15 @@ use slotmap::SlotMap;
 
 /// The schema name recorded on every generation call this extractor makes.
 const SCHEMA_NAME: &str = "minimal_structure_beat";
+
+/// The [`WorldMeta::seed`]/[`RngState`] value stamped onto every extracted
+/// world.
+///
+/// Extraction never touches the procedural RNG — it runs entirely in the
+/// content/LLM phase, quarantined from the seeded structural passes (ADR-0002)
+/// — so there is no real seed to record here. This is a fixed, named
+/// placeholder satisfying the field's required type, not a procedural draw.
+const EXTRACTION_SEED_PLACEHOLDER: u64 = 0;
 
 /// The single structured beat the model must return: everything this minimal
 /// slice needs to populate one [`NodeSpec`] and one [`Location`].
@@ -217,7 +246,7 @@ impl StructureExtractor for MinimalStructureExtractor<'_> {
 
         let world = World {
             meta: WorldMeta {
-                seed: 0,
+                seed: EXTRACTION_SEED_PLACEHOLDER,
                 schema_version: SCHEMA_VERSION,
                 title: Content::empty(ContentPrompt::new(
                     ContentKind::Title,
@@ -237,7 +266,7 @@ impl StructureExtractor for MinimalStructureExtractor<'_> {
                 cursor: root,
                 ..WorldState::default()
             },
-            rng: RngState::new(0),
+            rng: RngState::new(EXTRACTION_SEED_PLACEHOLDER),
         };
 
         world.validate()?;
@@ -248,6 +277,90 @@ impl StructureExtractor for MinimalStructureExtractor<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use monomyth_llm::{BackendError, Llm, StructuredBackend, Usage};
+    use serde_json::{Value, json};
+
+    /// A scripted [`StructuredBackend`]: `complete_json` returns the canned
+    /// `response`, regardless of the prompt it is called with.
+    struct ScriptedBackend {
+        response: Result<Value, String>,
+    }
+
+    #[async_trait]
+    impl StructuredBackend for ScriptedBackend {
+        async fn complete_json(
+            &self,
+            _prompt: &str,
+            _schema_name: &str,
+            _schema: &Value,
+        ) -> Result<(Value, Option<Usage>), BackendError> {
+            match &self.response {
+                Ok(value) => Ok((value.clone(), None)),
+                Err(message) => Err(BackendError::new(message.clone())),
+            }
+        }
+
+        async fn complete_text(
+            &self,
+            _prompt: &str,
+        ) -> Result<(String, Option<Usage>), BackendError> {
+            Err(BackendError::new(
+                "text completion is not used by MinimalStructureExtractor",
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn extract_structure_should_return_unrecognized_label_for_an_out_of_range_stage_id() {
+        let backend = ScriptedBackend {
+            response: Ok(json!({
+                "node_label": "CallToAdventure",
+                "stage_id": 9999,
+                "synopsis_hint": "a synopsis",
+                "location_name": "Somewhere",
+                "location_description": "A place.",
+            })),
+        };
+        let llm = Llm::new(Box::new(backend));
+        let extractor = MinimalStructureExtractor::new(&llm, "test/stub-model");
+
+        let error = extractor
+            .extract_structure("irrelevant source text")
+            .await
+            .expect_err("an out-of-range stage id must be rejected");
+
+        assert!(
+            matches!(
+                &error,
+                StructureExtractError::UnrecognizedLabel(message) if message.contains("9999")
+            ),
+            "expected UnrecognizedLabel mentioning 9999, got: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn extract_structure_should_wrap_a_backend_failure_as_a_generation_error() {
+        let backend = ScriptedBackend {
+            response: Err("the model backend is unreachable".to_owned()),
+        };
+        let llm = Llm::new(Box::new(backend));
+        let extractor = MinimalStructureExtractor::new(&llm, "test/stub-model");
+
+        let error = extractor
+            .extract_structure("irrelevant source text")
+            .await
+            .expect_err("a backend failure must propagate as a Generation error");
+
+        assert!(
+            matches!(
+                &error,
+                StructureExtractError::Generation(message)
+                    if message.contains("the model backend is unreachable")
+            ),
+            "expected Generation wrapping the backend failure, got: {error:?}"
+        );
+    }
 
     #[test]
     fn genre_framing_should_differ_by_genre_kind() {
