@@ -2857,6 +2857,12 @@ dependencies = [
  "monomyth-core",
  "monomyth-eval",
  "monomyth-frameworks",
+ "monomyth-genre",
+ "monomyth-llm",
+ "schemars",
+ "serde",
+ "serde_json",
+ "slotmap",
  "tokio",
 ]
 

@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "key": "a2e2c0c0b429146a",
+      "prompt_sha": "93e290d83e5979710f334c26e00828eecce22637609e967953a606be38f160f2",
+      "response": {
+        "location_description": "A small settlement at the foot of the mountain, its smithy still warm from the day's work.",
+        "location_name": "The Quiet Village",
+        "node_label": "CallToAdventure",
+        "stage_id": 1,
+        "synopsis_hint": "A herald tells the smith she alone bears the mark that can open the mountain gate."
+      },
+      "schema_name": "minimal_structure_beat"
+    }
+  ],
+  "model": "test/stub-model",
+  "recorded_at": "unknown",
+  "version": 1
+}

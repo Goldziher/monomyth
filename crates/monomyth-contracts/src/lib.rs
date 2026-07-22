@@ -16,6 +16,9 @@
 //!   distribution over one framework axis (e.g. a Campbell stage).
 //! - [`Extractor`] — the P-TRANSFORM inverse of generation (ADR-0018): derive a
 //!   valid [`World`](monomyth_core::World) from input.
+//! - [`StructureExtractor`] — the fuller ADR-0018 signature [`Extractor`]'s doc
+//!   flags as future work: derive a valid [`World`] directly from raw source
+//!   text, rather than only re-classifying an already-structured skeleton.
 //! - [`Renderer`] — the P-RENDER seam (ADR-0020): turn a [`World`] into
 //!   medium-specific output, without a caller depending on any one frontend crate.
 //!
@@ -142,6 +145,74 @@ pub trait Extractor: Send + Sync {
     /// [`ExtractError`] if classification fails or the result is not a valid
     /// world.
     async fn extract(&self, skeleton: &World) -> Result<World, ExtractError>;
+}
+
+/// A [`StructureExtractor`] failure.
+///
+/// The generation-backend failure is flattened to a message rather than named
+/// as a variant, mirroring [`RetrievalError`]: this crate stays free of
+/// `monomyth-llm` (or any other heavy backend) so the seam alone can be
+/// depended on cheaply, and an implementation converts its own backend error
+/// with [`ToString`].
+#[derive(Debug, thiserror::Error)]
+pub enum StructureExtractError {
+    /// The generation backend failed to produce a structured beat.
+    #[error("structure generation failed: {0}")]
+    Generation(String),
+    /// The one-time structural bootstrap (creating the graph's first node) failed
+    /// on a local precondition. No legal input should ever trigger this — see
+    /// [`StructureExtractor`]'s doc for why the bootstrap step exists outside the
+    /// edit vocabulary — but it is threaded through rather than unwrapped.
+    #[error("world bootstrap failed: {0}")]
+    Bootstrap(String),
+    /// The model named a framework label (a Campbell stage id, …) absent from
+    /// `monomyth-frameworks`' vocabulary.
+    #[error("unrecognized framework label: {0}")]
+    UnrecognizedLabel(String),
+    /// The assembled world failed [`World::validate`] — the write surface's
+    /// final gate, shared with generation's own output.
+    #[error("the extracted world failed validation: {0}")]
+    Invalid(#[from] monomyth_core::WorldError),
+}
+
+/// Derive a valid [`World`] directly from raw source text — the fuller
+/// ADR-0018 signature that [`Extractor`]'s doc flags as future work.
+///
+/// # Why a new trait rather than widening `Extractor::extract`
+///
+/// [`Extractor::extract`] takes an already-*structured* skeleton `World` and
+/// only re-derives its scored classifications (the classify-only proof of
+/// concept, confirmed in ADR-0018). This seam's input/output shape is
+/// genuinely different: it starts from nothing but `text` and must derive the
+/// narrative *shape* itself (at minimum, one node and one location), not just
+/// relabel an existing one. Widening `Extractor::extract`'s signature to take
+/// `Option<&World>` or similar would force `StageReclassifyingExtractor` (its
+/// only existing implementer) to handle an input shape it was never designed
+/// for, and would blur two independently-testable proof-of-concept scopes into
+/// one trait. A new trait keeps both seams small, keeps
+/// `StageReclassifyingExtractor` undisturbed, and matches how [`Extractor`]
+/// and [`StructureExtractor`] are peer transforms over the same pivot, not one
+/// a special case of the other.
+///
+/// # Write surface
+///
+/// An implementation must build the result exclusively through
+/// [`NarrativeEdit`](monomyth_core::NarrativeEdit) for the node's *extracted
+/// content* (label, stage, synopsis hint, …) and gate the assembled world with
+/// [`World::validate`] — the same write surface and gate generation uses. The
+/// one exception, applying equally to every bootstrapper in this workspace
+/// (including generation's own `BackbonePass`), is naming the very first node
+/// as the structure's root: no `NarrativeEdit` variant can express that step,
+/// because there is nothing pre-existing for an edit to apply to.
+#[async_trait]
+pub trait StructureExtractor: Send + Sync {
+    /// Derive a valid [`World`] from `text`.
+    ///
+    /// # Errors
+    ///
+    /// [`StructureExtractError`] if generation fails, a derived label is not in
+    /// the framework vocabulary, or the assembled world fails [`World::validate`].
+    async fn extract_structure(&self, text: &str) -> Result<World, StructureExtractError>;
 }
 
 /// The P-RENDER seam (ADR-0020): turn a [`World`] and its [`Event`]s into
