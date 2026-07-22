@@ -15,9 +15,9 @@
 use crate::ledger::SourceEntry;
 
 use super::error::AcquireError;
-use super::fetch::FetchedWork;
 use super::fetch::gutendex::{self, SearchBy};
 use super::fetch::huggingface::{self, DatasetSpec};
+use super::fetch::{FetchedWork, archive};
 use super::http::{self, CacheMode, FetchContext};
 use super::storage;
 
@@ -34,6 +34,13 @@ const GUTENDEX_FAMILY_SOURCE_IDS: [&str; 3] = ["polti", "pg_key_works", "child_b
 /// Default number of rows fetched from a `HuggingFace` dataset source when no
 /// `limit` is given, so an unbounded `build` cannot page a dataset forever.
 const DEFAULT_HUGGINGFACE_LIMIT: usize = 20;
+
+/// The archive.org identifier fetched for `bae_reports`: a Bureau of American
+/// Ethnology annual report volume with an OCR'd `.txt` file (verified against
+/// archive.org's `/metadata` API at the time this was wired). The manifest's
+/// `url` for this source is the bare `https://archive.org` domain rather than
+/// a per-item link, so the identifier is declared here rather than parsed.
+const BAE_REPORTS_IDENTIFIER: &str = "annualreportofbu3019smit";
 
 /// Why fetch dispatch for a source did not produce works.
 pub(crate) enum DispatchOutcome {
@@ -60,6 +67,8 @@ enum Route {
     GutendexEbook(u64),
     /// Page a `HuggingFace` datasets-server dataset split.
     Huggingface(DatasetSpec),
+    /// Fetch one archive.org item's text file.
+    Archive { identifier: &'static str },
     /// No fetcher family is wired up (or configured) for this source id.
     NoFetcher(&'static str),
 }
@@ -99,9 +108,9 @@ fn route(entry: &SourceEntry) -> Result<Route, AcquireError> {
             split: "train".to_owned(),
             text_column: "text".to_owned(),
         })),
-        "bae_reports" => Ok(Route::NoFetcher(
-            "needs a real archive.org identifier wired in (none declared in the manifest)",
-        )),
+        "bae_reports" => Ok(Route::Archive {
+            identifier: BAE_REPORTS_IDENTIFIER,
+        }),
         "trilogy" => Ok(Route::NoFetcher(
             "github repository URL; no generic git fetcher",
         )),
@@ -142,6 +151,10 @@ pub(crate) async fn fetch_for_source(
             Ok(vec![work])
         }
         Route::Huggingface(spec) => fetch_huggingface(&ctx, spec, limit, retrieved).await,
+        Route::Archive { identifier } => {
+            let work = archive::fetch(&ctx, identifier, None, retrieved).await?;
+            Ok(vec![work])
+        }
         Route::NoFetcher(reason) => Err(DispatchOutcome::NoFetcher { reason }),
     }
 }
@@ -296,5 +309,19 @@ mod tests {
         ) {
             route(entry).unwrap_or_else(|error| panic!("{}: {error}", entry.id));
         }
+    }
+
+    /// The dispatch point of this family being wired: `bae_reports` now
+    /// resolves to a real fetcher (the archive.org family), not
+    /// [`Route::NoFetcher`].
+    #[test]
+    fn route_resolves_bae_reports_to_the_archive_family_with_its_identifier() {
+        let ledger = ledger();
+        let entry = ledger.get("bae_reports").expect("declared");
+        let resolved = route(entry).expect("bae_reports url parses");
+        assert!(matches!(
+            resolved,
+            Route::Archive { identifier } if identifier == BAE_REPORTS_IDENTIFIER
+        ));
     }
 }
