@@ -27,14 +27,14 @@ async fn main() -> Result<()> {
         }
         Command::Play { world, seed } => {
             let config = commands::resolve_config()?;
-            let renderer = commands::build_renderer(&config);
+            let renderer = commands::build_renderer(&config)?;
             let generation_config = commands::generation_config(&config);
             let world = commands::load_play_world(world.as_deref(), seed, &generation_config)?;
             play::run_play(world, renderer.as_ref())
         }
         Command::Edit { world, script, out } => {
             let config = commands::resolve_config()?;
-            let renderer = commands::build_renderer(&config);
+            let renderer = commands::build_renderer(&config)?;
             commands::run_edit(&world, &script, out, renderer.as_ref())
         }
         Command::Ingest {
