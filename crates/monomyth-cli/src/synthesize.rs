@@ -682,7 +682,11 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
     let sidecar_path = sidecar_path_for(&candidate)?;
     let sidecar = read_sidecar_context(&sidecar_path)?;
 
-    artifact.synthesis.reviewed_by = reviewed_by;
+    // Persist the trimmed identity: require_reviewer_identity already trims to check
+    // for emptiness, and the untrimmed raw value should never reach the artifact.
+    reviewed_by
+        .trim()
+        .clone_into(&mut artifact.synthesis.reviewed_by);
 
     let reference_chunks = reference_chunks(&sidecar);
     if reference_chunks.is_empty() {
@@ -1144,6 +1148,34 @@ mod tests {
             laws.iter()
                 .any(|entry| entry["law"] == "fixture_law" && entry["count"] == 1),
             "index must gain an entry for the promoted law"
+        );
+    }
+
+    #[test]
+    fn should_persist_a_trimmed_reviewed_by() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "trimmed_reviewer_law",
+            "A harmless made-up description with no overlap.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "  alice  ".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("promotion with a padded reviewer identity succeeds");
+
+        let law_json = std::fs::read_to_string(laws_dir.join("trimmed_reviewer_law.json"))
+            .expect("law file reads back");
+        let loaded = load_law(&law_json).expect("promoted law must load_law cleanly");
+        assert_eq!(
+            loaded.synthesis.reviewed_by, "alice",
+            "the persisted reviewer identity must be trimmed of surrounding whitespace"
         );
     }
 
