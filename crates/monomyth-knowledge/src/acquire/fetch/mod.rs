@@ -11,6 +11,7 @@
 //! implementors called through one interface.
 
 pub(crate) mod archive;
+pub(crate) mod git;
 pub(crate) mod gutendex;
 pub(crate) mod huggingface;
 

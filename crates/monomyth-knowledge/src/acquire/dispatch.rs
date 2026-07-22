@@ -15,9 +15,10 @@
 use crate::ledger::SourceEntry;
 
 use super::error::AcquireError;
+use super::fetch::git::RepoDirSpec;
 use super::fetch::gutendex::{self, SearchBy};
 use super::fetch::huggingface::{self, DatasetSpec};
-use super::fetch::{FetchedWork, archive};
+use super::fetch::{FetchedWork, archive, git};
 use super::http::{self, CacheMode, FetchContext};
 use super::storage;
 
@@ -41,6 +42,20 @@ const DEFAULT_HUGGINGFACE_LIMIT: usize = 20;
 /// `url` for this source is the bare `https://archive.org` domain rather than
 /// a per-item link, so the identifier is declared here rather than parsed.
 const BAE_REPORTS_IDENTIFIER: &str = "annualreportofbu3019smit";
+
+/// The `j-hagedorn/trilogy` GitHub repository owner/name, fetched for
+/// `trilogy`. The manifest's `url` for this source is the bare repository
+/// root, which has no directory/branch information, so those are declared
+/// here rather than parsed.
+const TRILOGY_OWNER: &str = "j-hagedorn";
+const TRILOGY_REPO: &str = "trilogy";
+/// Verified as the repository's default branch at the time this was wired.
+const TRILOGY_BRANCH: &str = "master";
+/// The repository directory holding the ATU + Thompson Motif Index + tale
+/// data tables (verified against the repository tree at the time this was
+/// wired); `docs`/`src`/`funs`/`ontologies` hold code and documentation, not
+/// data.
+const TRILOGY_DATA_DIR: &str = "data";
 
 /// Why fetch dispatch for a source did not produce works.
 pub(crate) enum DispatchOutcome {
@@ -69,6 +84,8 @@ enum Route {
     Huggingface(DatasetSpec),
     /// Fetch one archive.org item's text file.
     Archive { identifier: &'static str },
+    /// List and download a GitHub repository directory's text-like data files.
+    Git(RepoDirSpec),
     /// No fetcher family is wired up (or configured) for this source id.
     NoFetcher(&'static str),
 }
@@ -111,9 +128,12 @@ fn route(entry: &SourceEntry) -> Result<Route, AcquireError> {
         "bae_reports" => Ok(Route::Archive {
             identifier: BAE_REPORTS_IDENTIFIER,
         }),
-        "trilogy" => Ok(Route::NoFetcher(
-            "github repository URL; no generic git fetcher",
-        )),
+        "trilogy" => Ok(Route::Git(RepoDirSpec {
+            owner: TRILOGY_OWNER.to_owned(),
+            repo: TRILOGY_REPO.to_owned(),
+            branch: TRILOGY_BRANCH.to_owned(),
+            dir: TRILOGY_DATA_DIR.to_owned(),
+        })),
         "bag_of_tales" => Ok(Route::NoFetcher("DOI/zenodo URL; no generic DOI resolver")),
         "wikidata_myth" | "dbpedia_myth" => Ok(Route::NoFetcher(
             "SPARQL endpoint; no generic SPARQL fetcher",
@@ -154,6 +174,11 @@ pub(crate) async fn fetch_for_source(
         Route::Archive { identifier } => {
             let work = archive::fetch(&ctx, identifier, None, retrieved).await?;
             Ok(vec![work])
+        }
+        Route::Git(spec) => {
+            let effective_limit = limit.unwrap_or(git::DEFAULT_LIMIT);
+            let works = git::fetch_dir(&ctx, &spec, effective_limit, retrieved).await?;
+            Ok(works)
         }
         Route::NoFetcher(reason) => Err(DispatchOutcome::NoFetcher { reason }),
     }
@@ -323,5 +348,23 @@ mod tests {
             resolved,
             Route::Archive { identifier } if identifier == BAE_REPORTS_IDENTIFIER
         ));
+    }
+
+    /// The dispatch point of this family being wired: `trilogy` now resolves
+    /// to a real fetcher (the git family), not [`Route::NoFetcher`].
+    #[test]
+    fn route_resolves_trilogy_to_the_git_family_with_the_verified_data_dir() {
+        let ledger = ledger();
+        let entry = ledger.get("trilogy").expect("declared");
+        let resolved = route(entry).expect("trilogy url parses");
+        match resolved {
+            Route::Git(spec) => {
+                assert_eq!(spec.owner, TRILOGY_OWNER);
+                assert_eq!(spec.repo, TRILOGY_REPO);
+                assert_eq!(spec.branch, TRILOGY_BRANCH);
+                assert_eq!(spec.dir, TRILOGY_DATA_DIR);
+            }
+            _ => panic!("expected Route::Git for 'trilogy'"),
+        }
     }
 }
