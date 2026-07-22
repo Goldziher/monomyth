@@ -39,25 +39,62 @@ pub(crate) fn extract_text(html: &str) -> String {
     out
 }
 
-/// Depth-first walk of `node`, appending visible text to `out` and skipping
+/// One step of the [`collect_text`] walk: visit a node (push its own text,
+/// queue its children), or — for a node already visited whose children are
+/// now done — close it (push a paragraph break for a block element).
+enum Step<'a> {
+    /// Visit `NodeRef`, pushing its own text before its children are walked.
+    Enter(NodeRef<'a, Node>),
+    /// `NodeRef`'s children have all been walked; push its closing text.
+    Exit(NodeRef<'a, Node>),
+}
+
+/// Depth-first walk of `root`, appending visible text to `out` and skipping
 /// the subtree of any [`SKIPPED_ELEMENTS`] element entirely.
-fn collect_text(node: NodeRef<'_, Node>, out: &mut String) {
-    if let Node::Element(element) = node.value()
-        && SKIPPED_ELEMENTS.contains(&element.name())
-    {
-        return;
-    }
-    if let Node::Text(text) = node.value() {
-        out.push_str(&text.text);
-        out.push(' ');
-    }
-    for child in node.children() {
-        collect_text(child, out);
-    }
-    if let Node::Element(element) = node.value()
-        && BLOCK_ELEMENTS.contains(&element.name())
-    {
-        out.push_str("\n\n");
+///
+/// Iterative (an explicit heap-allocated stack of [`Step`]s) rather than
+/// recursive: a pathologically deep page (deeply nested `<div>`s, say) must
+/// not risk a stack overflow the way a recursive walk bound to the native
+/// call stack would.
+fn collect_text(root: NodeRef<'_, Node>, out: &mut String) {
+    let mut stack = vec![Step::Enter(root)];
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Enter(node) => {
+                if let Node::Element(element) = node.value()
+                    && SKIPPED_ELEMENTS.contains(&element.name())
+                {
+                    continue;
+                }
+                if let Node::Text(text) = node.value() {
+                    out.push_str(&text.text);
+                    out.push(' ');
+                }
+                let is_block = matches!(
+                    node.value(),
+                    Node::Element(element) if BLOCK_ELEMENTS.contains(&element.name())
+                );
+                if is_block {
+                    stack.push(Step::Exit(node));
+                }
+                // Children must be pushed in reverse so popping the stack ~keep
+                // (LIFO) visits them in original document order. ~keep
+                stack.extend(
+                    node.children()
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .map(Step::Enter),
+                );
+            }
+            Step::Exit(node) => {
+                if let Node::Element(element) = node.value()
+                    && BLOCK_ELEMENTS.contains(&element.name())
+                {
+                    out.push_str("\n\n");
+                }
+            }
+        }
     }
 }
 
@@ -106,6 +143,26 @@ mod tests {
         let html =
             "<html><body><noscript>enable javascript</noscript><p>Real text.</p></body></html>";
         assert_eq!(extract_text(html), "Real text. \n\n");
+    }
+
+    /// Pins the point of the iterative (not recursive) walk: a pathologically
+    /// deep page must not stack-overflow. A few thousand nested `<div>`s is
+    /// already well past what a recursive walk risks blowing a native call
+    /// stack on; the explicit heap-allocated stack in [`collect_text`]
+    /// handles it. Kept in the low thousands (not tens of thousands) so this
+    /// stays a fast unit test — `html5ever`'s parse cost grows steeply with
+    /// nesting depth.
+    #[test]
+    fn extract_text_handles_a_pathologically_deep_document_without_overflowing() {
+        const DEPTH: usize = 3_000;
+        let mut html = String::from("<html><body>");
+        html.push_str(&"<div>".repeat(DEPTH));
+        html.push_str("deep text");
+        html.push_str(&"</div>".repeat(DEPTH));
+        html.push_str("</body></html>");
+
+        let text = extract_text(&html);
+        assert!(text.trim().starts_with("deep text"));
     }
 
     /// Ties this fetcher to the shared normalize pipeline every other family
