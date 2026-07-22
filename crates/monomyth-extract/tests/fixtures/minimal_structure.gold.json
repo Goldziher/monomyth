@@ -1,0 +1,145 @@
+{
+  "meta": {
+    "seed": 0,
+    "schema_version": 4,
+    "title": {
+      "Empty": {
+        "prompt": {
+          "kind": "Title",
+          "hint": "the extracted world's title"
+        }
+      }
+    }
+  },
+  "locations": [
+    {
+      "value": null,
+      "version": 0
+    },
+    {
+      "value": {
+        "name": {
+          "Filled": {
+            "value": "The Quiet Village",
+            "prompt": {
+              "kind": "Name",
+              "hint": "the extracted location's proper name"
+            },
+            "provenance": {
+              "source": {
+                "Llm": {
+                  "model": "test/stub-model"
+                }
+              },
+              "notes": "MinimalStructureExtractor"
+            }
+          }
+        },
+        "description": {
+          "Filled": {
+            "value": "A small settlement at the foot of the mountain, its smithy still warm from the day's work.",
+            "prompt": {
+              "kind": "Description",
+              "hint": "the extracted location's description"
+            },
+            "provenance": {
+              "source": {
+                "Llm": {
+                  "model": "test/stub-model"
+                }
+              },
+              "notes": "MinimalStructureExtractor"
+            }
+          }
+        },
+        "exits": {},
+        "entities": [],
+        "items": []
+      },
+      "version": 1
+    }
+  ],
+  "entities": [
+    {
+      "value": null,
+      "version": 0
+    }
+  ],
+  "items": [
+    {
+      "value": null,
+      "version": 0
+    }
+  ],
+  "player": {
+    "location": {
+      "idx": 1,
+      "version": 1
+    },
+    "inventory": [],
+    "health": 100,
+    "max_health": 100
+  },
+  "story": {
+    "structure": {
+      "nodes": [
+        {
+          "value": null,
+          "version": 0
+        },
+        {
+          "value": {
+            "label": "CallToAdventure",
+            "kind": "Origin",
+            "stage": {
+              "primary": "CallToAdventure",
+              "alternatives": {}
+            },
+            "functions": {},
+            "situation": null,
+            "motifs": {},
+            "synopsis": {
+              "Empty": {
+                "prompt": {
+                  "kind": "Synopsis",
+                  "hint": "A herald tells the smith she alone bears the mark that can open the mountain gate."
+                }
+              }
+            },
+            "out": []
+          },
+          "version": 1
+        }
+      ],
+      "root": {
+        "idx": 1,
+        "version": 1
+      },
+      "endings": [
+        {
+          "idx": 1,
+          "version": 1
+        }
+      ]
+    },
+    "plot": null,
+    "quests": [
+      {
+        "value": null,
+        "version": 0
+      }
+    ]
+  },
+  "state": {
+    "turn": 0,
+    "flags": {},
+    "cursor": {
+      "idx": 1,
+      "version": 1
+    }
+  },
+  "rng": {
+    "seed": 0,
+    "word_pos": 0
+  }
+}

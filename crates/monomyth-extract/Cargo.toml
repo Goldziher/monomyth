@@ -1,6 +1,6 @@
 [package]
 name = "monomyth-extract"
-description = "Hermetic, LLM-free RAG-softmax extraction proof-of-concept (ADR-0018/ADR-0023 Phase B4b)."
+description = "Extraction proof-of-concept slices (ADR-0018): the LLM-free RAG-softmax classifier (ADR-0023 Phase B4b) and the minimal text-to-structure slice (Phase 3)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,9 +13,15 @@ async-trait = { workspace = true }
 monomyth-contracts = { workspace = true }
 monomyth-core = { workspace = true }
 monomyth-frameworks = { workspace = true }
+monomyth-genre = { workspace = true }
+monomyth-llm = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+slotmap = { workspace = true }
 
 [dev-dependencies]
 monomyth-eval = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

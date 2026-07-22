@@ -1,0 +1,420 @@
+//! [`MinimalStructureExtractor`] — the [`StructureExtractor`] slice described in
+//! `monomyth-contracts` (ADR-0018, Phase 3 of the roadmap): derive a **minimal
+//! valid** [`World`] (one narrative node, one location) directly from raw
+//! source text, via a single structured LLM call grounded in the Campbell
+//! macro-tier vocabulary (`monomyth-frameworks`) and optionally biased by a
+//! `monomyth-genre` [`GenreProfile`].
+//!
+//! This is deliberately the smallest slice that proves the frozen contract can
+//! hold *extracted* structure, not just a re-classified label (which
+//! [`StageReclassifyingExtractor`](crate::StageReclassifyingExtractor) already
+//! proves): exactly one node, exactly one location, no edges, no entities, no
+//! items, no quests. Scaling extraction to multi-beat structure is future work.
+//!
+//! # Grounding scope
+//!
+//! Unlike [`StageReclassifyingExtractor`](crate::StageReclassifyingExtractor),
+//! which grounds each classification through a
+//! [`PassageRetriever`](monomyth_contracts::PassageRetriever), this slice
+//! deliberately skips ADR-0018's RAG-grounding driver: the stage catalog is
+//! inlined directly into the prompt ([`stage_catalog`]) and no corpus passages
+//! are retrieved. That keeps this slice's dependency surface — and its
+//! cassette — to exactly one LLM call; wiring retrieval-grounded extraction
+//! back in is future work, not parity this slice claims.
+//!
+//! # Write surface
+//!
+//! The extracted node's *content* (label, stage, synopsis hint; situation,
+//! functions, and motifs are left unrealized in this minimal slice, matching
+//! `NodeSpec::new`) is written through
+//! [`NarrativeEdit::AddNode`](monomyth_core::NarrativeEdit::AddNode) and its
+//! [`NodeSpec`] — the same write surface generation uses. Bootstrapping the
+//! very first node as the structure's root and sole ending has no
+//! `NarrativeEdit` of its own: no codepath in this workspace expresses that
+//! step as an edit, including generation's own `BackbonePass`
+//! (`monomyth-gen/src/passes/backbone.rs`), which builds a fresh
+//! `NarrativeStructure` directly and assigns `.root`/`.endings` before
+//! installing it on the `World` — there is nothing pre-existing yet for an
+//! edit to apply to. [`bootstrap_structure`] follows that same precedent for
+//! this one step; everything about the node's *extracted content* goes
+//! through the edit. Likewise, [`Location`] has no
+//! edit vocabulary at all (mirroring `monomyth-gen`'s `MapPass`), so it is
+//! constructed directly. The assembled result is gated by [`World::validate`]
+//! before it is ever returned — exactly like generation's own output.
+//!
+//! One field stays a hint rather than filled content: [`NodeSpec::new`] always
+//! wraps its `synopsis_hint` in [`Content::Empty`] — there is no `NodeSpec`
+//! constructor that produces a *filled* synopsis slot — so the extracted
+//! synopsis text is committed as the node's [`ContentKind::Synopsis`] grounding
+//! hint, not as already-generated prose. A later content-fill pass (ADR-0002)
+//! still owns turning that hint into the node's actual synopsis prose. The
+//! extracted [`Location`] name/description have no such constraint and are
+//! committed [`Content::Filled`] directly.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use async_trait::async_trait;
+use monomyth_contracts::{StructureExtractError, StructureExtractor};
+use monomyth_core::{
+    Content, ContentKind, ContentPrompt, EditOutcome, Location, LocationId, NarrativeEdit,
+    NarrativeStructure, NodeSpec, Player, Provenance, RngState, SCHEMA_VERSION, Story, World,
+    WorldMeta, WorldState,
+};
+use monomyth_frameworks::MonomythStage;
+use monomyth_genre::{GenreKind, GenreProfile};
+use monomyth_llm::Llm;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use slotmap::SlotMap;
+
+/// The schema name recorded on every generation call this extractor makes.
+const SCHEMA_NAME: &str = "minimal_structure_beat";
+
+/// The [`WorldMeta::seed`]/[`RngState`] value stamped onto every extracted
+/// world.
+///
+/// Extraction never touches the procedural RNG — it runs entirely in the
+/// content/LLM phase, quarantined from the seeded structural passes (ADR-0002)
+/// — so there is no real seed to record here. This is a fixed, named
+/// placeholder satisfying the field's required type, not a procedural draw.
+const EXTRACTION_SEED_PLACEHOLDER: u64 = 0;
+
+/// The single structured beat the model must return: everything this minimal
+/// slice needs to populate one [`NodeSpec`] and one [`Location`].
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ExtractedBeat {
+    /// A short, stable structural label for the beat (mirrors [`NodeSpec::label`]).
+    node_label: String,
+    /// The artifact `id` of the Campbell stage ([`MonomythStage::id`]) this beat
+    /// realizes.
+    stage_id: u16,
+    /// A one- or two-sentence synopsis of the beat, used as the node's
+    /// [`ContentKind::Synopsis`] hint.
+    synopsis_hint: String,
+    /// The proper name of the single location where the beat takes place.
+    location_name: String,
+    /// A one-paragraph description of that location.
+    location_description: String,
+}
+
+/// The writing frame handed to the model ahead of the source text, selected by
+/// [`GenreKind`] so the same extractor reads a passage through a
+/// genre-specific lens without a medium-specific branch anywhere else.
+fn genre_framing(kind: GenreKind) -> &'static str {
+    match kind {
+        GenreKind::Myth => {
+            "You are extracting the narrative skeleton of a comparative-mythology tale."
+        }
+        GenreKind::Detective => "You are extracting the narrative skeleton of a detective mystery.",
+        GenreKind::LitRpg => "You are extracting the narrative skeleton of a LitRPG adventure.",
+    }
+}
+
+/// Render the Campbell macro-tier vocabulary as `"id = Name"` lines, so the
+/// model is constrained to choose a stage id that actually exists in
+/// `monomyth-frameworks` rather than inventing one.
+fn stage_catalog() -> String {
+    MonomythStage::all()
+        .iter()
+        .map(|stage| format!("{} = {}", stage.id(), stage.info().name))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Build the deterministic extraction prompt for `text` under `framing`.
+///
+/// A pure function of its inputs (plus the static framework vocabulary), so
+/// two calls with the same arguments always produce byte-identical prompts —
+/// the property a cassette-replayed test depends on.
+fn build_prompt(text: &str, framing: &str) -> String {
+    format!(
+        "{framing}\n\n\
+         Identify the single most central narrative beat in the passage below, \
+         and the one location where it takes place.\n\n\
+         Passage:\n{text}\n\n\
+         Choose exactly one Campbell stage id from this list (the vocabulary is \
+         fixed; do not invent an id outside it):\n{}\n\n\
+         Respond with the beat's structural label, the chosen stage id, a short \
+         synopsis hint grounding its prose, and the location's proper name and \
+         a one-paragraph description.",
+        stage_catalog(),
+    )
+}
+
+/// Bootstrap a single-node [`NarrativeStructure`] whose sole node is both root
+/// and sole ending, from `spec`.
+///
+/// See the module doc for why this one step bypasses `NarrativeEdit`.
+fn bootstrap_structure(spec: NodeSpec) -> Result<NarrativeStructure, StructureExtractError> {
+    let mut structure = NarrativeStructure::default();
+    let outcome = structure
+        .apply_edit(&NarrativeEdit::AddNode { spec })
+        .map_err(|error| StructureExtractError::Bootstrap(error.to_string()))?;
+    let EditOutcome::NodeAdded(root) = outcome else {
+        return Err(StructureExtractError::Bootstrap(
+            "AddNode did not report a new node id".to_owned(),
+        ));
+    };
+    structure.root = root;
+    structure.endings.insert(root);
+    structure.recompute_kinds();
+    Ok(structure)
+}
+
+/// Derive a minimal valid [`World`] from raw source text via one structured
+/// LLM call.
+///
+/// Borrows its [`Llm`] client and model label for the duration of a call,
+/// mirroring `monomyth-gen`'s `ContentContext` (the [`Llm`]'s own configured
+/// model is not exposed through its API, so the caller supplies the same
+/// label it configured the client with). The optional [`GenreProfile`] only
+/// ever selects the prompt's [`genre_framing`]; it never crosses into
+/// `monomyth-core` or `monomyth-contracts`.
+#[derive(Debug)]
+pub struct MinimalStructureExtractor<'a> {
+    llm: &'a Llm,
+    model: &'a str,
+    genre: Option<&'a GenreProfile>,
+}
+
+impl<'a> MinimalStructureExtractor<'a> {
+    /// Build an extractor over `llm`, targeting the default (myth) genre framing.
+    #[must_use]
+    pub fn new(llm: &'a Llm, model: &'a str) -> Self {
+        Self {
+            llm,
+            model,
+            genre: None,
+        }
+    }
+
+    /// Build an extractor over `llm`, framing the extraction prompt with `genre`.
+    #[must_use]
+    pub fn with_genre(llm: &'a Llm, model: &'a str, genre: &'a GenreProfile) -> Self {
+        Self {
+            llm,
+            model,
+            genre: Some(genre),
+        }
+    }
+
+    /// The genre framing this extractor prompts with (myth, absent a configured
+    /// [`GenreProfile`]).
+    fn framing(&self) -> &'static str {
+        genre_framing(self.genre.map_or(GenreKind::Myth, |profile| profile.kind))
+    }
+}
+
+#[async_trait]
+impl StructureExtractor for MinimalStructureExtractor<'_> {
+    async fn extract_structure(&self, text: &str) -> Result<World, StructureExtractError> {
+        let prompt = build_prompt(text, self.framing());
+        let generated = self
+            .llm
+            .generate::<ExtractedBeat>(&prompt, SCHEMA_NAME)
+            .await
+            .map_err(|error| StructureExtractError::Generation(error.to_string()))?;
+        let beat = generated.value;
+
+        let stage = MonomythStage::from_id(beat.stage_id).ok_or_else(|| {
+            StructureExtractError::UnrecognizedLabel(format!("Campbell stage id {}", beat.stage_id))
+        })?;
+
+        let structure =
+            bootstrap_structure(NodeSpec::new(beat.node_label, stage, beat.synopsis_hint))?;
+        let root = structure.root();
+
+        let mut locations: SlotMap<LocationId, Location> = SlotMap::default();
+        let location_id = locations.insert(Location {
+            name: Content::filled(
+                beat.location_name,
+                ContentPrompt::new(ContentKind::Name, "the extracted location's proper name"),
+                Provenance::llm(self.model, "MinimalStructureExtractor"),
+            ),
+            description: Content::filled(
+                beat.location_description,
+                ContentPrompt::new(
+                    ContentKind::Description,
+                    "the extracted location's description",
+                ),
+                Provenance::llm(self.model, "MinimalStructureExtractor"),
+            ),
+            exits: BTreeMap::new(),
+            entities: BTreeSet::new(),
+            items: BTreeSet::new(),
+        });
+
+        let world = World {
+            meta: WorldMeta {
+                seed: EXTRACTION_SEED_PLACEHOLDER,
+                schema_version: SCHEMA_VERSION,
+                title: Content::empty(ContentPrompt::new(
+                    ContentKind::Title,
+                    "the extracted world's title",
+                )),
+            },
+            locations,
+            entities: SlotMap::default(),
+            items: SlotMap::default(),
+            player: Player::new(location_id),
+            story: Story {
+                structure,
+                plot: None,
+                quests: SlotMap::default(),
+            },
+            state: WorldState {
+                cursor: root,
+                ..WorldState::default()
+            },
+            rng: RngState::new(EXTRACTION_SEED_PLACEHOLDER),
+        };
+
+        world.validate()?;
+        Ok(world)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use monomyth_llm::{BackendError, Llm, StructuredBackend, Usage};
+    use serde_json::{Value, json};
+
+    /// A scripted [`StructuredBackend`]: `complete_json` returns the canned
+    /// `response`, regardless of the prompt it is called with.
+    struct ScriptedBackend {
+        response: Result<Value, String>,
+    }
+
+    #[async_trait]
+    impl StructuredBackend for ScriptedBackend {
+        async fn complete_json(
+            &self,
+            _prompt: &str,
+            _schema_name: &str,
+            _schema: &Value,
+        ) -> Result<(Value, Option<Usage>), BackendError> {
+            match &self.response {
+                Ok(value) => Ok((value.clone(), None)),
+                Err(message) => Err(BackendError::new(message.clone())),
+            }
+        }
+
+        async fn complete_text(
+            &self,
+            _prompt: &str,
+        ) -> Result<(String, Option<Usage>), BackendError> {
+            Err(BackendError::new(
+                "text completion is not used by MinimalStructureExtractor",
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn extract_structure_should_return_unrecognized_label_for_an_out_of_range_stage_id() {
+        let backend = ScriptedBackend {
+            response: Ok(json!({
+                "node_label": "CallToAdventure",
+                "stage_id": 9999,
+                "synopsis_hint": "a synopsis",
+                "location_name": "Somewhere",
+                "location_description": "A place.",
+            })),
+        };
+        let llm = Llm::new(Box::new(backend));
+        let extractor = MinimalStructureExtractor::new(&llm, "test/stub-model");
+
+        let error = extractor
+            .extract_structure("irrelevant source text")
+            .await
+            .expect_err("an out-of-range stage id must be rejected");
+
+        assert!(
+            matches!(
+                &error,
+                StructureExtractError::UnrecognizedLabel(message) if message.contains("9999")
+            ),
+            "expected UnrecognizedLabel mentioning 9999, got: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn extract_structure_should_wrap_a_backend_failure_as_a_generation_error() {
+        let backend = ScriptedBackend {
+            response: Err("the model backend is unreachable".to_owned()),
+        };
+        let llm = Llm::new(Box::new(backend));
+        let extractor = MinimalStructureExtractor::new(&llm, "test/stub-model");
+
+        let error = extractor
+            .extract_structure("irrelevant source text")
+            .await
+            .expect_err("a backend failure must propagate as a Generation error");
+
+        assert!(
+            matches!(
+                &error,
+                StructureExtractError::Generation(message)
+                    if message.contains("the model backend is unreachable")
+            ),
+            "expected Generation wrapping the backend failure, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn genre_framing_should_differ_by_genre_kind() {
+        let myth = genre_framing(GenreKind::Myth);
+        let detective = genre_framing(GenreKind::Detective);
+        let litrpg = genre_framing(GenreKind::LitRpg);
+        assert_ne!(myth, detective);
+        assert_ne!(myth, litrpg);
+        assert_ne!(detective, litrpg);
+    }
+
+    #[test]
+    fn stage_catalog_should_list_every_campbell_stage_by_id() {
+        let catalog = stage_catalog();
+        for stage in MonomythStage::all() {
+            let line = format!("{} = {}", stage.id(), stage.info().name);
+            assert!(
+                catalog.contains(&line),
+                "catalog must contain {line:?}, got: {catalog}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_prompt_should_be_a_pure_function_of_its_inputs() {
+        let first = build_prompt("a passage", "framing");
+        let second = build_prompt("a passage", "framing");
+        assert_eq!(
+            first, second,
+            "identical inputs must yield identical prompts"
+        );
+
+        let different_text = build_prompt("a different passage", "framing");
+        assert_ne!(first, different_text);
+
+        let different_framing = build_prompt("a passage", "different framing");
+        assert_ne!(first, different_framing);
+    }
+
+    #[test]
+    fn bootstrap_structure_should_make_the_new_node_root_and_sole_ending() {
+        let spec = NodeSpec::new(
+            "CallToAdventure",
+            MonomythStage::CallToAdventure,
+            "the call",
+        );
+        let structure = bootstrap_structure(spec).expect("bootstrapping a fresh spec succeeds");
+
+        let root = structure.root();
+        assert_eq!(structure.nodes.len(), 1);
+        assert!(structure.nodes.contains_key(root));
+        assert_eq!(structure.endings, BTreeSet::from([root]));
+        structure
+            .validate()
+            .expect("a single-node structure is valid");
+    }
+}
