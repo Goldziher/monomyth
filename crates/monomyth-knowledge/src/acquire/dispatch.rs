@@ -18,7 +18,7 @@ use super::error::AcquireError;
 use super::fetch::git::RepoDirSpec;
 use super::fetch::gutendex::{self, SearchBy};
 use super::fetch::huggingface::{self, DatasetSpec};
-use super::fetch::{FetchedWork, archive, git, sparql, zenodo};
+use super::fetch::{FetchedWork, archive, git, html, sparql, zenodo};
 use super::http::{self, CacheMode, FetchContext};
 use super::storage;
 
@@ -94,6 +94,8 @@ enum Route {
     },
     /// Resolve and download one file from a Zenodo record.
     Zenodo { record_id: u64 },
+    /// Fetch one HTML page and extract its visible text.
+    Html { url: String, title: String },
     /// No fetcher family is wired up (or configured) for this source id.
     NoFetcher(&'static str),
 }
@@ -158,9 +160,13 @@ fn route(entry: &SourceEntry) -> Result<Route, AcquireError> {
             query: sparql::DBPEDIA_MYTH_QUERY,
             title: "DBpedia Deity/MythologicalFigure abstracts",
         }),
-        "iapsop" => Ok(Route::NoFetcher(
-            "plain HTTP site with no structured API; no generic HTML fetcher",
-        )),
+        "iapsop" | "sacred_texts" | "duchas" => {
+            let url = entry.url.as_deref().unwrap_or_default();
+            Ok(Route::Html {
+                url: url.to_owned(),
+                title: entry.name.clone(),
+            })
+        }
         _ => Ok(Route::NoFetcher("no fetcher wired up for this source id")),
     }
 }
@@ -211,6 +217,10 @@ pub(crate) async fn fetch_for_source(
         }
         Route::Zenodo { record_id } => {
             let work = zenodo::fetch(&ctx, record_id, None, retrieved).await?;
+            Ok(vec![work])
+        }
+        Route::Html { url, title } => {
+            let work = html::fetch(&ctx, &url, Some(title), retrieved).await?;
             Ok(vec![work])
         }
         Route::NoFetcher(reason) => Err(DispatchOutcome::NoFetcher { reason }),
@@ -431,5 +441,77 @@ mod tests {
                 record_id: 6_575_263
             }
         ));
+    }
+
+    /// The dispatch point of this family being wired: `iapsop`,
+    /// `sacred_texts`, and `duchas` now resolve to a real fetcher (the html
+    /// family), carrying the ledger-declared url and name, not
+    /// [`Route::NoFetcher`].
+    #[test]
+    fn route_resolves_html_scrape_sources_to_the_html_family_with_the_ledger_url() {
+        let ledger = ledger();
+        for id in ["iapsop", "sacred_texts", "duchas"] {
+            let entry = ledger.get(id).expect("declared");
+            let resolved = route(entry).unwrap_or_else(|error| panic!("{id}: {error}"));
+            match resolved {
+                Route::Html { url, title } => {
+                    assert_eq!(url, entry.url.clone().expect("declared url"));
+                    assert_eq!(title, entry.name);
+                }
+                _ => panic!("'{id}' must route to the html family"),
+            }
+        }
+    }
+
+    /// The licensing invariant this whole task exists to establish: every
+    /// source that classifies as dispatchable under `BuildShip` must resolve
+    /// to a real fetcher, never [`Route::NoFetcher`] — a silently-unwired
+    /// ship source would otherwise pass `classify_entry` and then fail at
+    /// dispatch time.
+    ///
+    /// `gutenberg_odyssey_butler` is the one deliberate exception: per its
+    /// manifest note, it exists only to give the ADR-0023 Odyssey benchmark
+    /// fixture a `source_id` to reference (structural labels only) — the
+    /// fixture never ingests its text, so it is intentionally never wired to
+    /// a fetcher.
+    #[test]
+    fn every_dispatchable_ship_source_routes_to_a_real_fetcher() {
+        const BENCHMARK_LABEL_ONLY_SOURCE_IDS: [&str; 1] = ["gutenberg_odyssey_butler"];
+
+        let ledger = ledger();
+        for entry in crate::acquire::dispatchable_entries(
+            &ledger,
+            None,
+            crate::acquire::AcquireMode::BuildShip,
+        ) {
+            if BENCHMARK_LABEL_ONLY_SOURCE_IDS.contains(&entry.id.as_str()) {
+                continue;
+            }
+            let resolved = route(entry).unwrap_or_else(|error| panic!("{}: {error}", entry.id));
+            assert!(
+                !matches!(resolved, Route::NoFetcher(_)),
+                "'{}' is dispatchable but has no fetcher wired up",
+                entry.id
+            );
+        }
+    }
+
+    /// The two `UNCONFIRMED`-license reference sources must never gain a
+    /// route: wiring either to a fetcher before its license is confirmed
+    /// would let `corpus inspect` download it, which is fine, but a future
+    /// accidental `Namespace::Ship` re-tag would then dispatch a fetcher
+    /// with no further gate to catch it. Keeping them unrouted means even
+    /// that mistake would still fail closed (`NoFetcher`, not a fetch).
+    #[test]
+    fn manto_and_fairytaleqa_remain_unrouted() {
+        let ledger = ledger();
+        for id in ["manto", "fairytaleqa"] {
+            let entry = ledger.get(id).expect("declared");
+            let resolved = route(entry).unwrap_or_else(|error| panic!("{id}: {error}"));
+            assert!(
+                matches!(resolved, Route::NoFetcher(_)),
+                "'{id}' must stay unrouted (license UNCONFIRMED)"
+            );
+        }
     }
 }

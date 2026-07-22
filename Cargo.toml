@@ -19,6 +19,7 @@ async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 dotenvy = "0.15"
+ego-tree = "0.11"
 monomyth-compose = { path = "crates/monomyth-compose" }
 monomyth-config = { path = "crates/monomyth-config" }
 monomyth-contracts = { path = "crates/monomyth-contracts" }
@@ -40,6 +41,7 @@ regex = "1.13.1"
 reqwest = { version = "0.13.4", default-features = false }
 rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = "1"
+scraper = "0.27"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"

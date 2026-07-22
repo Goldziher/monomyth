@@ -8,7 +8,7 @@ publish.workspace = true
 authors.workspace = true
 
 [features]
-acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time", "dep:zip"]
+acquire = ["dep:ego-tree", "dep:opendal", "dep:regex", "dep:reqwest", "dep:scraper", "dep:sha2", "dep:time", "dep:zip"]
 # Reserved cloud object-storage backends for the acquisition blob store
 # (ADR-0012). Declared but not wired to any call site this session — a local
 # build must not pull a cloud SDK, so these stay opt-in behind their own
@@ -27,10 +27,12 @@ rag-reranker = ["xberg/reranker"]
 
 [dependencies]
 async-trait = { workspace = true }
+ego-tree = { workspace = true, optional = true }
 opendal = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true, default-features = false, features = ["rustls", "gzip", "json"] }
 rusqlite = { workspace = true, features = ["bundled"] }
+scraper = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true, optional = true }
