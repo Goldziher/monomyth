@@ -32,8 +32,11 @@ mod backend;
 mod cassette;
 mod error;
 mod llm;
+mod repair;
+mod template;
 
 pub use backend::{BackendOptions, StructuredBackend, Usage, XbergBackend};
 pub use cassette::{Cassette, Interaction, RecordingBackend, ReplayBackend};
 pub use error::{BackendError, CassetteError, LlmError};
 pub use llm::{Generated, Llm, MAX_ATTEMPTS};
+pub use template::PromptTemplate;

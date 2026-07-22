@@ -12,6 +12,8 @@ use serde::de::DeserializeOwned;
 
 use crate::backend::{BackendOptions, StructuredBackend, Usage, XbergBackend};
 use crate::error::LlmError;
+use crate::repair::repair_against_schema;
+use crate::template::PromptTemplate;
 
 /// Number of retries granted after the first attempt when model output fails to
 /// deserialize. Total attempts is therefore `MAX_RETRIES + 1`.
@@ -111,7 +113,12 @@ impl Llm {
     /// On a deserialization failure the prompt is augmented with the parser error
     /// and retried up to [`MAX_RETRIES`] times. Token usage is accumulated across
     /// every attempt, so [`Generated::usage`] (and [`LlmError::Parse`]'s `usage`)
-    /// reflect the full cost of the call, not just the final round-trip.
+    /// reflect the full cost of the call, not just the final round-trip. Before
+    /// each attempt is deserialized, a schema-guided repair pass coerces common
+    /// primitive-type mismatches (a stringified number, `"true"` for a `bool`, a
+    /// single object where the schema wants a one-element array) so a call
+    /// doesn't need a full retry round-trip just to fix a type the schema
+    /// already pins down unambiguously.
     ///
     /// Each of the [`MAX_ATTEMPTS`] parse attempts may itself retry at the
     /// transport level (see [`BackendOptions::max_retries`]), so the worst-case
@@ -133,15 +140,61 @@ impl Llm {
     where
         T: DeserializeOwned + JsonSchema,
     {
-        // The span carries only the schema name and a running attempt/usage ~keep
-        // account — never the prompt or response text, which can contain ~keep
-        // reference-corpus material that must not leak into logs (ADR-0005). ~keep
+        self.generate_inner(prompt, schema_name, None).await
+    }
+
+    /// Render `template` against `vars`, then [`generate`](Self::generate) a
+    /// value of type `T` from the rendered prompt.
+    ///
+    /// The template's stable `id` is additionally recorded on the `llm.generate`
+    /// tracing span, so a call can be traced back to the named prompt that
+    /// produced it — useful once a crate has more than a handful of ad hoc
+    /// `format!`-built prompts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LlmError::Template`] if `vars` leaves a placeholder
+    /// unresolved, plus every error [`generate`](Self::generate) can return.
+    pub async fn generate_from_template<T>(
+        &self,
+        template: &PromptTemplate,
+        vars: &[(&str, &str)],
+        schema_name: &str,
+    ) -> Result<Generated<T>, LlmError>
+    where
+        T: DeserializeOwned + JsonSchema,
+    {
+        let prompt = template.render(vars)?;
+        self.generate_inner(&prompt, schema_name, Some(template.id))
+            .await
+    }
+
+    /// The shared implementation behind [`generate`](Self::generate) and
+    /// [`generate_from_template`](Self::generate_from_template); `template_id`
+    /// is `Some` only for the latter, and is recorded on the span when present.
+    async fn generate_inner<T>(
+        &self,
+        prompt: &str,
+        schema_name: &str,
+        template_id: Option<&'static str>,
+    ) -> Result<Generated<T>, LlmError>
+    where
+        T: DeserializeOwned + JsonSchema,
+    {
+        // The span carries only the schema/template identifiers and a running ~keep
+        // attempt/usage account — never the prompt or response text, which can ~keep
+        // contain reference-corpus material that must not leak into logs ~keep
+        // (ADR-0005). ~keep
         let span = tracing::info_span!(
             "llm.generate",
             schema_name,
+            template_id = tracing::field::Empty,
             attempts = tracing::field::Empty
         );
         let _guard = span.enter();
+        if let Some(id) = template_id {
+            span.record("template_id", id);
+        }
         let started = std::time::Instant::now();
 
         let schema = serde_json::to_value(schema_for!(T))?;
@@ -159,8 +212,9 @@ impl Llm {
                 .map_err(|source| LlmError::backend(format!("generate '{schema_name}'"), source))?;
 
             total_usage = accumulate_usage(total_usage, usage);
+            let repaired = repair_against_schema(value, &schema);
 
-            match serde_json::from_value::<T>(value) {
+            match serde_json::from_value::<T>(repaired) {
                 Ok(value) => {
                     span.record("attempts", attempt);
                     tracing::info!(
@@ -253,6 +307,7 @@ mod tests {
     use super::{Generated, Llm, MAX_ATTEMPTS};
     use crate::backend::{BackendOptions, StructuredBackend, Usage};
     use crate::error::{BackendError, LlmError};
+    use crate::template::PromptTemplate;
 
     #[derive(Debug, Deserialize, JsonSchema, PartialEq, Eq)]
     struct Hero {
@@ -552,6 +607,75 @@ mod tests {
         assert_eq!(
             value, "the road of trials",
             "text must be returned verbatim"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_generate_from_a_named_template() {
+        let backend =
+            FakeBackend::with_json(vec![json!({ "name": "Gilgamesh", "level": 5 })], None);
+        let prompts = backend.prompt_log();
+        let template = PromptTemplate::new("forge-hero", "Forge a hero named {name}.");
+
+        let Generated { value, .. } = llm_with(backend)
+            .generate_from_template::<Hero>(&template, &[("name", "Gilgamesh")], "hero")
+            .await
+            .expect("the template renders and the response deserializes");
+
+        assert_eq!(
+            value,
+            Hero {
+                name: "Gilgamesh".to_owned(),
+                level: 5
+            }
+        );
+        let sent = prompts.lock().expect("lock poisoned").clone();
+        assert_eq!(
+            sent[0], "Forge a hero named Gilgamesh.",
+            "the rendered template must be sent as the prompt"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_fail_with_a_template_error_when_a_placeholder_is_unresolved() {
+        let backend = FakeBackend::with_json(Vec::new(), None);
+        let template = PromptTemplate::new("forge-hero", "Forge a hero named {name}.");
+
+        let error = llm_with(backend)
+            .generate_from_template::<Hero>(&template, &[], "hero")
+            .await
+            .expect_err("name was never supplied");
+
+        assert!(
+            matches!(error, LlmError::Template { template_id, .. } if template_id == "forge-hero"),
+            "expected LlmError::Template naming the template, got {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_repair_a_stringified_field_without_needing_a_retry() {
+        // A stringified `level` would fail `serde_json::from_value::<Hero>` ~keep
+        // outright; the schema-guided repair pass must coerce it before the ~keep
+        // first deserialize attempt, so only one backend call happens. ~keep
+        let backend = FakeBackend::with_json(vec![json!({ "name": "Enkidu", "level": "3" })], None);
+        let prompts = backend.prompt_log();
+
+        let Generated { value, .. } = llm_with(backend)
+            .generate::<Hero>("forge a hero", "hero")
+            .await
+            .expect("the stringified level must be repaired in place");
+
+        assert_eq!(
+            value,
+            Hero {
+                name: "Enkidu".to_owned(),
+                level: 3
+            }
+        );
+        assert_eq!(
+            prompts.lock().expect("lock poisoned").len(),
+            1,
+            "repair must avoid a retry round-trip for a coercible mismatch"
         );
     }
 }

@@ -68,6 +68,16 @@ pub enum LlmError {
         /// failed call still costs the caller, so its cost is surfaced here.
         usage: Option<Usage>,
     },
+
+    /// [`crate::PromptTemplate::render`] was given variables that left an
+    /// unresolved `{placeholder}` in the rendered prompt.
+    #[error("prompt template '{template_id}' has an unresolved placeholder: {{{placeholder}}}")]
+    Template {
+        /// The template's stable identifier.
+        template_id: &'static str,
+        /// The name of the placeholder left unresolved.
+        placeholder: String,
+    },
 }
 
 impl LlmError {
