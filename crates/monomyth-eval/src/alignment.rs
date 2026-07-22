@@ -512,6 +512,35 @@ mod tests {
     }
 
     #[test]
+    fn a_scored_report_should_serialize_to_json() {
+        // Regression: the `eval` CLI emits the scored `Report` as JSON.
+        // `Alignment::matches` is keyed by `NarrativeNodeId` (a slotmap key, not
+        // a string), which `serde_json` cannot use as an object key — so the map
+        // must serialize as an array of pairs or the CLI panics on every run.
+        let gold = linear_world(&[
+            ("A", MonomythStage::CallToAdventure),
+            ("B", MonomythStage::SupernaturalAid),
+            ("C", MonomythStage::CrossingTheFirstThreshold),
+        ]);
+        let predicted = linear_world(&[
+            ("A", MonomythStage::CallToAdventure),
+            ("B", MonomythStage::SupernaturalAid),
+            ("C", MonomythStage::CrossingTheFirstThreshold),
+        ]);
+        let report = AlignmentScorer.score(&gold, &predicted);
+        assert!(
+            !report.alignment.matches.is_empty(),
+            "precondition: the report must carry matches to exercise map serialization"
+        );
+
+        let value = serde_json::to_value(&report).expect("a scored Report must serialize to JSON");
+        assert!(
+            value["alignment"]["matches"].is_array(),
+            "matches must serialize as a JSON array of pairs, not a non-string-keyed object"
+        );
+    }
+
+    #[test]
     fn predicted_missing_a_middle_node_should_leave_it_unmatched_and_align_the_ends() {
         let gold = linear_world(&[
             ("A", MonomythStage::CallToAdventure),

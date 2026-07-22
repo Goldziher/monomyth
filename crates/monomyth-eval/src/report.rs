@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::metrics::DistScore;
 use crate::util::fnv1a;
@@ -31,11 +31,33 @@ use monomyth_core::{NarrativeNodeId, World};
 pub struct Alignment {
     /// Gold node id -> matched predicted node id, for every node the alignment
     /// scorer was able to match.
+    ///
+    /// Serialized as a JSON array of `[gold, predicted]` pairs, not an object:
+    /// [`NarrativeNodeId`] is a `slotmap` generational key that serializes as a
+    /// structured value, and `serde_json` rejects a non-string object key —
+    /// serializing the map directly panics any JSON emitter (the `eval` CLI's
+    /// report output). Iterating the source `BTreeMap` keeps the canonical,
+    /// snapshot-stable order used everywhere else, and matches the shape
+    /// [`QuantizedAlignment`] already uses for the fingerprint.
+    #[serde(serialize_with = "serialize_node_id_matches")]
     pub matches: BTreeMap<NarrativeNodeId, NarrativeNodeId>,
     /// Gold nodes with no predicted counterpart (a deletion in the alignment).
     pub unmatched_gold: BTreeSet<NarrativeNodeId>,
     /// Predicted nodes with no gold counterpart (an insertion in the alignment).
     pub unmatched_predicted: BTreeSet<NarrativeNodeId>,
+}
+
+/// Serialize a [`NarrativeNodeId`]-keyed match map as a JSON array of
+/// `[gold, predicted]` pairs, since `serde_json` cannot use a non-string object
+/// key. See [`Alignment::matches`].
+fn serialize_node_id_matches<S>(
+    matches: &BTreeMap<NarrativeNodeId, NarrativeNodeId>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.collect_seq(matches.iter().map(|(&gold, &predicted)| (gold, predicted)))
 }
 
 /// The aggregate result of scoring a predicted [`World`] against a gold one.
