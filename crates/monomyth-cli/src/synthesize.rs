@@ -489,42 +489,106 @@ fn read_sidecar_context(sidecar_path: &Path) -> Result<SidecarReviewContext> {
         .with_context(|| format!("parsing review context {}", sidecar_path.display()))
 }
 
-/// Read `<laws-dir>/index.json`.
+/// The `index` field of a freshly bootstrapped `index.json`, written the
+/// first time `synthesize promote` runs against a `laws_dir` that has no
+/// index yet.
+const BOOTSTRAP_INDEX_TITLE: &str = "Synthesized laws";
+
+/// The `note` field of a freshly bootstrapped `index.json`.
+const BOOTSTRAP_INDEX_NOTE: &str = "Build-time-synthesized, human-reviewed structural laws (ADR-0016). Auto-created by \
+     `synthesize promote`.";
+
+/// Read `<laws-dir>/index.json`, treating a missing file as an empty index.
+///
+/// A missing `index.json` is not an error: it is exactly the state of a
+/// brand-new `laws_dir` before its first promotion, and `synthesize promote`
+/// must be able to bootstrap that first promotion rather than requiring some
+/// other step to pre-create an empty index.
 ///
 /// # Errors
 ///
-/// Fails if `index_path` cannot be read or does not parse as a [`LawIndex`].
+/// Fails if `index_path` exists but cannot be read, or does not parse as a
+/// [`LawIndex`].
 fn read_laws_index(index_path: &Path) -> Result<LawIndex> {
-    let json = std::fs::read_to_string(index_path)
-        .with_context(|| format!("reading laws index {}", index_path.display()))?;
+    let json = match std::fs::read_to_string(index_path) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LawIndex {
+                index: BOOTSTRAP_INDEX_TITLE.to_owned(),
+                note: BOOTSTRAP_INDEX_NOTE.to_owned(),
+                laws: Vec::new(),
+            });
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("reading laws index {}", index_path.display()));
+        }
+    };
     serde_json::from_str(&json)
         .with_context(|| format!("parsing laws index {}", index_path.display()))
 }
 
-/// Refuse promotion if `law_id` is already promoted: either its artifact file
-/// already exists in `laws_dir`, or it is already registered in `index`.
+/// Refuse promotion if `law_id` is already registered in `index` — the
+/// authoritative record of what is promoted.
 ///
-/// Idempotency guard: a promoted law must never be silently overwritten or
-/// double-registered.
+/// An on-disk `<law_id>.json` that exists but is *not* indexed is reported to
+/// stderr as an unindexed-orphan warning rather than a hard block. Index
+/// membership, not file existence, is authoritative: a law file can exist
+/// without being indexed only if a prior promotion was interrupted between
+/// writing the artifact and updating the index (or the file was placed there
+/// by hand), and treating that as a permanent block would wedge recovery —
+/// the file can never be indexed and can never be overwritten either.
 ///
 /// # Errors
 ///
-/// Fails if `law_id` is already promoted by either measure.
+/// Fails if `law_id` is already registered in `index`.
 fn refuse_if_already_promoted(laws_dir: &Path, law_id: &str, index: &LawIndex) -> Result<()> {
-    let law_path = laws_dir.join(format!("{law_id}.json"));
-    if law_path.exists() {
-        bail!(
-            "law {law_id:?} is already promoted: {} already exists",
-            law_path.display()
-        );
-    }
     if index.laws.iter().any(|entry| entry.law == law_id) {
         bail!(
             "law {law_id:?} is already registered in {}",
             laws_dir.join("index.json").display()
         );
     }
+    let law_path = laws_dir.join(format!("{law_id}.json"));
+    if law_path.exists() {
+        eprintln!(
+            "warning: {} exists but law {law_id:?} is not registered in the index; treating it \
+             as an unindexed orphan (likely an interrupted prior promotion) and overwriting it",
+            law_path.display()
+        );
+    }
     Ok(())
+}
+
+/// Write `contents` to `path` atomically: write to a sibling temporary file
+/// in the same directory, then `rename` it over `path`. A crash or a
+/// concurrent reader can therefore never observe a partially-written law
+/// artifact or index — `rename` within a single filesystem is atomic, unlike
+/// a direct [`std::fs::write`], which can leave a truncated file behind if
+/// the process is interrupted mid-write.
+///
+/// # Errors
+///
+/// Fails if `path` has no parent directory, if the temporary file cannot be
+/// written, or if the rename fails.
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("{} has no usable UTF-8 file name", path.display()))?;
+    let temp_path = parent.join(format!(".{file_name}.tmp-{}", std::process::id()));
+    std::fs::write(&temp_path, contents)
+        .with_context(|| format!("writing temporary file {}", temp_path.display()))?;
+    std::fs::rename(&temp_path, path).with_context(|| {
+        format!(
+            "renaming {} into place at {}",
+            temp_path.display(),
+            path.display()
+        )
+    })
 }
 
 /// Collect every free-text field the anti-leak gate must re-check against the
@@ -571,24 +635,34 @@ pub(crate) struct SynthesizePromoteArgs {
 /// Order of operations, each a fail-fast gate before the next:
 /// 1. reject a blank `--reviewed-by` (the review gate itself), before any
 ///    filesystem work;
-/// 2. read the candidate and its review-context sidecar;
-/// 3. stamp `synthesis.reviewed_by` — every other `synthesis` field,
+/// 2. read the candidate, then validate its `law` id ([`validate_law_slug`])
+///    before any path is built from it;
+/// 3. read the candidate's review-context sidecar;
+/// 4. stamp `synthesis.reviewed_by` — every other `synthesis` field,
 ///    including `candidate_sha256`, is left untouched, since it records how
 ///    the candidate was drafted, not how it was reviewed;
-/// 4. re-run the anti-leak gate against the recorded grounding passages,
-///    since a human edit could reintroduce verbatim wording;
-/// 5. validate the stamped result via `monomyth_frameworks::load_law`, the
+/// 5. re-run the anti-leak gate against the recorded grounding passages
+///    ([`candidate_leak_texts`]), since a human edit could reintroduce
+///    verbatim wording — and refuse to promote at all if the sidecar records
+///    no passages, rather than silently treating that as nothing to check;
+/// 6. validate the stamped result via `monomyth_frameworks::load_law`, the
 ///    framework validator;
-/// 6. refuse if the law is already promoted (idempotency);
-/// 7. write the artifact into `laws_dir` and register it in the index.
+/// 7. bootstrap `laws_dir` (a brand-new directory has no index yet) and read
+///    its index, treating a missing `index.json` as empty;
+/// 8. refuse if the law is already registered in the index (idempotency) —
+///    an unindexed orphan law file is a warning, not a hard block;
+/// 9. atomically write the artifact into `laws_dir` and register it in the
+///    index ([`write_atomic`]).
 ///
 /// # Errors
 ///
-/// Fails on a blank `--reviewed-by`, if the candidate or its sidecar cannot
-/// be read or parsed, if [`monomyth_synthesis::verify_no_verbatim`] finds a
-/// verbatim overlap, if [`monomyth_frameworks::load_law`] rejects the stamped
-/// result, if the law is already promoted, if the laws index cannot be read,
-/// or if any write fails.
+/// Fails on a blank `--reviewed-by`, if the candidate declares an unsafe
+/// `law` id, if the candidate or its sidecar cannot be read or parsed, if the
+/// sidecar records no grounding passages, if
+/// [`monomyth_synthesis::verify_no_verbatim`] finds a verbatim overlap, if
+/// [`monomyth_frameworks::load_law`] rejects the stamped result, if the law
+/// is already registered in the index, if the laws directory cannot be
+/// created, if an existing laws index cannot be read, or if any write fails.
 pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> {
     let SynthesizePromoteArgs {
         candidate,
@@ -637,14 +711,18 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
         )
     })?;
 
+    // Bootstrap the directory before reading its index: a brand-new `laws_dir`
+    // (nothing promoted into it yet) has no `index.json`, and read_laws_index's
+    // missing-file fallback only helps once the directory itself is there to look in.
+    std::fs::create_dir_all(&laws_dir)
+        .with_context(|| format!("creating laws directory {}", laws_dir.display()))?;
+
     let index_path = laws_dir.join("index.json");
     let mut index = read_laws_index(&index_path)?;
     refuse_if_already_promoted(&laws_dir, &artifact.law, &index)?;
 
-    std::fs::create_dir_all(&laws_dir)
-        .with_context(|| format!("creating laws directory {}", laws_dir.display()))?;
     let law_path = laws_dir.join(format!("{}.json", artifact.law));
-    std::fs::write(&law_path, &stamped_json)
+    write_atomic(&law_path, &stamped_json)
         .with_context(|| format!("writing promoted law artifact {}", law_path.display()))?;
 
     index.laws.push(LawIndexEntry {
@@ -655,7 +733,7 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
     });
     let index_json =
         serde_json::to_string_pretty(&index).context("serializing the updated laws index")?;
-    std::fs::write(&index_path, index_json)
+    write_atomic(&index_path, &index_json)
         .with_context(|| format!("writing updated laws index {}", index_path.display()))?;
 
     println!("promoted law {:?} -> {}", artifact.law, law_path.display());
@@ -1190,6 +1268,73 @@ mod tests {
             "error must explain the sidecar records no grounding passages, got: {error}"
         );
         assert!(!laws_dir.join("unguarded_law.json").exists());
+    }
+
+    #[test]
+    fn should_promote_the_first_law_into_a_fresh_laws_directory() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "bootstrap_law",
+            "A harmless made-up description with no overlap at all here.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        // Deliberately does not exist yet, and no index.json fixture is written: the
+        // very first `synthesize promote` into a brand-new repo must bootstrap both.
+        let laws_dir = temp_dir.path().join("laws");
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("promoting the first law into a fresh laws directory succeeds");
+
+        assert!(laws_dir.join("bootstrap_law.json").exists());
+        let index_json =
+            std::fs::read_to_string(laws_dir.join("index.json")).expect("index reads back");
+        let index: serde_json::Value =
+            serde_json::from_str(&index_json).expect("index is valid JSON");
+        assert!(
+            index["laws"]
+                .as_array()
+                .expect("laws array")
+                .iter()
+                .any(|entry| entry["law"] == "bootstrap_law"),
+            "index must gain an entry for the promoted law"
+        );
+    }
+
+    #[test]
+    fn should_recover_from_an_unindexed_orphan_law_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let candidate_path = write_fixture_candidate(
+            temp_dir.path(),
+            "orphan_law",
+            "A harmless made-up description with no overlap at all here.",
+            "some unrelated reference passage text about a wholly different topic entirely",
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+        // Simulate an interrupted prior promotion: the law file landed on disk but the
+        // process crashed before the index write registered it.
+        std::fs::write(
+            laws_dir.join("orphan_law.json"),
+            "stale content from a crashed run",
+        )
+        .expect("orphan fixture writes");
+
+        run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect("an unindexed orphan law file must not permanently block re-promotion");
+
+        let law_json =
+            std::fs::read_to_string(laws_dir.join("orphan_law.json")).expect("law file reads back");
+        let loaded = load_law(&law_json).expect("the recovered promotion must load_law cleanly");
+        assert_eq!(loaded.synthesis.reviewed_by, "alice");
     }
 
     #[test]
