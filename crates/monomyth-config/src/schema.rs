@@ -3,11 +3,14 @@
 //!
 //! This is the config spine (ADR-0015). Each knob appears three times: an
 //! `Option`-typed field on the file struct, a `Layered<T>` field on the resolved
-//! struct, and one line in [`MonomythConfig::apply_file`]. It currently carries
-//! the `[generation]` table (the macro fork probability plus the beat, map,
-//! item, and cast procedural bounds) and the `[models]` table (per-task model
-//! routing); later slices add `[retrieval]`, `[synthesis]`, `[paths]`, and
-//! `[knowledge]` the same way.
+//! struct, and one line in [`MonomythConfig::apply_file`]. It carries the
+//! `[generation]` table (the macro fork probability plus the beat, map, item,
+//! and cast procedural bounds), the `[models]` table (per-task model routing),
+//! the `[synthesis]`/`[compose]`/`[genre]`/`[render]` tables, and the
+//! `[retrieval]`/`[paths]` tables; a later slice adds `[knowledge]` the same
+//! way.
+
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -67,6 +70,27 @@ const DEFAULT_CONTENT_MODEL: &str = "gemini/gemini-3.5-flash";
 /// distillation pass. A PRO tier, since distillation quality outweighs latency.
 const DEFAULT_SYNTHESIS_MODEL: &str = "gemini/gemini-3.1-pro-preview";
 
+/// The system-default `provider/model` routing string for the drafting phase of
+/// the law-synthesis judge loop (ADR-0024's initial-candidate distillation
+/// call).
+///
+/// Equals [`DEFAULT_SYNTHESIS_MODEL`]: `monomyth-synthesis::draft_law` today
+/// drives drafting, judging, and refining from a single `Llm` instance, so all
+/// three roles start pinned to the same model. Each is independently
+/// overridable so a future widening of `draft_law`'s API to accept a model per
+/// phase can route them apart without another config migration.
+const DEFAULT_DRAFT_MODEL: &str = DEFAULT_SYNTHESIS_MODEL;
+
+/// The system-default `provider/model` routing string for the judging phase of
+/// the law-synthesis judge loop. See [`DEFAULT_DRAFT_MODEL`] for why it starts
+/// equal to [`DEFAULT_SYNTHESIS_MODEL`].
+const DEFAULT_JUDGE_MODEL: &str = DEFAULT_SYNTHESIS_MODEL;
+
+/// The system-default `provider/model` routing string for the refine phase of
+/// the law-synthesis judge loop. See [`DEFAULT_DRAFT_MODEL`] for why it starts
+/// equal to [`DEFAULT_SYNTHESIS_MODEL`].
+const DEFAULT_REVISE_MODEL: &str = DEFAULT_SYNTHESIS_MODEL;
+
 /// The system-default `provider/model` routing string for the long-form
 /// composition pipeline (`compose`). Long-form prose generation uses the
 /// cheaper/faster flash tier by default; a quality tier can be selected via
@@ -115,20 +139,73 @@ const DEFAULT_GENRE_GROUNDING_TOP_K: u32 = 4;
 /// `monomyth-genre::GenreKind` outside this crate.
 const DEFAULT_RENDER_MEDIUM: &str = "prose";
 
+/// The system default for `retrieval.top_k`.
+///
+/// Duplicates `monomyth-cli`'s `DEFAULT_TOP_K` (the `retrieve` command's default
+/// passage count); the two must agree for the duration of the migration.
+/// `monomyth-config` does not depend on `monomyth-cli`, so the value cannot
+/// simply be imported.
+const DEFAULT_RETRIEVAL_TOP_K: u32 = 5;
+
+/// The system default for `retrieval.reference_overfetch`.
+///
+/// Duplicates `monomyth-knowledge`'s `REFERENCE_OVERFETCH`: the reference
+/// retrieval path requests `top_k * reference_overfetch` candidates so
+/// near-duplicate chunks from one long, overlap-chunked source can be dropped
+/// before the final `top_k` is taken. `monomyth-config` does not depend on
+/// `monomyth-knowledge`, so the value cannot simply be imported.
+const DEFAULT_REFERENCE_OVERFETCH: u32 = 3;
+
+/// The system default for `retrieval.rrf_k`.
+///
+/// Duplicates `monomyth-knowledge`'s `K_RRF` (the canonical reciprocal-rank-fusion
+/// constant, `k = 60`, widened from `f32` to `f64` for the resolved config's
+/// floating-point convention). `monomyth-config` does not depend on
+/// `monomyth-knowledge`, so the value cannot simply be imported.
+const DEFAULT_RRF_K: f64 = 60.0;
+
+/// The system default for `paths.corpus_dir`.
+///
+/// Duplicates `monomyth-knowledge::acquire::storage`'s `CACHE_DIR` (the on-disk
+/// raw-fetch cache directory, relative to the current working directory).
+/// `monomyth-config` does not depend on `monomyth-knowledge`, so the value
+/// cannot simply be imported.
+const DEFAULT_CORPUS_DIR: &str = "corpus/raw";
+
+/// The system default for `paths.laws_dir`.
+///
+/// Duplicates `monomyth-cli`'s `DEFAULT_LAWS_DIR` (where `synthesize law`
+/// promotes a reviewed `LawArtifact`). `monomyth-config` does not depend on
+/// `monomyth-cli`, so the value cannot simply be imported.
+const DEFAULT_LAWS_DIR: &str = "./artifacts/laws";
+
+/// The system default for `paths.db_path`.
+///
+/// Duplicates `monomyth-cli`'s `DEFAULT_DB` (the global `--db` flag's default).
+/// `monomyth-config` does not depend on `monomyth-cli`, so the value cannot
+/// simply be imported.
+const DEFAULT_DB_PATH: &str = "./monomyth.db";
+
 /// A per-task model role: which configured model a caller resolves via
 /// [`MonomythConfig::model_for`].
 ///
 /// Splitting model selection by role is what lets a cheap tier drive content fill
-/// while a quality tier drives synthesis, from one config table. New roles (a
-/// dedicated judge, an extractor) are added here as their call sites migrate.
+/// while a quality tier drives synthesis, from one config table. New roles (an
+/// extractor) are added here as their call sites migrate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelRole {
     /// The per-slot content-fill pass (`gen --fill`).
     Content,
-    /// The law-synthesis distillation pass (`synthesize law`).
+    /// The law-synthesis distillation pass (`synthesize law`), overall.
     Synthesis,
     /// The long-form composition pipeline (`compose`).
     Compose,
+    /// The drafting phase of the law-synthesis judge loop (ADR-0024).
+    Draft,
+    /// The judging phase of the law-synthesis judge loop (ADR-0024).
+    Judge,
+    /// The refine phase of the law-synthesis judge loop (ADR-0024).
+    Revise,
 }
 
 /// The on-disk configuration file shape: every field optional, so an omitted key
@@ -151,6 +228,10 @@ pub struct MonomythConfigFile {
     pub genre: GenreSection,
     /// The `[render]` table.
     pub render: RenderSection,
+    /// The `[retrieval]` table.
+    pub retrieval: RetrievalSection,
+    /// The `[paths]` table.
+    pub paths: PathsSection,
 }
 
 /// The `[generation]` table as it appears on disk.
@@ -195,6 +276,15 @@ pub struct ModelsSection {
     pub synthesis: Option<String>,
     /// Overrides the long-form composition model when present.
     pub compose: Option<String>,
+    /// Overrides the law-synthesis judge loop's drafting-phase model when
+    /// present.
+    pub draft: Option<String>,
+    /// Overrides the law-synthesis judge loop's judging-phase model when
+    /// present.
+    pub judge: Option<String>,
+    /// Overrides the law-synthesis judge loop's refine-phase model when
+    /// present.
+    pub revise: Option<String>,
 }
 
 /// The `[synthesis]` table as it appears on disk: the law-synthesis judge loop's
@@ -268,6 +358,39 @@ pub struct RenderSection {
     pub medium: Option<String>,
 }
 
+/// The `[retrieval]` table as it appears on disk: ad-hoc/hybrid retrieval
+/// tuning shared by the `retrieve` command and `monomyth-knowledge`'s hybrid
+/// (vector + full-text) search path.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RetrievalSection {
+    /// Maximum number of passages an ad-hoc retrieval returns. Absent → the
+    /// system default.
+    pub top_k: Option<u32>,
+    /// Over-fetch factor for reference-path retrieval: candidates requested are
+    /// `top_k * reference_overfetch`, so near-duplicate chunks can be dropped
+    /// before the final `top_k` is taken. Absent → the system default.
+    pub reference_overfetch: Option<u32>,
+    /// The reciprocal-rank-fusion constant blending vector, full-text, and
+    /// sparse hit rankings in hybrid search. Absent → the system default.
+    pub rrf_k: Option<f64>,
+}
+
+/// The `[paths]` table as it appears on disk: filesystem locations the CLI and
+/// knowledge layer read from and write to.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct PathsSection {
+    /// The on-disk raw-fetch cache directory, relative to the current working
+    /// directory unless absolute. Absent → the system default.
+    pub corpus_dir: Option<PathBuf>,
+    /// The directory reviewed `LawArtifact`s are promoted into. Absent → the
+    /// system default.
+    pub laws_dir: Option<PathBuf>,
+    /// The knowledge-layer database file. Absent → the system default.
+    pub db_path: Option<PathBuf>,
+}
+
 /// The fully-resolved configuration: every value tagged with the [`Layered`] source
 /// that set it.
 #[derive(Clone, Debug)]
@@ -284,6 +407,10 @@ pub struct MonomythConfig {
     pub genre: GenreSettings,
     /// Resolved renderer-medium selection.
     pub render: RenderSettings,
+    /// Resolved retrieval tuning.
+    pub retrieval: RetrievalSettings,
+    /// Resolved filesystem paths.
+    pub paths: PathsSettings,
 }
 
 /// Resolved narrative-generation knobs.
@@ -316,6 +443,12 @@ pub struct ModelsSettings {
     pub synthesis: Layered<String>,
     /// Resolved long-form composition model routing string.
     pub compose: Layered<String>,
+    /// Resolved law-synthesis judge loop drafting-phase model routing string.
+    pub draft: Layered<String>,
+    /// Resolved law-synthesis judge loop judging-phase model routing string.
+    pub judge: Layered<String>,
+    /// Resolved law-synthesis judge loop refine-phase model routing string.
+    pub revise: Layered<String>,
 }
 
 /// Resolved law-synthesis judge-loop knobs.
@@ -365,6 +498,28 @@ pub struct RenderSettings {
     pub medium: Layered<String>,
 }
 
+/// Resolved retrieval tuning.
+#[derive(Clone, Debug)]
+pub struct RetrievalSettings {
+    /// Resolved maximum number of passages an ad-hoc retrieval returns.
+    pub top_k: Layered<u32>,
+    /// Resolved reference-path over-fetch factor.
+    pub reference_overfetch: Layered<u32>,
+    /// Resolved reciprocal-rank-fusion constant.
+    pub rrf_k: Layered<f64>,
+}
+
+/// Resolved filesystem paths.
+#[derive(Clone, Debug)]
+pub struct PathsSettings {
+    /// Resolved on-disk raw-fetch cache directory.
+    pub corpus_dir: Layered<PathBuf>,
+    /// Resolved directory reviewed `LawArtifact`s are promoted into.
+    pub laws_dir: Layered<PathBuf>,
+    /// Resolved knowledge-layer database file.
+    pub db_path: Layered<PathBuf>,
+}
+
 impl Default for MonomythConfig {
     fn default() -> Self {
         Self {
@@ -382,6 +537,9 @@ impl Default for MonomythConfig {
                 content: Layered::system_default(DEFAULT_CONTENT_MODEL.to_owned()),
                 synthesis: Layered::system_default(DEFAULT_SYNTHESIS_MODEL.to_owned()),
                 compose: Layered::system_default(DEFAULT_COMPOSE_MODEL.to_owned()),
+                draft: Layered::system_default(DEFAULT_DRAFT_MODEL.to_owned()),
+                judge: Layered::system_default(DEFAULT_JUDGE_MODEL.to_owned()),
+                revise: Layered::system_default(DEFAULT_REVISE_MODEL.to_owned()),
             },
             synthesis: SynthesisSettings {
                 max_iterations: Layered::system_default(DEFAULT_MAX_ITERATIONS),
@@ -403,6 +561,16 @@ impl Default for MonomythConfig {
             render: RenderSettings {
                 medium: Layered::system_default(DEFAULT_RENDER_MEDIUM.to_owned()),
             },
+            retrieval: RetrievalSettings {
+                top_k: Layered::system_default(DEFAULT_RETRIEVAL_TOP_K),
+                reference_overfetch: Layered::system_default(DEFAULT_REFERENCE_OVERFETCH),
+                rrf_k: Layered::system_default(DEFAULT_RRF_K),
+            },
+            paths: PathsSettings {
+                corpus_dir: Layered::system_default(PathBuf::from(DEFAULT_CORPUS_DIR)),
+                laws_dir: Layered::system_default(PathBuf::from(DEFAULT_LAWS_DIR)),
+                db_path: Layered::system_default(PathBuf::from(DEFAULT_DB_PATH)),
+            },
         }
     }
 }
@@ -415,6 +583,9 @@ impl MonomythConfig {
             ModelRole::Content => self.models.content.get(),
             ModelRole::Synthesis => self.models.synthesis.get(),
             ModelRole::Compose => self.models.compose.get(),
+            ModelRole::Draft => self.models.draft.get(),
+            ModelRole::Judge => self.models.judge.get(),
+            ModelRole::Revise => self.models.revise.get(),
         }
     }
 
@@ -479,6 +650,27 @@ impl MonomythConfig {
                 reason: format!("must be at least 1, got {genre_grounding_top_k}"),
             });
         }
+        let retrieval_top_k = *self.retrieval.top_k.get();
+        if retrieval_top_k < 1 {
+            return Err(ConfigError::Invalid {
+                field: "retrieval.top_k".to_owned(),
+                reason: format!("must be at least 1, got {retrieval_top_k}"),
+            });
+        }
+        let reference_overfetch = *self.retrieval.reference_overfetch.get();
+        if reference_overfetch < 1 {
+            return Err(ConfigError::Invalid {
+                field: "retrieval.reference_overfetch".to_owned(),
+                reason: format!("must be at least 1, got {reference_overfetch}"),
+            });
+        }
+        let rrf_k = *self.retrieval.rrf_k.get();
+        if !rrf_k.is_finite() || rrf_k <= 0.0 {
+            return Err(ConfigError::Invalid {
+                field: "retrieval.rrf_k".to_owned(),
+                reason: format!("must be finite and positive, got {rrf_k}"),
+            });
+        }
         Ok(())
     }
 
@@ -535,6 +727,15 @@ impl MonomythConfig {
         self.models
             .compose
             .override_with(file.models.compose.clone(), from);
+        self.models
+            .draft
+            .override_with(file.models.draft.clone(), from);
+        self.models
+            .judge
+            .override_with(file.models.judge.clone(), from);
+        self.models
+            .revise
+            .override_with(file.models.revise.clone(), from);
         self.synthesis
             .max_iterations
             .override_with(file.synthesis.max_iterations, from);
@@ -563,19 +764,42 @@ impl MonomythConfig {
         self.render
             .medium
             .override_with(file.render.medium.clone(), from);
+        self.retrieval
+            .top_k
+            .override_with(file.retrieval.top_k, from);
+        self.retrieval
+            .reference_overfetch
+            .override_with(file.retrieval.reference_overfetch, from);
+        self.retrieval
+            .rrf_k
+            .override_with(file.retrieval.rrf_k, from);
+        self.paths
+            .corpus_dir
+            .override_with(file.paths.corpus_dir.clone(), from);
+        self.paths
+            .laws_dir
+            .override_with(file.paths.laws_dir.clone(), from);
+        self.paths
+            .db_path
+            .override_with(file.paths.db_path.clone(), from);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{
         DEFAULT_BEATS_PER_STAGE_MAX, DEFAULT_BEATS_PER_STAGE_MIN, DEFAULT_COMPOSE_GROUNDING_TOP_K,
         DEFAULT_COMPOSE_MAX_REVISE_ITERATIONS, DEFAULT_COMPOSE_MAX_TURNS, DEFAULT_COMPOSE_MODEL,
-        DEFAULT_COMPOSE_REVISE_THRESHOLD, DEFAULT_CONTENT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE,
+        DEFAULT_COMPOSE_REVISE_THRESHOLD, DEFAULT_CONTENT_MODEL, DEFAULT_CORPUS_DIR,
+        DEFAULT_DB_PATH, DEFAULT_DRAFT_MODEL, DEFAULT_FORK_CHANCE_PERMILLE,
         DEFAULT_GENRE_GROUNDING_TOP_K, DEFAULT_GENRE_NAME, DEFAULT_ITEMS_MAX, DEFAULT_ITEMS_MIN,
-        DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING, DEFAULT_MAX_ITERATIONS,
-        DEFAULT_PER_QUERY_TOP_K, DEFAULT_RENDER_MEDIUM, DEFAULT_ROOMS_MAX, DEFAULT_ROOMS_MIN,
-        DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig, MonomythConfigFile,
+        DEFAULT_JUDGE_MODEL, DEFAULT_LAWS_DIR, DEFAULT_MAX_EXTRA_CAST, DEFAULT_MAX_GROUNDING,
+        DEFAULT_MAX_ITERATIONS, DEFAULT_PER_QUERY_TOP_K, DEFAULT_REFERENCE_OVERFETCH,
+        DEFAULT_RENDER_MEDIUM, DEFAULT_RETRIEVAL_TOP_K, DEFAULT_REVISE_MODEL, DEFAULT_ROOMS_MAX,
+        DEFAULT_ROOMS_MIN, DEFAULT_RRF_K, DEFAULT_SYNTHESIS_MODEL, ModelRole, MonomythConfig,
+        MonomythConfigFile,
     };
     use crate::error::ConfigError;
     use crate::layered::LayerSource;
@@ -947,7 +1171,7 @@ mod tests {
 
     #[test]
     fn a_stray_top_level_table_is_a_hard_parse_error() {
-        let result: Result<MonomythConfigFile, _> = toml::from_str("[retrieval]\ntop_k = 5\n");
+        let result: Result<MonomythConfigFile, _> = toml::from_str("[nonexistent]\nkey = 5\n");
         assert!(
             result.is_err(),
             "an unknown top-level table must be rejected until its section lands"
@@ -1013,6 +1237,162 @@ mod tests {
         assert!(
             config.validate().is_err(),
             "beats_per_stage_min > beats_per_stage_max is invalid"
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_retrieval_knobs() {
+        let config = MonomythConfig::default();
+        assert_eq!(*config.retrieval.top_k.get(), DEFAULT_RETRIEVAL_TOP_K);
+        assert_eq!(
+            *config.retrieval.reference_overfetch.get(),
+            DEFAULT_REFERENCE_OVERFETCH
+        );
+        assert!((*config.retrieval.rrf_k.get() - DEFAULT_RRF_K).abs() < f64::EPSILON);
+        assert_eq!(config.retrieval.top_k.source(), LayerSource::SystemDefault);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_retrieval_knobs_at_its_layer() {
+        let file: MonomythConfigFile =
+            toml::from_str("[retrieval]\ntop_k = 10\nreference_overfetch = 5\nrrf_k = 30.0\n")
+                .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(*config.retrieval.top_k.get(), 10);
+        assert_eq!(*config.retrieval.reference_overfetch.get(), 5);
+        assert!((*config.retrieval.rrf_k.get() - 30.0).abs() < f64::EPSILON);
+        assert_eq!(
+            config.retrieval.top_k.source(),
+            LayerSource::ProjectOverride
+        );
+    }
+
+    #[test]
+    fn unknown_retrieval_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> = toml::from_str("[retrieval]\ntpo_k = 5\n");
+        assert!(
+            result.is_err(),
+            "a misspelled [retrieval] key must be rejected"
+        );
+    }
+
+    #[test]
+    fn a_zero_retrieval_top_k_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[retrieval]\ntop_k = 0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config.validate().expect_err("0 top_k retrieves nothing");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "retrieval.top_k"),
+            "the error must name retrieval.top_k, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_zero_reference_overfetch_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[retrieval]\nreference_overfetch = 0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("0 reference_overfetch would fetch nothing to dedupe");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "retrieval.reference_overfetch"),
+            "the error must name retrieval.reference_overfetch, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_positive_rrf_k_is_rejected() {
+        let file: MonomythConfigFile =
+            toml::from_str("[retrieval]\nrrf_k = 0.0\n").expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        let error = config
+            .validate()
+            .expect_err("a zero rrf_k divides ranking by zero at rank 0");
+        assert!(
+            matches!(error, ConfigError::Invalid { ref field, .. } if field == "retrieval.rrf_k"),
+            "the error must name retrieval.rrf_k, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_paths() {
+        let config = MonomythConfig::default();
+        assert_eq!(
+            config.paths.corpus_dir.get(),
+            &PathBuf::from(DEFAULT_CORPUS_DIR)
+        );
+        assert_eq!(
+            config.paths.laws_dir.get(),
+            &PathBuf::from(DEFAULT_LAWS_DIR)
+        );
+        assert_eq!(config.paths.db_path.get(), &PathBuf::from(DEFAULT_DB_PATH));
+        assert_eq!(config.paths.corpus_dir.source(), LayerSource::SystemDefault);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_paths_at_its_layer() {
+        let file: MonomythConfigFile = toml::from_str(
+            "[paths]\ncorpus_dir = \"data/raw\"\nlaws_dir = \"data/laws\"\ndb_path = \"data/store.db\"\n",
+        )
+        .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(config.paths.corpus_dir.get(), &PathBuf::from("data/raw"));
+        assert_eq!(config.paths.laws_dir.get(), &PathBuf::from("data/laws"));
+        assert_eq!(config.paths.db_path.get(), &PathBuf::from("data/store.db"));
+        assert_eq!(
+            config.paths.corpus_dir.source(),
+            LayerSource::ProjectOverride
+        );
+    }
+
+    #[test]
+    fn unknown_paths_key_is_a_hard_parse_error() {
+        let result: Result<MonomythConfigFile, _> =
+            toml::from_str("[paths]\ncorpsu_dir = \"data/raw\"\n");
+        assert!(result.is_err(), "a misspelled [paths] key must be rejected");
+    }
+
+    #[test]
+    fn default_resolves_the_system_default_judge_loop_models() {
+        let config = MonomythConfig::default();
+        assert_eq!(config.model_for(ModelRole::Draft), DEFAULT_DRAFT_MODEL);
+        assert_eq!(config.model_for(ModelRole::Judge), DEFAULT_JUDGE_MODEL);
+        assert_eq!(config.model_for(ModelRole::Revise), DEFAULT_REVISE_MODEL);
+    }
+
+    #[test]
+    fn a_parsed_file_overrides_the_judge_model_leaving_the_others_default() {
+        let file: MonomythConfigFile =
+            toml::from_str("[models]\njudge = \"anthropic/claude-opus-4-8\"\n")
+                .expect("valid toml");
+        let mut config = MonomythConfig::default();
+        config.apply_file(&file, LayerSource::ProjectOverride);
+        assert_eq!(
+            config.model_for(ModelRole::Judge),
+            "anthropic/claude-opus-4-8"
+        );
+        assert_eq!(config.models.judge.source(), LayerSource::ProjectOverride);
+        assert_eq!(
+            config.model_for(ModelRole::Draft),
+            DEFAULT_DRAFT_MODEL,
+            "an untouched task falls back to its own default"
+        );
+        assert_eq!(
+            config.model_for(ModelRole::Revise),
+            DEFAULT_REVISE_MODEL,
+            "an untouched task falls back to its own default"
+        );
+        assert_eq!(
+            config.model_for(ModelRole::Synthesis),
+            DEFAULT_SYNTHESIS_MODEL,
+            "an untouched task falls back to its own default"
         );
     }
 }
