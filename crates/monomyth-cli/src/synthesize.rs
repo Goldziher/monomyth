@@ -418,6 +418,49 @@ fn sidecar_path_for(candidate_path: &Path) -> Result<PathBuf> {
     Ok(parent.join(format!("{stem}.context.json")))
 }
 
+/// Maximum length, in bytes, of a law slug (`artifact.law`). Bounds the
+/// filename component built from it; 64 bytes comfortably fits every real law
+/// id (e.g. `monomyth_macro_arc`) with headroom.
+const MAX_LAW_SLUG_LEN: usize = 64;
+
+/// Validate that `slug` is safe to interpolate into a filesystem path
+/// component: non-empty, at most [`MAX_LAW_SLUG_LEN`] bytes, and composed
+/// only of ASCII lowercase letters, digits, and underscores (`^[a-z0-9_]+$`).
+///
+/// `artifact.law` is reviewer-controlled free text read from a candidate JSON
+/// file, not a value this process generated. [`run_synthesize_promote`] and
+/// [`refuse_if_already_promoted`] both build filesystem paths by
+/// interpolating it directly (`laws_dir.join(format!("{law}.json"))`);
+/// without this check a crafted slug such as `"../frameworks/x"` or an
+/// absolute path escapes `laws_dir` (CWE-22 path traversal). A byte-level
+/// allowlist scan rather than a `regex` dependency: the language is trivial
+/// enough that pulling in a regex engine for it is not worth it.
+///
+/// # Errors
+///
+/// Fails if `slug` is empty, exceeds [`MAX_LAW_SLUG_LEN`] bytes, or contains
+/// any byte outside `[a-z0-9_]`.
+fn validate_law_slug(slug: &str) -> Result<()> {
+    if slug.is_empty() {
+        bail!("law id must not be empty");
+    }
+    if slug.len() > MAX_LAW_SLUG_LEN {
+        bail!(
+            "law id {slug:?} is {} bytes, exceeding the {MAX_LAW_SLUG_LEN}-byte limit",
+            slug.len()
+        );
+    }
+    let is_valid_byte =
+        |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_';
+    if !slug.bytes().all(is_valid_byte) {
+        bail!(
+            "law id {slug:?} must match ^[a-z0-9_]+$ (lowercase ascii letters, digits, underscore \
+             only)"
+        );
+    }
+    Ok(())
+}
+
 /// Read and parse a candidate artifact as a [`LawArtifact`].
 ///
 /// # Errors
@@ -547,6 +590,12 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
     require_reviewer_identity(&reviewed_by)?;
 
     let mut artifact = read_candidate_artifact(&candidate)?;
+    validate_law_slug(&artifact.law).with_context(|| {
+        format!(
+            "candidate {} declares an unsafe law id",
+            candidate.display()
+        )
+    })?;
     let sidecar = read_sidecar_context(&sidecar_path_for(&candidate)?)?;
 
     artifact.synthesis.reviewed_by = reviewed_by;
@@ -604,8 +653,44 @@ mod tests {
 
     use super::{
         DraftedLaw, SynthesizePromoteArgs, rejects_forbidden_out_dir, review_required_banner,
-        run_synthesize_promote, write_candidate,
+        run_synthesize_promote, validate_law_slug, write_candidate,
     };
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_parent_directory_segment() {
+        assert!(validate_law_slug("../frameworks/x").is_err());
+    }
+
+    #[test]
+    fn should_reject_an_absolute_path_law_slug() {
+        assert!(validate_law_slug("/abs/x").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_path_separator() {
+        assert!(validate_law_slug("a/b").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_containing_a_dot() {
+        assert!(validate_law_slug("a.b").is_err());
+    }
+
+    #[test]
+    fn should_reject_an_empty_law_slug() {
+        assert!(validate_law_slug("").is_err());
+    }
+
+    #[test]
+    fn should_reject_a_law_slug_over_the_length_limit() {
+        let overlong = "a".repeat(65);
+        assert!(validate_law_slug(&overlong).is_err());
+    }
+
+    #[test]
+    fn should_accept_a_well_formed_law_slug() {
+        assert!(validate_law_slug("monomyth_macro_arc").is_ok());
+    }
 
     #[test]
     fn should_refuse_a_path_directly_under_artifacts() {
