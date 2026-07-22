@@ -70,4 +70,14 @@ pub enum AcquireError {
         /// Why no fetcher is available.
         reason: &'static str,
     },
+
+    /// Reading a downloaded zip archive (e.g. a Zenodo record file) failed.
+    #[error("zip archive error while {what}")]
+    Zip {
+        /// What operation on the archive failed.
+        what: &'static str,
+        /// The underlying `zip` crate error.
+        #[source]
+        source: zip::result::ZipError,
+    },
 }

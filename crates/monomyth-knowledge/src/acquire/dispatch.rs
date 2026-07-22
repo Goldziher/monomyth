@@ -18,7 +18,7 @@ use super::error::AcquireError;
 use super::fetch::git::RepoDirSpec;
 use super::fetch::gutendex::{self, SearchBy};
 use super::fetch::huggingface::{self, DatasetSpec};
-use super::fetch::{FetchedWork, archive, git, sparql};
+use super::fetch::{FetchedWork, archive, git, sparql, zenodo};
 use super::http::{self, CacheMode, FetchContext};
 use super::storage;
 
@@ -92,6 +92,8 @@ enum Route {
         query: &'static str,
         title: &'static str,
     },
+    /// Resolve and download one file from a Zenodo record.
+    Zenodo { record_id: u64 },
     /// No fetcher family is wired up (or configured) for this source id.
     NoFetcher(&'static str),
 }
@@ -140,7 +142,12 @@ fn route(entry: &SourceEntry) -> Result<Route, AcquireError> {
             branch: TRILOGY_BRANCH.to_owned(),
             dir: TRILOGY_DATA_DIR.to_owned(),
         })),
-        "bag_of_tales" => Ok(Route::NoFetcher("DOI/zenodo URL; no generic DOI resolver")),
+        "bag_of_tales" => {
+            let url = entry.url.as_deref().unwrap_or_default();
+            Ok(Route::Zenodo {
+                record_id: zenodo::parse_record_id(url)?,
+            })
+        }
         "wikidata_myth" => Ok(Route::Sparql {
             endpoint: sparql::WIKIDATA_ENDPOINT,
             query: sparql::WIKIDATA_MYTH_QUERY,
@@ -200,6 +207,10 @@ pub(crate) async fn fetch_for_source(
         } => {
             let work =
                 sparql::fetch(&ctx, endpoint, query, Some(title.to_owned()), retrieved).await?;
+            Ok(vec![work])
+        }
+        Route::Zenodo { record_id } => {
+            let work = zenodo::fetch(&ctx, record_id, None, retrieved).await?;
             Ok(vec![work])
         }
         Route::NoFetcher(reason) => Err(DispatchOutcome::NoFetcher { reason }),
@@ -404,5 +415,21 @@ mod tests {
                 "'{id}' must route to the sparql family"
             );
         }
+    }
+
+    /// The dispatch point of this family being wired: `bag_of_tales` now
+    /// resolves to a real fetcher (the zenodo family), not
+    /// [`Route::NoFetcher`].
+    #[test]
+    fn route_resolves_bag_of_tales_to_the_zenodo_family_with_its_record_id() {
+        let ledger = ledger();
+        let entry = ledger.get("bag_of_tales").expect("declared");
+        let resolved = route(entry).expect("bag_of_tales url parses");
+        assert!(matches!(
+            resolved,
+            Route::Zenodo {
+                record_id: 6_575_263
+            }
+        ));
     }
 }

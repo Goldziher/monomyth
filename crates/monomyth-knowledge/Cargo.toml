@@ -8,7 +8,7 @@ publish.workspace = true
 authors.workspace = true
 
 [features]
-acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time"]
+acquire = ["dep:opendal", "dep:regex", "dep:reqwest", "dep:sha2", "dep:time", "dep:zip"]
 # Reserved cloud object-storage backends for the acquisition blob store
 # (ADR-0012). Declared but not wired to any call site this session — a local
 # build must not pull a cloud SDK, so these stay opt-in behind their own
@@ -40,6 +40,7 @@ time = { workspace = true, optional = true, features = ["formatting", "macros", 
 tokio = { workspace = true, features = ["rt", "time"] }
 tracing = { workspace = true }
 xberg = { workspace = true, features = ["chunking", "embeddings", "tokio-runtime", "structured"] }
+zip = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

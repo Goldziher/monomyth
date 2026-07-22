@@ -15,6 +15,7 @@ pub(crate) mod git;
 pub(crate) mod gutendex;
 pub(crate) mod huggingface;
 pub(crate) mod sparql;
+pub(crate) mod zenodo;
 
 /// A single fetched work, mapping 1:1 onto [`crate::IngestInput`]'s
 /// provenance-bearing fields.
