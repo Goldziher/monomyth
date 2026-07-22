@@ -153,7 +153,8 @@ fn review_required_banner(
 ///
 /// # Errors
 ///
-/// Fails if `out_dir` cannot be created, either file cannot be serialized, or
+/// Fails if `law_id` is not a safe path component ([`validate_law_slug`]), if
+/// `out_dir` cannot be created, if either file cannot be serialized, or if
 /// either file cannot be written.
 fn write_candidate(
     drafted: &DraftedLaw,
@@ -161,6 +162,14 @@ fn write_candidate(
     query: &str,
     out_dir: &Path,
 ) -> Result<PathBuf> {
+    // `law_id` here is an operator-typed `--law` CLI argument, not adversarial content
+    // read from a file, so it is a lower-trust-boundary case than `run_synthesize_promote`'s
+    // `artifact.law` — but validating it before building any path is cheap, keeps every
+    // `<...>.join(format!("{law_id}.json"))` call site in this module held to the same
+    // invariant, and a mistyped `--law` value fails fast with a clear message instead of
+    // writing outside `out_dir`.
+    validate_law_slug(law_id).with_context(|| format!("--law {law_id:?} is not a safe law id"))?;
+
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("creating candidate directory {}", out_dir.display()))?;
 
@@ -610,6 +619,16 @@ fn candidate_leak_texts(artifact: &LawArtifact) -> Vec<&str> {
     texts
 }
 
+/// Minimum whitespace-split word count a sidecar passage must have to produce
+/// at least one shingle in the anti-leak gate.
+///
+/// Mirrors `monomyth_synthesis::antileak::SHINGLE_N` (currently 8), which is
+/// private to that module: a passage shorter than the shingle width yields
+/// zero shingles, so [`monomyth_synthesis::verify_no_verbatim`] silently finds
+/// nothing to compare it against — the same neutered-gate failure mode as an
+/// empty `passages` array. Update this constant if `SHINGLE_N` changes.
+const MIN_SHINGLE_WORDS: usize = 8;
+
 /// Collect `(source_id, text)` reference chunks from a sidecar's passages.
 fn reference_chunks(sidecar: &SidecarReviewContext) -> Vec<(&str, &str)> {
     sidecar
@@ -632,6 +651,20 @@ pub(crate) struct SynthesizePromoteArgs {
 /// Handle `synthesize promote`: stamp a human-reviewed candidate, re-verify
 /// it, and promote it into `laws_dir` (ADR-0016 Phase 2e).
 ///
+/// **Concurrency:** each individual write (the law artifact, the index) is
+/// atomic ([`write_atomic`]), but the index read-modify-write as a whole is
+/// not locked across the two. Two `synthesize promote` invocations racing
+/// against the same `laws_dir` can both read the same `index.json`, and
+/// whichever writes its updated index last wins — silently dropping the
+/// other's new entry (its law *file* still lands via `write_atomic`, so it
+/// becomes exactly the unindexed-orphan case [`refuse_if_already_promoted`]
+/// already recovers from on a later run, just via a race instead of a crash).
+/// This is acceptable for a sequential, reviewer-driven CLI command — nobody
+/// is expected to run two promotions concurrently against the same laws
+/// directory — so no locking is implemented; if that assumption ever stops
+/// holding, add a `source.lock`-style advisory lock around the read-index →
+/// write-index span.
+///
 /// Order of operations, each a fail-fast gate before the next:
 /// 1. reject a blank `--reviewed-by` (the review gate itself), before any
 ///    filesystem work;
@@ -644,7 +677,9 @@ pub(crate) struct SynthesizePromoteArgs {
 /// 5. re-run the anti-leak gate against the recorded grounding passages
 ///    ([`candidate_leak_texts`]), since a human edit could reintroduce
 ///    verbatim wording — and refuse to promote at all if the sidecar records
-///    no passages, rather than silently treating that as nothing to check;
+///    no *usable* passages (empty, or every passage under the
+///    [`MIN_SHINGLE_WORDS`] shingle width), rather than silently treating
+///    that as nothing to check;
 /// 6. validate the stamped result via `monomyth_frameworks::load_law`, the
 ///    framework validator;
 /// 7. bootstrap `laws_dir` (a brand-new directory has no index yet) and read
@@ -689,10 +724,14 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
         .clone_into(&mut artifact.synthesis.reviewed_by);
 
     let reference_chunks = reference_chunks(&sidecar);
-    if reference_chunks.is_empty() {
+    let has_usable_passage = reference_chunks
+        .iter()
+        .any(|(_, text)| text.split_whitespace().count() >= MIN_SHINGLE_WORDS);
+    if !has_usable_passage {
         bail!(
-            "cannot re-verify law {:?}: sidecar {} records no grounding passages; an empty or \
-             tampered passages array must not silently disable the anti-leak gate",
+            "cannot re-verify law {:?}: sidecar {} records no usable grounding passages (empty, \
+             or every passage is under the {MIN_SHINGLE_WORDS}-word anti-leak shingle width); an \
+             empty or tampered passages array must not silently disable the anti-leak gate",
             artifact.law,
             sidecar_path.display()
         );
@@ -930,6 +969,31 @@ mod tests {
         assert!(
             matches!(load_result, Err(LawError::MissingReviewer { .. })),
             "an unreviewed candidate must fail load_law with MissingReviewer, got {load_result:?}"
+        );
+    }
+
+    #[test]
+    fn should_reject_writing_a_candidate_with_an_unsafe_law_id() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        let drafted = sample_drafted_law();
+
+        let error = write_candidate(&drafted, "../escape", "a sample query", temp_dir.path())
+            .expect_err("an unsafe --law id must be rejected before any file is written");
+
+        assert!(
+            format!("{error:#}").contains("law id"),
+            "error must name the law id validation failure, got: {error:#}"
+        );
+        // The validation must run before any file is written under `out_dir` — self-contained,
+        // unlike probing a path outside `temp_dir` in the shared system temp root. `temp_dir`
+        // itself already exists (`tempfile::tempdir` creates it eagerly), so check it stayed
+        // empty rather than checking for its absence.
+        assert_eq!(
+            std::fs::read_dir(temp_dir.path())
+                .expect("temp_dir reads back")
+                .count(),
+            0,
+            "no file must be written under out_dir when the law id is rejected"
         );
     }
 
@@ -1300,6 +1364,40 @@ mod tests {
             "error must explain the sidecar records no grounding passages, got: {error}"
         );
         assert!(!laws_dir.join("unguarded_law.json").exists());
+    }
+
+    #[test]
+    fn should_reject_promotion_when_every_sidecar_passage_is_too_short_to_shingle() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creates");
+        // Present, non-empty passages, but each is under the anti-leak gate's shingle
+        // width: they yield zero shingles, so the re-check would silently pass anything
+        // — exactly as neutered as an empty passages array.
+        let candidate_path = write_fixture_candidate_full(
+            temp_dir.path(),
+            "short_passage_law",
+            "Fixture Law",
+            "test fixture",
+            "A harmless made-up description with no overlap at all here.",
+            &[("fixture_source", "too short"), ("other_source", "")],
+        );
+        let laws_dir = temp_dir.path().join("laws");
+        write_fixture_index(&laws_dir);
+
+        let error = run_synthesize_promote(SynthesizePromoteArgs {
+            candidate: candidate_path,
+            reviewed_by: "alice".to_owned(),
+            laws_dir: laws_dir.clone(),
+        })
+        .expect_err(
+            "passages present but all too short to shingle must not silently disable the \
+             anti-leak gate",
+        );
+
+        assert!(
+            error.to_string().to_lowercase().contains("grounding"),
+            "error must explain the sidecar records no usable grounding passages, got: {error}"
+        );
+        assert!(!laws_dir.join("short_passage_law.json").exists());
     }
 
     #[test]
