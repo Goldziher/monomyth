@@ -29,10 +29,12 @@
 //! ```
 //!
 //! Carried today: the `[generation]` (fork probability + beat/map/item/cast bounds),
-//! `[models]` (per-task routing), `[synthesis]` (judge-loop knobs), `[compose]`
+//! `[models]` (per-task routing, including the law-synthesis judge loop's
+//! drafting/judging/refine phases), `[synthesis]` (judge-loop knobs), `[compose]`
 //! (long-form composition knobs), `[genre]` (content-fill targeting, ADR-0017),
-//! and `[render]` (renderer medium selection, ADR-0020) sections. Later slices
-//! add the `[retrieval]`, `[paths]`, and `[knowledge]` sections the same way.
+//! `[render]` (renderer medium selection, ADR-0020), `[retrieval]` (ad-hoc and
+//! hybrid retrieval tuning), and `[paths]` (filesystem locations) sections. A
+//! later slice adds `[knowledge]` the same way.
 
 #![forbid(unsafe_code)]
 
@@ -46,6 +48,6 @@ pub use layered::{LayerSource, Layered};
 pub use resolver::{ConfigResolver, RuntimeOverrides};
 pub use schema::{
     GenerationSection, GenerationSettings, GenreSection, GenreSettings, ModelRole, ModelsSection,
-    ModelsSettings, MonomythConfig, MonomythConfigFile, RenderSection, RenderSettings,
-    SynthesisSection, SynthesisSettings,
+    ModelsSettings, MonomythConfig, MonomythConfigFile, PathsSection, PathsSettings, RenderSection,
+    RenderSettings, RetrievalSection, RetrievalSettings, SynthesisSection, SynthesisSettings,
 };
