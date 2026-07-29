@@ -514,7 +514,6 @@ mod tests {
     #[test]
     fn a_scored_report_should_serialize_to_json() {
         // Regression: the `eval` CLI emits the scored `Report` as JSON.
-        // `Alignment::matches` is keyed by `NarrativeNodeId` (a slotmap key, not
         // a string), which `serde_json` cannot use as an object key — so the map
         // must serialize as an array of pairs or the CLI panics on every run.
         let gold = linear_world(&[

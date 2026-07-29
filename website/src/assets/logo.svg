@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 84" width="372" height="84" role="img" aria-label="monomyth">
+  <!-- mark: labyrinth tile (scaled 48 -> 60) -->
+  <g transform="translate(6 12) scale(1.25)">
+    <rect width="48" height="48" rx="11" fill="#141a2e"/>
+    <polyline points="24,24 28,24 28,20 20,20 20,28 32,28 32,16 16,16 16,32 36,32 36,12 12,12 12,36 36,36"
+              fill="none" stroke="#e0b25e" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="24" cy="24" r="2.2" fill="#f4ead6"/>
+  </g>
+  <!-- wordmark (for dark surfaces): mono = parchment, myth = gold. tspans MUST stay adjacent (SVG renders inter-tspan whitespace) -->
+  <text x="84" y="55" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',Arial,sans-serif" font-size="46" font-weight="600" letter-spacing="-1"><tspan fill="#f4ead6">mono</tspan><tspan fill="#e0b25e">myth</tspan></text>
+</svg>

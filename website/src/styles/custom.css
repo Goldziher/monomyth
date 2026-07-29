@@ -1,0 +1,43 @@
+:root {
+  --sl-color-accent-low: #35291a;
+  --sl-color-accent: #e0b25e;
+  --sl-color-accent-high: #f4ead6;
+
+  /* brand tokens */
+  --mm-gold: #e0b25e;
+  --mm-indigo: #141a2e;
+  --mm-parchment: #f4ead6;
+  --mm-slate: #6b7280;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #f3e6cc;
+  --sl-color-accent: #9a6b1f;
+  --sl-color-accent-high: #4a3410;
+}
+
+[data-has-hero] .page {
+  background: radial-gradient(
+    62ch 42ch at 50% -12%,
+    color-mix(in oklch, var(--mm-gold) 15%, transparent),
+    transparent 70%
+  );
+}
+
+.site-title img {
+  height: 1.7rem;
+  width: auto;
+}
+
+.hero > img,
+.hero .hero-html {
+  max-width: 180px;
+  margin-inline: auto;
+}
+
+.sl-markdown-content table {
+  font-size: var(--sl-text-sm);
+}
+.sl-markdown-content th {
+  color: var(--sl-color-white);
+}

@@ -5,17 +5,17 @@
 # every shipped build are ignored here — everything else must still block CI.
 [advisories]
 ignore = [
-    # rsa "Marvin Attack" timing side-channel (5.9 medium, no upstream fix). Reachable ONLY via
-    # the reserved acquire-s3/gcs/azblob cloud features (opendal cloud services → reqsign → rsa);
-    # never compiled into the default or `--features acquire` build. Revisit before any cloud
-    # acquire feature is wired up. See adrs/0012-opendal-corpus-blob-storage.md.
-    "RUSTSEC-2023-0071",
-    # quick-xml DoS advisories (O(N²) attribute scan / unbounded namespace allocation on untrusted
-    # XML) via opendal-core. Compiled into every build, but the vulnerable parsers run only for
-    # opendal's XML object-store services (S3/GCS/Azure) — reachable ONLY via the reserved
-    # acquire-s3/gcs/azblob features. The `services-fs` backend used by default and `--features
-    # acquire` never parses XML. No fix satisfies opendal-core's `^0.39.3` pin (patched in
-    # quick-xml >= 0.41.0); 0.57.0 is the latest opendal. Revisit when opendal bumps quick-xml.
-    "RUSTSEC-2026-0194",
-    "RUSTSEC-2026-0195",
+  # rsa "Marvin Attack" timing side-channel (5.9 medium, no upstream fix). Reachable ONLY via
+  # the reserved acquire-s3/gcs/azblob cloud features (opendal cloud services → reqsign → rsa);
+  # never compiled into the default or `--features acquire` build. Revisit before any cloud
+  # acquire feature is wired up. See adrs/0012-opendal-corpus-blob-storage.md.
+  "RUSTSEC-2023-0071",
+  # quick-xml DoS advisories (O(N²) attribute scan / unbounded namespace allocation on untrusted
+  # XML) via opendal-core. Compiled into every build, but the vulnerable parsers run only for
+  # opendal's XML object-store services (S3/GCS/Azure) — reachable ONLY via the reserved
+  # acquire-s3/gcs/azblob features. The `services-fs` backend used by default and `--features
+  # acquire` never parses XML. No fix satisfies opendal-core's `^0.39.3` pin (patched in
+  # quick-xml >= 0.41.0); 0.57.0 is the latest opendal. Revisit when opendal bumps quick-xml.
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
 ]

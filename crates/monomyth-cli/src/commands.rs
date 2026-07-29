@@ -757,7 +757,6 @@ mod tests {
             .expect("in-range config validates");
         std::fs::remove_file(&path).ok();
 
-        // `Box<dyn Renderer>` is not `Debug`, so `Result::expect_err` cannot be used
         // here; destructure instead of unwrap-then-discard the `Ok` case explicitly.
         let Err(error) = build_renderer(&config) else {
             panic!("an unrecognized medium must not silently fall back");

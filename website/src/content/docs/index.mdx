@@ -1,0 +1,66 @@
+---
+title: monomyth
+description: An engine for narrative structure — a deterministic, corpus-grounded world/story model rendered to text adventures today, and pixel-art games next.
+template: splash
+hero:
+  title: One engine for every story
+  tagline: >-
+    monomyth generates a deterministic, corpus-grounded world/story model and turns it into finished
+    narrative — text adventures across genres today, a Sierra-style pixel-art frontend next.
+  image:
+    file: ../../assets/mark.svg
+  actions:
+    - text: Quickstart
+      link: /monomyth/start/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/Goldziher/monomyth
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+monomyth is a **configurable, layered engine for narrative structure**. It moves between unstructured
+narrative and a structured, medium-agnostic **world/story model** in both directions —
+**generation** (model → text/media) today, **extraction** (text → model) next. Structure is a pure,
+deterministic function of a seed; a quarantined LLM pass fills the content. Because the model is the
+only contract, genre is a configuration dimension and the medium is a swappable frontend — the same
+engine drives prose now and a pixel-art game later.
+
+Its first instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey — modeled
+explicitly as the story spine, grounded in comparative-mythology scholarship.
+
+<CardGrid>
+  <LinkCard
+    title="Introduction"
+    href="/monomyth/start/introduction/"
+    description="What monomyth is, and why narrative structure is medium-agnostic."
+  />
+  <LinkCard
+    title="Quickstart"
+    href="/monomyth/start/quickstart/"
+    description="Generate a world, play it, and fill it with grounded prose."
+  />
+  <LinkCard
+    title="Architecture"
+    href="/monomyth/concepts/architecture/"
+    description="The engine + pluggable frontends split, and the crates that implement it."
+  />
+  <LinkCard
+    title="Hybrid generation"
+    href="/monomyth/concepts/hybrid-generation/"
+    description="Deterministic procedural structure, a quarantined LLM content pass."
+  />
+  <LinkCard
+    title="Corpus & licensing"
+    href="/monomyth/concepts/corpus-licensing/"
+    description="The ship/reference namespace model, enforced at ingest, retrieval, and CI."
+  />
+  <LinkCard
+    title="Architecture decisions"
+    href="/monomyth/decisions/"
+    description="The ADR log — every significant decision, with context and consequences."
+  />
+</CardGrid>

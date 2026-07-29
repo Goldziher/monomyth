@@ -165,7 +165,6 @@ fn write_candidate(
     // `law_id` here is an operator-typed `--law` CLI argument, not adversarial content
     // read from a file, so it is a lower-trust-boundary case than `run_synthesize_promote`'s
     // `artifact.law` — but validating it before building any path is cheap, keeps every
-    // `<...>.join(format!("{law_id}.json"))` call site in this module held to the same
     // invariant, and a mistyped `--law` value fails fast with a clear message instead of
     // writing outside `out_dir`.
     validate_law_slug(law_id).with_context(|| format!("--law {law_id:?} is not a safe law id"))?;
@@ -986,7 +985,6 @@ mod tests {
         );
         // The validation must run before any file is written under `out_dir` — self-contained,
         // unlike probing a path outside `temp_dir` in the shared system temp root. `temp_dir`
-        // itself already exists (`tempfile::tempdir` creates it eagerly), so check it stayed
         // empty rather than checking for its absence.
         assert_eq!(
             std::fs::read_dir(temp_dir.path())

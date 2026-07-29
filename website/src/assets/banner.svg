@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 96" width="560" height="96" role="img" aria-label="monomyth">
+  <!-- transparent wordmark (for dark surfaces): mono = parchment, myth = gold. tspans MUST stay adjacent -->
+  <text x="0" y="66" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',Arial,sans-serif" font-size="72" font-weight="600" letter-spacing="-2"><tspan fill="#f4ead6">mono</tspan><tspan fill="#e0b25e">myth</tspan></text>
+</svg>

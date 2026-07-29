@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-label="monomyth — one engine for every story">
+<title>monomyth — one engine for every story</title>
+<defs>
+  <radialGradient id="glowGold" gradientUnits="userSpaceOnUse" cx="600" cy="150" r="540" gradientTransform="translate(600 150) scale(1 0.5) translate(-600 -150)">
+    <stop offset="0%" stop-color="#e0b25e" stop-opacity="0.16"/><stop offset="70%" stop-color="#e0b25e" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glowParchment" gradientUnits="userSpaceOnUse" cx="430" cy="150" r="420" gradientTransform="translate(430 150) scale(1 0.55) translate(-430 -150)">
+    <stop offset="0%" stop-color="#f4ead6" stop-opacity="0.06"/><stop offset="66%" stop-color="#f4ead6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="vignette" gradientUnits="userSpaceOnUse" cx="600" cy="170" r="680" gradientTransform="translate(600 170) scale(1 0.6) translate(-600 -170)">
+    <stop offset="56%" stop-color="#0b0f1c" stop-opacity="0"/><stop offset="100%" stop-color="#0b0f1c" stop-opacity="0.65"/>
+  </radialGradient>
+  <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#e0b25e" stop-opacity="0"/><stop offset="50%" stop-color="#e0b25e" stop-opacity="0.8"/><stop offset="100%" stop-color="#e0b25e" stop-opacity="0"/>
+  </linearGradient>
+  <clipPath id="card"><rect width="1200" height="340" rx="18"/></clipPath>
+</defs>
+<g clip-path="url(#card)">
+  <rect width="1200" height="340" fill="#141a2e"/>
+  <rect width="1200" height="340" fill="url(#glowGold)"/>
+  <rect width="1200" height="340" fill="url(#glowParchment)"/>
+  <rect width="1200" height="340" fill="url(#vignette)"/>
+
+  <!-- lockup: labyrinth mark + wordmark -->
+  <g transform="translate(360 98) scale(1.75)">
+    <rect width="48" height="48" rx="11" fill="#1b2340"/>
+    <polyline points="24,24 28,24 28,20 20,20 20,28 32,28 32,16 16,16 16,32 36,32 36,12 12,12 12,36 36,36"
+              fill="none" stroke="#e0b25e" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="24" cy="24" r="2.2" fill="#f4ead6"/>
+  </g>
+  <!-- wordmark tspans MUST stay adjacent (SVG renders inter-tspan whitespace) -->
+  <text x="516" y="172" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',Arial,sans-serif" font-size="76" font-weight="600" letter-spacing="-1.5"><tspan fill="#f4ead6">mono</tspan><tspan fill="#e0b25e">myth</tspan></text>
+
+  <rect x="440" y="206" width="320" height="3" fill="url(#rule)"/>
+
+  <text x="600" y="244" text-anchor="middle" font-family="'Iowan Old Style','Palatino Linotype','Palatino','Georgia',serif" font-size="25" fill="#cbb892">One engine for every story.</text>
+
+  <text x="600" y="286" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','DejaVu Sans Mono',ui-monospace,monospace" font-size="13.5" letter-spacing="3" fill="#6b7280">TEXT ADVENTURES · LITRPG · FANTASY · SCI-FI · DETECTIVE · PIXEL-ART NEXT</text>
+</g>
+</svg>

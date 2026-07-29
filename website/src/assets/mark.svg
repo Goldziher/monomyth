@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="monomyth">
+  <!-- indigo tile -->
+  <rect width="48" height="48" rx="11" fill="#141a2e"/>
+  <!-- unicursal square labyrinth: one gold path spiralling to the centre (the journey) -->
+  <polyline points="24,24 28,24 28,20 20,20 20,28 32,28 32,16 16,16 16,32 36,32 36,12 12,12 12,36 36,36"
+            fill="none" stroke="#e0b25e" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- the goal at the centre -->
+  <circle cx="24" cy="24" r="2.2" fill="#f4ead6"/>
+</svg>

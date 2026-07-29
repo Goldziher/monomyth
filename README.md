@@ -1,20 +1,43 @@
-# monomyth
+<!-- markdownlint-disable MD033 MD041 -->
+<div align="center">
 
-monomyth is a **configurable, layered engine for narrative structure**. It moves between
-unstructured narrative and a structured, medium-agnostic **world/story model** in *both directions* —
-**generation** (model → text/media) today, **extraction** (text → model) next — for any narrative
-medium (prose, games, LitRPG, detective fiction, apps), grounded in source material. Its first
-instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey — modeled explicitly as
-the story spine.
+<img src="docs/media/monomyth-banner.svg" alt="monomyth — one engine for every story" width="820">
 
-> Status: pre-1.0, under active development. **Built today:** the domain model and deterministic
+**An engine for narrative structure — and the stories it becomes.**
+
+monomyth generates a deterministic, corpus-grounded **world/story model** and turns it into finished
+narrative: **text adventures across genres today** — LitRPG, fantasy, sci-fi, detective, interactive
+fiction — with a **Sierra-style pixel-art frontend next**. One model, many mediums.
+
+[![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fmonomyth-e0b25e?style=flat-square)](https://goldziher.github.io/monomyth/)
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/monomyth/ci.yml?branch=main&style=flat-square&color=e0b25e&label=CI)](https://github.com/Goldziher/monomyth/actions/workflows/ci.yml)
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-e0b25e?style=flat-square)](LICENSE)
+
+[Docs](https://goldziher.github.io/monomyth/) · [Architecture](#architecture) · [Where this is going](#where-this-is-going) · [Vision](./docs/vision.md) · [Roadmap](./docs/roadmap.md) · [Decisions](./adrs)
+
+</div>
+<!-- markdownlint-enable MD033 MD041 -->
+
+---
+
+monomyth is a **configurable, layered engine for narrative structure**. It moves between unstructured
+narrative and a structured, medium-agnostic **world/story model** in *both directions* —
+**generation** (model → text/media) today, **extraction** (text → model) next. The structure is a
+pure, deterministic function of a seed; a quarantined LLM pass fills the content. Because the model
+is the only contract, the *genre* is a configuration dimension and the *medium* is a swappable
+frontend — the same engine drives prose now and a pixel-art game later.
+
+Its first instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey — modeled
+explicitly as the story spine, grounded in comparative-mythology scholarship.
+
+> **Status: pre-1.0, under active development.** **Built today:** the domain model and deterministic
 > engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer with reference-path
 > keyword/NER enrichment, layered TOML configuration, build-time law synthesis, a benchmark-driven
 > evaluation harness, a long-form compose pipeline, an LLM-free extraction proof-of-concept, a text
-> frontend, and a CLI. **Forthcoming** (see the roadmap): genre as a config dimension, user-uploaded
-> corpora, and additional render adapters (a pixel-art frontend). It is an **engine**: a headless,
-> deterministic, corpus-grounded system that *produces and transforms* a serializable world/story
-> model. The CLI is a harness, not the product.
+> frontend, and a CLI. **Forthcoming** (see [Where this is going](#where-this-is-going) and the
+> [roadmap](./docs/roadmap.md)): genre as a first-class config dimension, user-uploaded corpora, and
+> additional render adapters — beginning with a pixel-art frontend. The CLI is a harness, not the
+> product.
 >
 > **Start here:** [`docs/vision.md`](./docs/vision.md) · [`docs/architecture.md`](./docs/architecture.md)
 > · [`docs/roadmap.md`](./docs/roadmap.md). Decisions live in [`adrs/`](./adrs).
@@ -22,7 +45,8 @@ the story spine.
 ## Architecture
 
 A core engine produces an abstract, serializable **world/story model**; pluggable frontends render
-it. The model is the shared contract and is strictly render-agnostic.
+it. The model is the shared contract and is strictly render-agnostic — no colors, glyphs, or screen
+coordinates leak into it, which is exactly what lets a pixel-art frontend drop in later.
 
 - **`monomyth-core`** — the domain model (World, Location, Entity, Item, Player, Story) and a pure,
   deterministic engine: `apply(world, action) -> Vec<Event>`. Includes `World::validate` /
@@ -43,6 +67,8 @@ it. The model is the shared contract and is strictly render-agnostic.
 - **`monomyth-config`** — layered TOML configuration: an override resolver over per-task model
   routing and generation/synthesis/compose knobs; an unconfigured run reproduces the defaults
   bit-for-bit (ADR-0015).
+- **`monomyth-genre`** — genre as a config-resolved dimension: a `GenreProfile` plus a
+  `GenreClassifier` seam, so LitRPG, fantasy, sci-fi, or detective is a knob, not a fork (ADR-0017).
 - **`monomyth-synthesis`** — the build-time, judge-gated pipeline that drafts abstract "law"
   taxonomies from reference-namespace priors for human review, never surfacing prose (ADR-0016/0024).
 - **`monomyth-eval`** — a deterministic, LLM-free benchmark-scoring harness plus an optional
@@ -51,15 +77,15 @@ it. The model is the shared contract and is strictly render-agnostic.
   into the structured model (ADR-0018).
 - **`monomyth-compose`** — the long-form generation pipeline (Plan → Draft → Revise → Assemble) that
   turns a finished `World` into grounded adventure prose, quarantined from the procedural RNG (ADR-0027).
-- **`monomyth-text`** — the text frontend (pure string rendering over the model). **`monomyth-pixel`**
-  comes later; frontends depend on `monomyth-core` only.
+- **`monomyth-render-terse`** / **`monomyth-text`** — the render seam and the text frontend (pure
+  string rendering over the model). **`monomyth-pixel`** comes later; frontends depend on
+  `monomyth-core` only.
 - **`monomyth-cli`** — a thin binary wiring it together: `gen`, `play`, `edit`, `ingest`,
-  `retrieve`, `corpus`, `compose`, `eval`, `finetune-export`, and `synthesize`.
+  `retrieve`, `corpus`, `compose`, `eval`, `finetune-export`, `synthesize`, and `extract`.
 
 Frontends and generation never depend on each other — the serialized world is the only thing that
-crosses between them, which is what makes the pixel-art frontend a drop-in later. See
-[ADR-0001](./adrs/0001-engine-plus-pluggable-frontends.md), [ADR-0002](./adrs/0002-hybrid-generation.md),
-[ADR-0003](./adrs/0003-slotmap-graph-domain-model.md).
+crosses between them. See [ADR-0001](./adrs/0001-engine-plus-pluggable-frontends.md),
+[ADR-0002](./adrs/0002-hybrid-generation.md), [ADR-0003](./adrs/0003-slotmap-graph-domain-model.md).
 
 ### The story spine is a branching graph
 
@@ -71,6 +97,25 @@ is a real branching structure — grounded, not invented: fork diamonds open at 
 edits (`monomyth edit`), and future LLM agents all drive the *same* surface. Traversal is a pure
 engine action (`Action::Choose`) advancing a cursor along available, optionally guarded edges. See
 [ADR-0003](./adrs/0003-slotmap-graph-domain-model.md).
+
+## Where this is going
+
+The thesis is that **narrative structure is medium-agnostic**. Once a story exists as a validated,
+deterministic model, the medium and the genre are the last mile — not the foundation.
+
+- **Genres are a configuration dimension, not separate engines.** LitRPG, fantasy, sci-fi, detective
+  fiction, and classic interactive fiction resolve from a `GenreProfile` over the same procedural
+  structure and the same corpus discipline. Adding a genre is priors + config, not a rewrite
+  ([ADR-0017](./adrs/0017-genre-as-config-dimension.md)).
+- **Text now, pixel-art next.** The text frontend renders the world model to prose today. Because the
+  model carries no presentation, a **Sierra-style pixel-art frontend** (King's Quest / Space Quest
+  lineage) is a second renderer over the *same* serialized world — a graphic adventure driven by the
+  identical story spine, cast, map, and item graph.
+- **Extraction closes the loop.** The LLM-free extraction proof-of-concept pulls existing text *back*
+  into the structured model, so the engine can learn structure from corpus works, not only emit it.
+
+The invariant that makes all of this safe is licensing: every source is namespaced `ship` or
+`reference`, and only ship-safe material is ever surfaced (see [below](#corpus-rag--licensing)).
 
 ## Usage
 
@@ -133,11 +178,13 @@ hard invariant enforced at ingest, retrieval, and CI. See
 ## Repository layout
 
 ```text
-crates/            Rust workspace: core, frameworks, contracts, config, knowledge, llm, gen,
-                   synthesis, eval, extract, compose, text, cli
+crates/            Rust workspace: core, frameworks, contracts, config, genre, knowledge, llm, gen,
+                   synthesis, eval, extract, compose, render-terse, text, cli
 artifacts/
   frameworks/      the domain schema: validated framework + crosswalk JSON (committed)
 corpus/            license & namespace ledger (manifest.json)
+docs/              vision, architecture, roadmap, methodology
+website/           the documentation site (Astro + Starlight) → GitHub Pages
 adrs/              Architecture Decision Records (MADR)
 .ai-rulez/         AI-assistant governance config (generates CLAUDE.md, etc. via ai-rulez)
 poly.toml          poly (polylint) config — Rust + docs formatting/linting
@@ -145,9 +192,18 @@ poly.toml          poly (polylint) config — Rust + docs formatting/linting
 
 ## Development
 
+- Task runner: `task --list` (see [`Taskfile.yaml`](./Taskfile.yaml)). `task check` is the full gate.
 - Format & lint: `poly fmt --fix .` then `poly lint .` (`artifacts/**` is excluded — data, not source).
 - Rust: `cargo fmt`, `cargo clippy --workspace --all-targets --tests -- -D warnings`,
   `cargo test --workspace`.
+- Docs site: `cd website && npm ci && npm run dev`.
 
 Conventions and agent guidance live in [`.ai-rulez/`](./.ai-rulez); the decision history lives in
 [`adrs/`](./adrs).
+
+## License
+
+monomyth is source-available under the [Business Source License 1.1](LICENSE): you may read, copy,
+modify, and make **non-production** use of the source; production use requires a commercial license
+from the Licensor. Each version converts to the Apache License 2.0 on its Change Date. See
+[LICENSE](LICENSE) for the full terms and parameters.
