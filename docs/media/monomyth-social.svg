@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="monomyth — one engine for every story">
-<title>monomyth — one engine for every story</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="monomyth">
+<title>monomyth</title>
 <defs>
   <radialGradient id="glowGold" gradientUnits="userSpaceOnUse" cx="600" cy="300" r="620" gradientTransform="translate(600 300) scale(1 0.6) translate(-600 -300)">
     <stop offset="0%" stop-color="#e0b25e" stop-opacity="0.18"/><stop offset="70%" stop-color="#e0b25e" stop-opacity="0"/>
@@ -7,16 +7,13 @@
   <radialGradient id="vignette" gradientUnits="userSpaceOnUse" cx="600" cy="315" r="760" gradientTransform="translate(600 315) scale(1 0.66) translate(-600 -315)">
     <stop offset="54%" stop-color="#0b0f1c" stop-opacity="0"/><stop offset="100%" stop-color="#0b0f1c" stop-opacity="0.7"/>
   </radialGradient>
-  <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#e0b25e" stop-opacity="0"/><stop offset="50%" stop-color="#e0b25e" stop-opacity="0.8"/><stop offset="100%" stop-color="#e0b25e" stop-opacity="0"/>
-  </linearGradient>
 </defs>
 <rect width="1200" height="630" fill="#141a2e"/>
 <rect width="1200" height="630" fill="url(#glowGold)"/>
 <rect width="1200" height="630" fill="url(#vignette)"/>
 
 <!-- mark, centred above the wordmark -->
-<g transform="translate(536 150) scale(2.66)">
+<g transform="translate(537.5 185) scale(2.6)">
   <rect width="48" height="48" rx="11" fill="#1b2340"/>
   <polyline points="24,24 28,24 28,20 20,20 20,28 32,28 32,16 16,16 16,32 36,32 36,12 12,12 12,36 36,36"
             fill="none" stroke="#e0b25e" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
@@ -24,11 +21,5 @@
 </g>
 
 <!-- wordmark tspans MUST stay adjacent -->
-<text x="600" y="420" text-anchor="middle" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',Arial,sans-serif" font-size="96" font-weight="600" letter-spacing="-2"><tspan fill="#f4ead6">mono</tspan><tspan fill="#e0b25e">myth</tspan></text>
-
-<rect x="440" y="462" width="320" height="3" fill="url(#rule)"/>
-
-<text x="600" y="512" text-anchor="middle" font-family="'Iowan Old Style','Palatino Linotype','Palatino','Georgia',serif" font-size="30" fill="#cbb892">One engine for every story.</text>
-
-<text x="600" y="560" text-anchor="middle" font-family="'SF Mono','JetBrains Mono','DejaVu Sans Mono',ui-monospace,monospace" font-size="15" letter-spacing="3.5" fill="#6b7280">TEXT ADVENTURES · LITRPG · FANTASY · SCI-FI · DETECTIVE · PIXEL-ART NEXT</text>
+<text x="600" y="445" text-anchor="middle" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',Arial,sans-serif" font-size="104" font-weight="600" letter-spacing="-2"><tspan fill="#f4ead6">mono</tspan><tspan fill="#e0b25e">myth</tspan></text>
 </svg>
