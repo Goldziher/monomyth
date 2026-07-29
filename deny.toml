@@ -1,5 +1,5 @@
-# monomyth is a source-available (BUSL-1.1), unpublished workspace crate, so its own license check
-# is skipped; third-party dependencies must carry one of the permissive licenses allowed below.
+# monomyth is an MIT-licensed, unpublished workspace crate, so its own license check is skipped;
+# third-party dependencies must carry one of the permissive licenses allowed below.
 
 [licenses]
 private = { ignore = true }

@@ -37,7 +37,8 @@ by poly (they are under `artifacts/**`, excluded).
 ## Licensing model — enforced, not aspirational
 
 Every stored document/chunk carries `namespace` (`ship` | `reference`), `license`, `tier`, and
-`domain` in its metadata. This is a **commercial** product, so:
+`domain` in its metadata. Generated output is permissively (MIT) licensed and may be used for any
+purpose, including commercially, so:
 
 - `ship` = PD / CC0 / CC-BY / CC-BY-SA (share-alike isolated). May be surfaced verbatim.
 - `reference` = copyrighted or NonCommercial. Informs generation (structure/priors) but is **never**

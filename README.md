@@ -3,44 +3,72 @@
 
 <img src="docs/media/monomyth-banner.svg" alt="monomyth — one engine for every story" width="820">
 
-**An engine for narrative structure — and the stories it becomes.**
+**A deterministic engine for narrative structure — one story-world model, rendered to any medium.**
 
-monomyth generates a deterministic, corpus-grounded **world/story model** and turns it into finished
-narrative: **text adventures across genres today** — LitRPG, fantasy, sci-fi, detective, interactive
-fiction — with a **Sierra-style pixel-art frontend next**. One model, many mediums.
+monomyth moves between unstructured narrative and a structured, medium-agnostic **world/story model**
+in both directions: **generation** (model → text/media) today, **extraction** (text → model) next.
+Structure is a pure function of a seed; a quarantined LLM pass fills the prose. Genre is a
+configuration dimension and the medium is a swappable frontend — **text adventures across genres
+today, a Sierra-style pixel-art frontend next.**
+
+Deterministic · Corpus-grounded · Medium-agnostic · Generate ↔ extract · Genre as config
 
 [![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fmonomyth-e0b25e?style=flat-square)](https://goldziher.github.io/monomyth/)
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/monomyth/ci.yml?branch=main&style=flat-square&color=e0b25e&label=CI)](https://github.com/Goldziher/monomyth/actions/workflows/ci.yml)
-[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-e0b25e?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-e0b25e?style=flat-square)](LICENSE)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-e0b25e?style=flat-square)](#roadmap)
 
-[Docs](https://goldziher.github.io/monomyth/) · [Architecture](#architecture) · [Where this is going](#where-this-is-going) · [Vision](./docs/vision.md) · [Roadmap](./docs/roadmap.md) · [Decisions](./adrs)
+[Docs](https://goldziher.github.io/monomyth/) · [What you get](#what-you-get) · [Roadmap](#roadmap) · [Origins](#origins) · [Architecture](#architecture)
 
 </div>
 <!-- markdownlint-enable MD033 MD041 -->
 
 ---
 
-monomyth is a **configurable, layered engine for narrative structure**. It moves between unstructured
-narrative and a structured, medium-agnostic **world/story model** in *both directions* —
-**generation** (model → text/media) today, **extraction** (text → model) next. The structure is a
-pure, deterministic function of a seed; a quarantined LLM pass fills the content. Because the model
-is the only contract, the *genre* is a configuration dimension and the *medium* is a swappable
-frontend — the same engine drives prose now and a pixel-art game later.
+> **Experimental, pre-1.0.** The engine, its public API, and the serialized world/story schema will
+> change between releases. Built in the open; not production-ready.
 
 Its first instance, and its name, is Joseph Campbell's *monomyth* — the hero's journey — modeled
-explicitly as the story spine, grounded in comparative-mythology scholarship.
+explicitly as the story spine and grounded in comparative-mythology scholarship. Everything is
+deterministic: the same seed reproduces a byte-identical world, and the LLM content pass is
+quarantined from the procedural RNG so it can only fill empty slots, never invent structure.
 
-> **Status: pre-1.0, under active development.** **Built today:** the domain model and deterministic
-> engine, hybrid (procedural + LLM) generation, the xberg-backed RAG layer with reference-path
-> keyword/NER enrichment, layered TOML configuration, build-time law synthesis, a benchmark-driven
-> evaluation harness, a long-form compose pipeline, an LLM-free extraction proof-of-concept, a text
-> frontend, and a CLI. **Forthcoming** (see [Where this is going](#where-this-is-going) and the
-> [roadmap](./docs/roadmap.md)): genre as a first-class config dimension, user-uploaded corpora, and
-> additional render adapters — beginning with a pixel-art frontend. The CLI is a harness, not the
-> product.
->
-> **Start here:** [`docs/vision.md`](./docs/vision.md) · [`docs/architecture.md`](./docs/architecture.md)
-> · [`docs/roadmap.md`](./docs/roadmap.md). Decisions live in [`adrs/`](./adrs).
+## What you get
+
+monomyth is a headless engine — driven from a CLI harness or consumed as a library, over a single
+serializable world/story contract. Answers are **structure**, not prose-until-you-ask-for-it.
+
+| Capability | What it does | Key crate / command |
+|---|---|---|
+| **Deterministic world model** | A seed yields a byte-identical, serializable world, validated on load | `monomyth-core` · `gen --seed` |
+| **Branching narrative spine** | A single-source, reconverging DAG of beats, mutated through a transactional edit vocabulary | `NarrativeStructure` · `edit` |
+| **Hybrid generation** | Procedural passes own all structure; a quarantined LLM pass fills prose slots | `monomyth-gen` · `gen --fill` |
+| **Long-form compose** | Plan → Draft → Revise → Assemble a `World` into grounded adventure prose | `monomyth-compose` · `compose` |
+| **Corpus-grounded RAG** | Retrieval over a ship/reference-gated corpus; local ONNX embeddings | `monomyth-knowledge` · `ingest` / `retrieve` |
+| **Build-time law synthesis** | Judge-gated distillation of abstract "laws" from reference priors, human-reviewed | `monomyth-synthesis` · `synthesize law` |
+| **Extraction (proof-of-concept)** | Pull existing text back into the structured model | `monomyth-extract` · `extract` |
+| **Deterministic evaluation** | Score extractors against ground-truth fixtures; export fine-tune pairs | `monomyth-eval` · `eval` |
+| **Genre as configuration** | LitRPG, fantasy, sci-fi, detective as a resolved dimension, not a fork | `monomyth-genre` |
+| **Pluggable frontends** | Render the same world to any medium — text now, pixel-art next | `monomyth-text` · `play` |
+
+## Roadmap
+
+monomyth is early and moves in the open. Detailed phases live in [`docs/roadmap.md`](./docs/roadmap.md).
+
+**Now — in the engine.** The deterministic core and `apply(world, action)` state machine; the
+branching narrative spine and its edit vocabulary; hybrid procedural + LLM generation; the
+ship/reference RAG layer; layered TOML configuration; build-time law synthesis; the long-form compose
+pipeline; benchmark-driven evaluation; an LLM-free extraction proof-of-concept; a text frontend; and
+the CLI harness.
+
+**Next.** Genre as a first-class config dimension (targeting → a `GenreClassifier`); extraction beyond
+the single-node slice; full file-based configuration and per-task model routing; curated myth-theory
+reference laws (Lévi-Strauss, Dumézil, Witzel, Doty) drafted and human-promoted; a synthesis
+quality-baseline benchmark.
+
+**Later.** User-uploaded corpora (a `user` namespace/tier, non-surfaceable by default); rendering
+generalized behind a `Renderer` trait; a **Sierra-style pixel-art frontend** over the same world
+model; further genres and mediums (LitRPG stat sheets, detective clue graphs).
 
 ## Architecture
 
@@ -98,25 +126,6 @@ edits (`monomyth edit`), and future LLM agents all drive the *same* surface. Tra
 engine action (`Action::Choose`) advancing a cursor along available, optionally guarded edges. See
 [ADR-0003](./adrs/0003-slotmap-graph-domain-model.md).
 
-## Where this is going
-
-The thesis is that **narrative structure is medium-agnostic**. Once a story exists as a validated,
-deterministic model, the medium and the genre are the last mile — not the foundation.
-
-- **Genres are a configuration dimension, not separate engines.** LitRPG, fantasy, sci-fi, detective
-  fiction, and classic interactive fiction resolve from a `GenreProfile` over the same procedural
-  structure and the same corpus discipline. Adding a genre is priors + config, not a rewrite
-  ([ADR-0017](./adrs/0017-genre-as-config-dimension.md)).
-- **Text now, pixel-art next.** The text frontend renders the world model to prose today. Because the
-  model carries no presentation, a **Sierra-style pixel-art frontend** (King's Quest / Space Quest
-  lineage) is a second renderer over the *same* serialized world — a graphic adventure driven by the
-  identical story spine, cast, map, and item graph.
-- **Extraction closes the loop.** The LLM-free extraction proof-of-concept pulls existing text *back*
-  into the structured model, so the engine can learn structure from corpus works, not only emit it.
-
-The invariant that makes all of this safe is licensing: every source is namespaced `ship` or
-`reference`, and only ship-safe material is ever surfaced (see [below](#corpus-rag--licensing)).
-
 ## Usage
 
 ```sh
@@ -148,8 +157,21 @@ cargo run -p monomyth-cli -- corpus build
 cargo run -p monomyth-cli -- corpus audit
 ```
 
-The same `seed` always reproduces a byte-identical world; the LLM content pass is quarantined from the
-procedural RNG and only fills empty slots.
+## Origins
+
+monomyth grew out of an unfinished PhD on the *history of the study of myth* — not the myths
+themselves, but how they have been read: the historiography of myth-scholarship, a chapter in the
+history of knowledge. It builds on the thinkers I read then.
+
+The story vocabulary is drawn from the comparative-mythology and narratological tradition — Campbell's
+monomyth, Propp's morphology of the folktale, Polti's dramatic situations, Thompson's motif-index,
+Greimas's actants. The roadmap reaches toward the deeper myth-theory of Lévi-Strauss, Dumézil,
+Witzel, and Doty — distilled into abstract laws, never reproduced as prose (see
+[licensing](#corpus-rag--licensing)).
+
+From Wolfgang Iser and reader-response theory it takes a working directive: **a text constructs its
+reader as deliberately as it projects an author's voice.** monomyth's generation is meant to build an
+*implied reader* — the vantage from which a story becomes legible — not merely to imitate a narrator.
 
 ## Domain schema — grounded, not invented
 
@@ -168,11 +190,12 @@ backend today, with LanceDB/pgvector adapters as the external seam later
 ([ADR-0008](./adrs/0008-vectorstore-backend-sqlite-then-lancedb.md)); embeddings run locally via ONNX
 ([ADR-0009](./adrs/0009-local-onnx-embeddings.md)).
 
-This is a **commercial** product, so licensing is enforced, not aspirational. Every source is
-declared in [`corpus/manifest.json`](./corpus/manifest.json) with `license` / `tier` / `namespace` /
-`domain`. Two namespaces — `ship` (PD / CC0 / CC-BY / CC-BY-SA, may be surfaced verbatim) and
-`reference` (copyrighted / NonCommercial, informs generation but is never redistributed) — with a
-hard invariant enforced at ingest, retrieval, and CI. See
+monomyth's output is permissively (MIT) licensed and may be used for any purpose, including
+commercially — so corpus licensing is enforced, not aspirational. Every source is declared in
+[`corpus/manifest.json`](./corpus/manifest.json) with `license` / `tier` / `namespace` / `domain`.
+Two namespaces — `ship` (PD / CC0 / CC-BY / CC-BY-SA, may be surfaced verbatim) and `reference`
+(copyrighted / NonCommercial, informs generation but is never redistributed) — with a hard invariant
+enforced at ingest, retrieval, and CI. See
 [ADR-0005](./adrs/0005-commercial-licensing-ship-reference.md).
 
 ## Repository layout
@@ -203,7 +226,4 @@ Conventions and agent guidance live in [`.ai-rulez/`](./.ai-rulez); the decision
 
 ## License
 
-monomyth is source-available under the [Business Source License 1.1](LICENSE): you may read, copy,
-modify, and make **non-production** use of the source; production use requires a commercial license
-from the Licensor. Each version converts to the Apache License 2.0 on its Change Date. See
-[LICENSE](LICENSE) for the full terms and parameters.
+MIT — see [LICENSE](LICENSE).

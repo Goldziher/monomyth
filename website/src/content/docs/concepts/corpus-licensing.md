@@ -1,12 +1,12 @@
 ---
 title: Corpus & licensing
-description: The ship/reference namespace model, enforced at ingest, retrieval, and CI — the hard invariant behind a commercial corpus.
+description: The ship/reference namespace model, enforced at ingest, retrieval, and CI — the hard invariant that keeps generated output redistributable.
 ---
 
 monomyth grounds generation in a corpus of mythology, folklore, esoterica, and SF/F, retrieved via
-[xberg](https://crates.io/crates/xberg). monomyth is a **commercial** product, so the corpus mixes
-freely-shippable and reference-only material, and the two must never blur. This is enforced, not
-aspirational.
+[xberg](https://crates.io/crates/xberg). monomyth's output is permissively (MIT) licensed and may be
+used for any purpose, including commercially, so the corpus mixes freely-shippable and reference-only
+material that must never blur. This is enforced, not aspirational.
 
 ## Two namespaces
 

@@ -46,6 +46,15 @@ alongside its structural fields. Procedural passes leave the slot `Empty`; the c
 later, an extractor) fills it. This is the same seam extraction reuses to leave content it cannot
 derive from source text as `Empty`, rather than inventing a parallel mechanism.
 
+## Writing principle: the implied reader
+
+The content pass does not only imitate an author's voice — it constructs an **implied reader**. The
+term is Wolfgang Iser's: a text projects the vantage from which it becomes legible, the reader it
+assumes and shapes. monomyth treats that as a writing directive — *we construct the implied reader as
+deliberately as the author voice.* Prose is generated for a position (what this reader already knows,
+expects, and must be brought to feel), not merely in a style. This is a stated design principle for
+the content and [compose](/monomyth/reference/cli/) passes today; it is not yet a configurable knob.
+
 ## Determinism guarantees
 
 - Cross-referenced elements use `BTreeMap`/`BTreeSet`, never `Hash*`, so serialized output is stable

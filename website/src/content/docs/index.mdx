@@ -20,7 +20,12 @@ hero:
       variant: minimal
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Experimental, pre-1.0">
+  The engine, its public API, and the serialized world/story schema will change between releases.
+  Built in the open; not production-ready.
+</Aside>
 
 monomyth is a **configurable, layered engine for narrative structure**. It moves between unstructured
 narrative and a structured, medium-agnostic **world/story model** in both directions —

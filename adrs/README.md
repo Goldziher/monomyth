@@ -25,7 +25,7 @@ changed decision is a *new* ADR that supersedes the old one (never an edit).
 | [0002](./0002-hybrid-generation.md) | Hybrid generation (procedural + LLM) | accepted |
 | [0003](./0003-slotmap-graph-domain-model.md) | Slotmap graph domain model (not ECS) | accepted |
 | [0004](./0004-mythology-frameworks-as-domain-schema.md) | Comparative-mythology frameworks as the domain schema | accepted |
-| [0005](./0005-commercial-licensing-ship-reference.md) | Commercial licensing: ship / reference namespaces | accepted |
+| [0005](./0005-commercial-licensing-ship-reference.md) | Commercial licensing: ship / reference namespaces | accepted (commercial framing re-motivated by [0030](./0030-mit-license-and-experimental-status.md)) |
 | [0006](./0006-rust-over-python.md) | Rust for the engine and corpus pipeline | accepted |
 | [0007](./0007-adopt-xberg-rag-engine.md) | Adopt xberg as the RAG engine | accepted |
 | [0008](./0008-vectorstore-backend-sqlite-then-lancedb.md) | VectorStore backend: SQLite-vec now, LanceDB later | superseded by [0011](./0011-vectorstore-backends-sqlite-and-pgvector.md) |
@@ -50,3 +50,4 @@ changed decision is a *new* ADR that supersedes the old one (never an edit).
 | [0027](./0027-long-form-compose-pipeline.md) | Long-form compose pipeline | accepted (realized: all four slices shipped) |
 | [0028](./0028-genre-classifier-in-genre-crate.md) | GenreClassifier seam in monomyth-genre (contracts-edge exception) | accepted |
 | [0029](./0029-quick-xml-advisory-posture.md) | quick-xml advisory posture under opendal services-fs | accepted |
+| [0030](./0030-mit-license-and-experimental-status.md) | MIT license and experimental status | accepted |

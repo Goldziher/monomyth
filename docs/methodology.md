@@ -149,3 +149,12 @@ Every synthesis step from `reference` material is gated, concretely:
 
 See [`crates/monomyth-knowledge/src/ledger.rs`](../crates/monomyth-knowledge/src/ledger.rs) for the
 `Namespace`/`Tier` types that carry this invariant, and ADR-0005/ADR-0016 for the full reasoning.
+
+## Writing principle: the implied reader
+
+The procedure above produces the *vocabulary*; the run-time content pass writes with it. One directive
+governs that writing, drawn from Wolfgang Iser and reader-response theory: **a text constructs its
+implied reader as deliberately as it projects an author's voice.** Generated prose is composed for a
+vantage — what this reader already knows, expects, and must be brought to feel — not merely in a chosen
+style. This is a stated design principle for the content and compose passes today; it is not yet a
+configurable parameter.

@@ -19,12 +19,13 @@ edit.
 | [0003](https://github.com/Goldziher/monomyth/blob/main/adrs/0003-slotmap-graph-domain-model.md) | Slotmap graph domain model (not ECS) |
 | [0004](https://github.com/Goldziher/monomyth/blob/main/adrs/0004-mythology-frameworks-as-domain-schema.md) | Comparative-mythology frameworks as the domain schema |
 | [0006](https://github.com/Goldziher/monomyth/blob/main/adrs/0006-rust-over-python.md) | Rust for the engine and corpus pipeline |
+| [0030](https://github.com/Goldziher/monomyth/blob/main/adrs/0030-mit-license-and-experimental-status.md) | MIT license and experimental status |
 
 ## Corpus, licensing & storage
 
 | ADR | Decision |
 |---|---|
-| [0005](https://github.com/Goldziher/monomyth/blob/main/adrs/0005-commercial-licensing-ship-reference.md) | Commercial licensing: ship / reference namespaces |
+| [0005](https://github.com/Goldziher/monomyth/blob/main/adrs/0005-commercial-licensing-ship-reference.md) | Commercial licensing: ship / reference namespaces — commercial framing re-motivated by [0030](https://github.com/Goldziher/monomyth/blob/main/adrs/0030-mit-license-and-experimental-status.md) |
 | [0007](https://github.com/Goldziher/monomyth/blob/main/adrs/0007-adopt-xberg-rag-engine.md) | Adopt xberg as the RAG engine |
 | [0008](https://github.com/Goldziher/monomyth/blob/main/adrs/0008-vectorstore-backend-sqlite-then-lancedb.md) | VectorStore backend: SQLite-vec now, LanceDB later — superseded by [0011](https://github.com/Goldziher/monomyth/blob/main/adrs/0011-vectorstore-backends-sqlite-and-pgvector.md) |
 | [0009](https://github.com/Goldziher/monomyth/blob/main/adrs/0009-local-onnx-embeddings.md) | Local ONNX embeddings |

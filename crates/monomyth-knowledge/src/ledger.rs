@@ -78,7 +78,7 @@ pub enum Tier {
     /// CC-BY-SA — ship-safe but isolated so copyleft cannot contaminate PD/CC0.
     #[serde(rename = "sharealike")]
     ShareAlike,
-    /// CC-BY-NC* — reference-only (this is a commercial product).
+    /// CC-BY-NC* — reference-only (permissive output may be used commercially).
     Noncommercial,
     /// In-copyright — reference-only, never redistributed.
     Copyright,

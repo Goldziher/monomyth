@@ -4,8 +4,9 @@ priority: critical
 
 # Licensing & provenance
 
-monomyth is a **commercial** product. The corpus mixes freely-shippable and reference-only material,
-and the two must never blur. This rule is non-negotiable.
+monomyth's generated output ships under a permissive (MIT) license and may be used for any purpose,
+including commercially. The corpus therefore mixes freely-shippable and reference-only material that
+must never blur. This rule is non-negotiable.
 
 - **Every source is declared in the ledger** (`corpus/manifest.json`) with `license`, `tier`,
   `namespace`, and `domain`. Nothing is fetched or ingested that is not declared.

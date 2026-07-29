@@ -8,7 +8,7 @@
     "cc0": "CC0 — ship-safe, no obligations",
     "permissive": "CC-BY / MIT / Apache-2.0 — ship-safe with attribution",
     "sharealike": "CC-BY-SA — ship-safe but ISOLATED so copyleft can't contaminate PD/CC0",
-    "noncommercial": "CC-BY-NC* — reference-only (this is a commercial product)",
+    "noncommercial": "CC-BY-NC* — reference-only (permissive output may be used commercially)",
     "copyright": "in-copyright — reference-only, never redistributed",
     "reference": "research/mixed-license — reference-only"
   },
@@ -278,7 +278,7 @@
       "domain": "myth",
       "license": "CC-BY-NC-SA-3.0",
       "url": "https://www.opengreekandlatin.org",
-      "note": "NC — reference-only for a commercial product"
+      "note": "NC — reference-only; permissive output may be used commercially"
     },
     {
       "id": "duchas",

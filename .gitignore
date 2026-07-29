@@ -23,6 +23,11 @@
 # OS
 .DS_Store
 
+
+# basemind index cache (regenerable; the committed basemind.toml is the source of truth)
+.basemind/
+poly.local.toml
+
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .ai-rulez/.generated-manifest.json
 .claude/
@@ -31,7 +36,3 @@
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
-
-# basemind index cache (regenerable; the committed basemind.toml is the source of truth)
-.basemind/
-poly.local.toml

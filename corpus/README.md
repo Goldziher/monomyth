@@ -8,7 +8,8 @@ retrieval are owned by the Rust `monomyth-knowledge` crate (xberg) — see [`../
 ## `manifest.json` — the license & namespace ledger
 
 Every source is declared here with `license`, `tier`, `namespace`, and `domain`. It is the
-provenance ground truth and the enforcement point for a commercial product:
+provenance ground truth and the enforcement point: monomyth's output is permissively (MIT) licensed
+and may be used for any purpose, including commercially, so reference-only material is never surfaced:
 
 - `ship` — PD / CC0 / CC-BY / CC-BY-SA (share-alike isolated). May be surfaced verbatim.
 - `reference` — copyrighted or NonCommercial. Informs generation (structure/priors) but is never
