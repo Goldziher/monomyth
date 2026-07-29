@@ -54,7 +54,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-xberg = "1.0.0-rc.30"
+xberg = "1.0.3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]

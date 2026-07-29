@@ -27,7 +27,6 @@ yanked = "deny"
 ignore = [
   # Unmaintained transitive deps pulled through xberg's tokenizers/hf-hub/indicatif chain.
   "RUSTSEC-2024-0436", # paste — no longer maintained
-  "RUSTSEC-2025-0119", # number_prefix — unmaintained
   # quick-xml DoS advisories via opendal-core (O(N²) attribute scan / unbounded namespace
   # allocation on untrusted XML). opendal-core pulls quick-xml unconditionally, so it is in the
   # graph, but the vulnerable parsers are called only by opendal's XML object-store services

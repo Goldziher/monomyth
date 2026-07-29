@@ -428,6 +428,9 @@ mod tests {
             heading_context: None,
             heading_path: vec![],
             image_indices: vec![],
+            node_ids: vec![],
+            page_spans: vec![],
+            classifications: vec![],
         };
         let chunk = xberg::Chunk {
             content: "Hello".to_string(),
