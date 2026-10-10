@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Decision
+title: Trait First Architecture
+x-ai-rulez:
+  kind: rule
+  id: trait-first-architecture
+  metadata:
+    priority: high
 ---
 
 # Trait-first, planes-over-layers architecture

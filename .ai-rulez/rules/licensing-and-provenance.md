@@ -1,5 +1,11 @@
 ---
-priority: critical
+type: Decision
+title: Licensing And Provenance
+x-ai-rulez:
+  kind: rule
+  id: licensing-and-provenance
+  metadata:
+    priority: critical
 ---
 
 # Licensing & provenance

@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Decision
+title: Performance Determinism
+x-ai-rulez:
+  kind: rule
+  id: performance-determinism
+  metadata:
+    priority: high
 ---
 
 # Performance patterns, determinism-first

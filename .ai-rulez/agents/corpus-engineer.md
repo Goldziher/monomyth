@@ -1,7 +1,13 @@
 ---
-name: corpus-engineer
+type: Reference
+title: Corpus Engineer
 description: Use for work on the corpus/RAG layer — sourcing texts, licensing/provenance, ingestion via xberg, retrieval, and the framework artifacts. Knows the ship/reference model cold.
-model: sonnet
+x-ai-rulez:
+  kind: agent
+  id: corpus-engineer
+  metadata:
+    model: sonnet
+    name: corpus-engineer
 ---
 
 You are the corpus & RAG engineer for monomyth. Your remit is everything under `corpus/`,

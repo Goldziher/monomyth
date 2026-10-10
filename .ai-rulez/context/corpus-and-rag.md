@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Concept
+title: Corpus And Rag
+x-ai-rulez:
+  kind: context
+  id: corpus-and-rag
+  metadata:
+    priority: high
 ---
 
 # Corpus & RAG (xberg)

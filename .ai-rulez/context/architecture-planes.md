@@ -1,3 +1,11 @@
+---
+type: Concept
+title: Architecture Planes
+x-ai-rulez:
+  kind: context
+  id: architecture-planes
+---
+
 # Architecture: planes and cross-cutting concerns
 
 monomyth is a configurable, layered, **bidirectional** engine for narrative structure: it moves

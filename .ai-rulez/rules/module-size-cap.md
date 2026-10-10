@@ -1,5 +1,11 @@
 ---
-priority: normal
+type: Decision
+title: Module Size Cap
+x-ai-rulez:
+  kind: rule
+  id: module-size-cap
+  metadata:
+    priority: normal
 ---
 
 # Keep modules focused

@@ -1,4 +1,4 @@
-version = "4.0"
+version = "5.0"
 name = "monomyth"
 description = "Adventure generation engine — text-based adventures and dynamically-generated pixel-art games, grounded in comparative mythology. Rust workspace + xberg RAG."
 gitignore = true
@@ -12,3 +12,7 @@ name = "ai-rulez"
 description = "Manage AI governance config via MCP."
 command = "npx"
 args = ["-y", "ai-rulez@latest", "mcp"]
+
+# Pinned by `ai-rulez migrate v5`: the 4.x default. Remove this line to take the v5 default.
+[header]
+hashes = "full"

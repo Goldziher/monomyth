@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Concept
+title: Project Overview
+x-ai-rulez:
+  kind: context
+  id: project-overview
+  metadata:
+    priority: high
 ---
 
 # monomyth — project overview

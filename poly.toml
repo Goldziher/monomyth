@@ -33,7 +33,7 @@ exclude = [
 ]
 
 [lint.markdown.rumdl]
-disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
+disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 
 
 [lint.uncomment]
@@ -75,7 +75,7 @@ preserve_patterns = [
   "limitations under the license",
 ]
 [fmt.markdown.rumdl]
-disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
+disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [lint.typos]
 extend_words = { ser = "ser", heros = "heros", ratatui = "ratatui" }

@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Decision
+title: Rust And Xberg
+x-ai-rulez:
+  kind: rule
+  id: rust-and-xberg
+  metadata:
+    priority: high
 ---
 
 # Rust & xberg conventions

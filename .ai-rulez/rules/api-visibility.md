@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Decision
+title: Api Visibility
+x-ai-rulez:
+  kind: rule
+  id: api-visibility
+  metadata:
+    priority: high
 ---
 
 # Minimal public surface, documented
