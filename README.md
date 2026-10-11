@@ -219,7 +219,7 @@ poly.toml          poly (polylint) config — Rust + docs formatting/linting
 - Format & lint: `poly fmt --fix .` then `poly lint .` (`artifacts/**` is excluded — data, not source).
 - Rust: `cargo fmt`, `cargo clippy --workspace --all-targets --tests -- -D warnings`,
   `cargo test --workspace`.
-- Docs site: `cd website && npm ci && npm run dev`.
+- Docs site: `cd website && pnpm install --frozen-lockfile && pnpm run dev`.
 
 Conventions and agent guidance live in [`.ai-rulez/`](./.ai-rulez); the decision history lives in
 [`adrs/`](./adrs).
