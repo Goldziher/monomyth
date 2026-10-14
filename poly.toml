@@ -7,6 +7,11 @@ trim_trailing_whitespace = true
 
 [discovery]
 exclude = [
+  ".ai-rulez.bak-okf-*/**",
+  "/AGENTS.md",
+  "/CLAUDE.md",
+  "/.ai-rulez/.generated-manifest.json",
+  "/.mcp.json",
   "**/*.lock",
   "**/Cargo.lock",
   "**/uv.lock",
@@ -86,6 +91,10 @@ stages = ["pre-commit"]
 
 [hooks.builtin]
 lint = { exclude = [
+  "/AGENTS.md",
+  "/CLAUDE.md",
+  "/.ai-rulez/.generated-manifest.json",
+  "/.mcp.json",
   "**/*.lock",
   "**/Cargo.lock",
   "**/uv.lock",
@@ -106,6 +115,10 @@ lint = { exclude = [
   "packages/go/include/*.h",
 ] }
 fmt = { exclude = [
+  "/AGENTS.md",
+  "/CLAUDE.md",
+  "/.ai-rulez/.generated-manifest.json",
+  "/.mcp.json",
   "**/*.lock",
   "**/Cargo.lock",
   "**/uv.lock",
@@ -127,6 +140,10 @@ fmt = { exclude = [
 ] }
 commit = { stages = ["commit-msg"] }
 file_safety = { exclude = [
+  "/AGENTS.md",
+  "/CLAUDE.md",
+  "/.ai-rulez/.generated-manifest.json",
+  "/.mcp.json",
   "**/*.lock",
   "**/Cargo.lock",
   "**/uv.lock",
@@ -183,5 +200,5 @@ enabled = true
 [[hooks.sources]]
 id = "ai-rulez"
 git = "https://github.com/Goldziher/ai-rulez.git"
-revision = "v4.9.3"
+revision = "v5.3.0"
 hooks = ["ai-rulez-validate"]
