@@ -16,19 +16,19 @@ jobs:
 
     steps:
       - name: Checkout monomyth
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: monomyth
 
       - name: Checkout xberg
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: xberg-io/xberg
           ref: v1.0.0-rc.14
           path: xberg-io/xberg
 
       - name: Checkout liter-llm
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: xberg-io/liter-llm
           ref: v1.9.3
