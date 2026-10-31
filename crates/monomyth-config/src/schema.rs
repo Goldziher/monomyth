@@ -691,97 +691,105 @@ impl MonomythConfig {
     /// call order of layers does not matter — only their [`LayerSource`] rank.
     ///
     /// NOTE: every `Option<T>` field on a section needs a matching `override_with`
-    /// line here — there is no compiler-enforced exhaustiveness, so a new file field
-    /// added without a line here would silently be ignored from every file layer.
+    /// line in that section's `apply_file` — there is no compiler-enforced
+    /// exhaustiveness, so a new file field added without one would silently be
+    /// ignored from every file layer.
     pub(crate) fn apply_file(&mut self, file: &MonomythConfigFile, from: LayerSource) {
-        self.generation
-            .fork_chance_permille
-            .override_with(file.generation.fork_chance_permille, from);
-        self.generation
-            .beats_per_stage_min
-            .override_with(file.generation.beats_per_stage_min, from);
-        self.generation
-            .beats_per_stage_max
-            .override_with(file.generation.beats_per_stage_max, from);
-        self.generation
-            .rooms_min
-            .override_with(file.generation.rooms_min, from);
-        self.generation
-            .rooms_max
-            .override_with(file.generation.rooms_max, from);
-        self.generation
-            .items_min
-            .override_with(file.generation.items_min, from);
-        self.generation
-            .items_max
-            .override_with(file.generation.items_max, from);
-        self.generation
-            .max_extra_cast
-            .override_with(file.generation.max_extra_cast, from);
-        self.models
-            .content
-            .override_with(file.models.content.clone(), from);
-        self.models
-            .synthesis
-            .override_with(file.models.synthesis.clone(), from);
-        self.models
-            .compose
-            .override_with(file.models.compose.clone(), from);
-        self.models
-            .draft
-            .override_with(file.models.draft.clone(), from);
-        self.models
-            .judge
-            .override_with(file.models.judge.clone(), from);
-        self.models
-            .revise
-            .override_with(file.models.revise.clone(), from);
-        self.synthesis
-            .max_iterations
-            .override_with(file.synthesis.max_iterations, from);
-        self.synthesis
-            .per_query_top_k
-            .override_with(file.synthesis.per_query_top_k, from);
-        self.synthesis
-            .max_grounding
-            .override_with(file.synthesis.max_grounding, from);
-        self.compose
-            .max_turns
-            .override_with(file.compose.max_turns, from);
-        self.compose
-            .grounding_top_k
-            .override_with(file.compose.grounding_top_k, from);
-        self.compose
-            .revise_threshold
-            .override_with(file.compose.revise_threshold, from);
-        self.compose
-            .max_revise_iterations
-            .override_with(file.compose.max_revise_iterations, from);
-        self.genre.name.override_with(file.genre.name.clone(), from);
-        self.genre
-            .grounding_top_k
-            .override_with(file.genre.grounding_top_k, from);
-        self.render
-            .medium
-            .override_with(file.render.medium.clone(), from);
-        self.retrieval
-            .top_k
-            .override_with(file.retrieval.top_k, from);
-        self.retrieval
-            .reference_overfetch
-            .override_with(file.retrieval.reference_overfetch, from);
-        self.retrieval
-            .rrf_k
-            .override_with(file.retrieval.rrf_k, from);
-        self.paths
-            .corpus_dir
-            .override_with(file.paths.corpus_dir.clone(), from);
-        self.paths
-            .laws_dir
-            .override_with(file.paths.laws_dir.clone(), from);
-        self.paths
-            .db_path
-            .override_with(file.paths.db_path.clone(), from);
+        self.generation.apply_file(&file.generation, from);
+        self.models.apply_file(&file.models, from);
+        self.synthesis.apply_file(&file.synthesis, from);
+        self.compose.apply_file(&file.compose, from);
+        self.genre.apply_file(&file.genre, from);
+        self.render.apply_file(&file.render, from);
+        self.retrieval.apply_file(&file.retrieval, from);
+        self.paths.apply_file(&file.paths, from);
+    }
+}
+
+impl GenerationSettings {
+    /// Layer the `[generation]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &GenerationSection, from: LayerSource) {
+        self.fork_chance_permille
+            .override_with(file.fork_chance_permille, from);
+        self.beats_per_stage_min
+            .override_with(file.beats_per_stage_min, from);
+        self.beats_per_stage_max
+            .override_with(file.beats_per_stage_max, from);
+        self.rooms_min.override_with(file.rooms_min, from);
+        self.rooms_max.override_with(file.rooms_max, from);
+        self.items_min.override_with(file.items_min, from);
+        self.items_max.override_with(file.items_max, from);
+        self.max_extra_cast.override_with(file.max_extra_cast, from);
+    }
+}
+
+impl ModelsSettings {
+    /// Layer the `[models]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &ModelsSection, from: LayerSource) {
+        self.content.override_with(file.content.clone(), from);
+        self.synthesis.override_with(file.synthesis.clone(), from);
+        self.compose.override_with(file.compose.clone(), from);
+        self.draft.override_with(file.draft.clone(), from);
+        self.judge.override_with(file.judge.clone(), from);
+        self.revise.override_with(file.revise.clone(), from);
+    }
+}
+
+impl SynthesisSettings {
+    /// Layer the `[synthesis]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &SynthesisSection, from: LayerSource) {
+        self.max_iterations.override_with(file.max_iterations, from);
+        self.per_query_top_k
+            .override_with(file.per_query_top_k, from);
+        self.max_grounding.override_with(file.max_grounding, from);
+    }
+}
+
+impl ComposeConfigSettings {
+    /// Layer the `[compose]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &ComposeSection, from: LayerSource) {
+        self.max_turns.override_with(file.max_turns, from);
+        self.grounding_top_k
+            .override_with(file.grounding_top_k, from);
+        self.revise_threshold
+            .override_with(file.revise_threshold, from);
+        self.max_revise_iterations
+            .override_with(file.max_revise_iterations, from);
+    }
+}
+
+impl GenreSettings {
+    /// Layer the `[genre]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &GenreSection, from: LayerSource) {
+        self.name.override_with(file.name.clone(), from);
+        self.grounding_top_k
+            .override_with(file.grounding_top_k, from);
+    }
+}
+
+impl RenderSettings {
+    /// Layer the `[render]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &RenderSection, from: LayerSource) {
+        self.medium.override_with(file.medium.clone(), from);
+    }
+}
+
+impl RetrievalSettings {
+    /// Layer the `[retrieval]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &RetrievalSection, from: LayerSource) {
+        self.top_k.override_with(file.top_k, from);
+        self.reference_overfetch
+            .override_with(file.reference_overfetch, from);
+        self.rrf_k.override_with(file.rrf_k, from);
+    }
+}
+
+impl PathsSettings {
+    /// Layer the `[paths]` section of one config file over these settings.
+    fn apply_file(&mut self, file: &PathsSection, from: LayerSource) {
+        self.corpus_dir.override_with(file.corpus_dir.clone(), from);
+        self.laws_dir.override_with(file.laws_dir.clone(), from);
+        self.db_path.override_with(file.db_path.clone(), from);
     }
 }
 
