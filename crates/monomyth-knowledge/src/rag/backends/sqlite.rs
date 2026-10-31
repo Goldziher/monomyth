@@ -44,16 +44,15 @@ use tracing::instrument;
 mod codec;
 mod filter_eval;
 mod retrieve;
+mod write;
 
 use codec::{
     decode_multi_vector, decode_sparse, encode_multi_vector, encode_sparse, encode_vec,
     index_method_str, metric_str, parse_index_method, parse_metric,
 };
-use filter_eval::eval_filter;
-use retrieve::{
-    filter_chunks, retrieve_fts, retrieve_hybrid, retrieve_late_interaction, retrieve_sparse,
-    retrieve_vector,
-};
+use filter_eval::{document_matches_filter, eval_filter};
+use retrieve::{filter_chunks, retrieve_mode};
+use write::{delete_chunks_for_doc, insert_chunk, resolve_document_id, write_document_fields};
 
 /// Register the sqlite-vec extension with SQLite's auto-extension mechanism.
 ///
@@ -573,85 +572,12 @@ impl VectorStore for SqliteVectorStore {
             let ft = fts_table(row.rowid);
 
             with_tx(conn, || {
-                let doc_id: DocumentId = match document.external_id.as_deref() {
-                    Some(ext) => {
-                        let mut stmt = conn
-                            .prepare_cached("SELECT id FROM documents WHERE collection = ?1 AND external_id = ?2")
-                            .map_err(be)?;
-                        match stmt.query_row(params![collection, ext], |r| r.get::<_, String>(0)) {
-                            Ok(id) => {
-                                delete_chunks_for_doc(conn, &id, &vt, &ft)?;
-                                DocumentId(id)
-                            }
-                            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                                insert_new_document(conn, &collection, &document, &store_name)?
-                            }
-                            Err(e) => return Err(be(e)),
-                        }
-                    }
-                    None => insert_new_document(conn, &collection, &document, &store_name)?,
-                };
-
-                conn.execute(
-                    "UPDATE documents SET
-                         external_id = ?2, title = ?3, mime = ?4, source_uri = ?5,
-                         full_text = ?6, keywords = ?7, entities = ?8, labels = ?9,
-                         metadata = ?10, ingested_at = ?11
-                     WHERE id = ?1",
-                    params![
-                        doc_id.0,
-                        document.external_id,
-                        document.title,
-                        document.mime,
-                        document.source_uri,
-                        document.full_text,
-                        serde_json::to_string(&document.keywords).unwrap_or_default(),
-                        serde_json::to_string(&document.entities).unwrap_or_default(),
-                        serde_json::to_string(&document.labels).unwrap_or_default(),
-                        serde_json::to_string(&document.metadata).unwrap_or_default(),
-                        now_unix(),
-                    ],
-                )
-                .map_err(be)?;
-
+                let doc_id =
+                    resolve_document_id(conn, &collection, &document, &store_name, &vt, &ft)?;
+                write_document_fields(conn, &doc_id, &document)?;
                 for chunk in &chunks {
-                    let chunk_id = ChunkId(format!("{}:{}", doc_id.0, chunk.ordinal));
-                    let blob = encode_vec(&chunk.embedding);
-                    let sparse_blob: Option<Vec<u8>> = chunk.sparse_embedding.as_ref().map(encode_sparse);
-                    let mv_blob: Option<Vec<u8>> = chunk.multi_vector.as_ref().map(encode_multi_vector);
-                    conn.execute(
-                        "INSERT INTO chunks
-                             (id, document_id, collection, ordinal, external_id, content,
-                              embedding, sparse, multi_vector, chunk_metadata)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                        params![
-                            chunk_id.0,
-                            doc_id.0,
-                            collection,
-                            chunk.ordinal,
-                            chunk.external_id,
-                            chunk.content,
-                            blob,
-                            sparse_blob,
-                            mv_blob,
-                            serde_json::to_string(&chunk.chunk_metadata).unwrap_or_default(),
-                        ],
-                    )
-                    .map_err(be)?;
-
-                    conn.execute(
-                        &format!("INSERT INTO {vt} (chunk_id, embedding) VALUES (?1, ?2)"),
-                        params![chunk_id.0, blob],
-                    )
-                    .map_err(be)?;
-
-                    conn.execute(
-                        &format!("INSERT INTO {ft} (chunk_id, content) VALUES (?1, ?2)"),
-                        params![chunk_id.0, chunk.content],
-                    )
-                    .map_err(be)?;
+                    insert_chunk(conn, &doc_id, &collection, chunk, &vt, &ft)?;
                 }
-
                 Ok(doc_id)
             })
         })
@@ -715,43 +641,7 @@ impl VectorStore for SqliteVectorStore {
 
             let mut to_delete: Vec<String> = Vec::new();
             for doc_id in &doc_ids {
-                let Some((doc_rec, _)) = load_document_record(conn, doc_id).map_err(be)? else {
-                    continue;
-                };
-                let chunk_ids: Vec<String> = {
-                    let mut stmt = conn
-                        .prepare_cached(
-                            "SELECT id, ordinal, external_id, content, embedding, chunk_metadata
-                             FROM chunks WHERE document_id = ?1",
-                        )
-                        .map_err(be)?;
-                    stmt.query_map(params![doc_id], |r| r.get::<_, String>(0))
-                        .map_err(be)?
-                        .collect::<rusqlite::Result<Vec<_>>>()
-                        .map_err(be)?
-                };
-                let matches = chunk_ids.iter().any(|cid| {
-                    conn.query_row(
-                        "SELECT ordinal, external_id, content, embedding, chunk_metadata
-                         FROM chunks WHERE id = ?1",
-                        params![cid],
-                        |r| {
-                            let meta_str: String = r.get(4)?;
-                            Ok(ChunkRecord {
-                                external_id: r.get(1)?,
-                                ordinal: r.get::<_, u32>(0)?,
-                                content: r.get(2)?,
-                                embedding: Vec::new(),
-                                sparse_embedding: None,
-                                multi_vector: None,
-                                chunk_metadata: serde_json::from_str(&meta_str)
-                                    .unwrap_or(serde_json::Value::Null),
-                            })
-                        },
-                    )
-                    .map(|chunk| eval_filter(&filter, &doc_rec, &chunk))
-                    .unwrap_or(false)
-                });
+                let matches = document_matches_filter(conn, doc_id, &filter)?;
                 if matches {
                     to_delete.push(doc_id.clone());
                 }
@@ -791,56 +681,13 @@ impl VectorStore for SqliteVectorStore {
 
             let vt = vec_table(row.rowid);
             let ft = fts_table(row.rowid);
-            let candidate_k = query.top_k as i64 * query.candidate_multiplier.unwrap_or(4).max(1) as i64;
+            let candidate_k =
+                query.top_k as i64 * query.candidate_multiplier.unwrap_or(4).max(1) as i64;
 
             let t0 = std::time::Instant::now();
             let mode = query.mode;
 
-            let mut chunks: Vec<RetrievedChunk> = match mode {
-                RetrieveMode::Vector => {
-                    let qv = query.query_vector.as_ref().ok_or_else(|| {
-                        RagError::InvalidQuery("SQLite backend cannot embed text; supply query_vector".to_string())
-                    })?;
-                    retrieve_vector(conn, &vt, qv, candidate_k, &query)?
-                }
-                RetrieveMode::FullText => {
-                    let qt = query
-                        .query_text
-                        .as_ref()
-                        .ok_or_else(|| RagError::InvalidQuery("full_text mode requires query_text".to_string()))?;
-                    retrieve_fts(conn, &ft, qt, candidate_k, &query)?
-                }
-                RetrieveMode::Hybrid => {
-                    let qt = query
-                        .query_text
-                        .as_ref()
-                        .ok_or_else(|| RagError::InvalidQuery("hybrid mode requires query_text".to_string()))?;
-                    let qv = query.query_vector.as_deref();
-                    let qs = query.query_sparse.as_ref();
-                    retrieve_hybrid(conn, &vt, &ft, qt, qv, qs, &collection, candidate_k, &query)?
-                }
-                RetrieveMode::Sparse => {
-                    let qs = query
-                        .query_sparse
-                        .as_ref()
-                        .ok_or_else(|| RagError::InvalidQuery("sparse mode requires query_sparse".to_string()))?;
-                    retrieve_sparse(conn, &collection, qs, candidate_k, &query)?
-                }
-                RetrieveMode::LateInteraction => {
-                    let qmv = query.query_multi_vector.as_ref().ok_or_else(|| {
-                        RagError::InvalidQuery("late_interaction mode requires query_multi_vector".to_string())
-                    })?;
-                    let qv = query.query_vector.as_deref().ok_or_else(|| {
-                        RagError::InvalidQuery(
-                            "sqlite backend requires query_vector to seed late_interaction candidates via dense KNN; \
-                             query_text alone is insufficient for this backend (the in-memory backend does not have \
-                             this requirement)"
-                                .to_string(),
-                        )
-                    })?;
-                    retrieve_late_interaction(conn, &vt, qmv, qv, candidate_k, &query)?
-                }
-            };
+            let mut chunks = retrieve_mode(conn, &vt, &ft, &collection, candidate_k, &query)?;
 
             let primary_latency_ms = t0.elapsed().as_millis() as u64;
 
@@ -850,14 +697,17 @@ impl VectorStore for SqliteVectorStore {
 
             if query.include_document {
                 for chunk in &mut chunks {
-                    if let Some((rec, iat)) = load_document_record(conn, &chunk.document_id.0).map_err(be)? {
+                    if let Some((rec, iat)) =
+                        load_document_record(conn, &chunk.document_id.0).map_err(be)?
+                    {
                         chunk.document = Some(doc_to_summary(&chunk.document_id, &rec, iat));
                     }
                 }
             }
 
             if query.group_by_document {
-                let mut seen: std::collections::HashMap<DocumentId, ()> = std::collections::HashMap::new();
+                let mut seen: std::collections::HashMap<DocumentId, ()> =
+                    std::collections::HashMap::new();
                 chunks.retain(|c| seen.insert(c.document_id.clone(), ()).is_none());
             }
 
@@ -912,78 +762,6 @@ impl VectorStore for SqliteVectorStore {
         })
         .await
     }
-}
-
-/// Insert a new document row with a rowid-derived id and return the id.
-fn insert_new_document(
-    conn: &Connection,
-    collection: &str,
-    document: &DocumentRecord,
-    store_name: &str,
-) -> RagResult<DocumentId> {
-    conn.execute(
-        "INSERT INTO documents
-             (id, collection, external_id, title, mime, source_uri,
-              full_text, keywords, entities, labels, metadata, ingested_at)
-         VALUES ('_tmp', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        params![
-            collection,
-            document.external_id,
-            document.title,
-            document.mime,
-            document.source_uri,
-            document.full_text,
-            serde_json::to_string(&document.keywords).unwrap_or_default(),
-            serde_json::to_string(&document.entities).unwrap_or_default(),
-            serde_json::to_string(&document.labels).unwrap_or_default(),
-            serde_json::to_string(&document.metadata).unwrap_or_default(),
-            now_unix(),
-        ],
-    )
-    .map_err(be)?;
-    let rowid = conn.last_insert_rowid();
-    let doc_id = DocumentId(format!("{store_name}-doc-{rowid}"));
-    conn.execute(
-        "UPDATE documents SET id = ?1 WHERE rowid = ?2",
-        params![doc_id.0, rowid],
-    )
-    .map_err(be)?;
-    Ok(doc_id)
-}
-
-/// Delete all chunks for `doc_id` from `chunks`, `vec0`, and `fts5` tables.
-/// Returns the number of rows removed from `chunks`.
-fn delete_chunks_for_doc(
-    conn: &Connection,
-    doc_id: &str,
-    vec_tbl: &str,
-    fts_tbl: &str,
-) -> RagResult<usize> {
-    let chunk_ids: Vec<String> = {
-        let mut stmt = conn
-            .prepare_cached("SELECT id FROM chunks WHERE document_id = ?1")
-            .map_err(be)?;
-        stmt.query_map(params![doc_id], |r| r.get(0))
-            .map_err(be)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(be)?
-    };
-    for cid in &chunk_ids {
-        conn.execute(
-            &format!("DELETE FROM {vec_tbl} WHERE chunk_id = ?1"),
-            params![cid],
-        )
-        .map_err(be)?;
-        conn.execute(
-            &format!("DELETE FROM {fts_tbl} WHERE chunk_id = ?1"),
-            params![cid],
-        )
-        .map_err(be)?;
-    }
-    let n = conn
-        .execute("DELETE FROM chunks WHERE document_id = ?1", params![doc_id])
-        .map_err(be)?;
-    Ok(n)
 }
 
 #[cfg(test)]

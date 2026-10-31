@@ -134,78 +134,33 @@ pub(super) fn retrieve_fts(
 /// Reciprocal-rank-fusion constant (the canonical `k = 60`).
 pub(super) const K_RRF: f32 = 60.0;
 
-#[allow(clippy::too_many_arguments)]
+/// Per-chunk fused scores: `(rrf, vector, full_text, sparse)`.
+type FusedScores = (f32, f32, f32, f32);
+
+/// Hybrid retrieval: dense, full-text and (when supplied) sparse hits fused by
+/// reciprocal rank.
 pub(super) fn retrieve_hybrid(
     conn: &Connection,
     vec_tbl: &str,
     fts_tbl: &str,
-    query_text: &str,
-    query_vector: Option<&[f32]>,
-    query_sparse: Option<&SparseVector>,
     collection: &str,
     candidate_k: i64,
     query: &RetrieveQuery,
 ) -> RagResult<Vec<RetrievedChunk>> {
-    let vec_hits: Vec<(String, f32)> = if let Some(qv) = query_vector {
-        let blob = encode_vec(qv);
-        let sql = format!(
-            "SELECT chunk_id, distance FROM {vec_tbl}
-             WHERE embedding MATCH ?1 AND k = ?2"
-        );
-        let mut stmt = conn.prepare(&sql).map_err(be)?;
-        stmt.query_map(params![blob, candidate_k], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32))
-        })
-        .map_err(be)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(be)?
-    } else {
-        Vec::new()
+    let query_text = query
+        .query_text
+        .as_ref()
+        .ok_or_else(|| RagError::InvalidQuery("hybrid mode requires query_text".to_string()))?;
+    let vec_hits = match query.query_vector.as_deref() {
+        Some(qv) => dense_hits(conn, vec_tbl, qv, candidate_k)?,
+        None => Vec::new(),
     };
-
-    let fts_hits: Vec<(String, f32)> = {
-        let sql = format!(
-            "SELECT chunk_id, -rank AS score FROM {fts_tbl}
-             WHERE content MATCH ?1
-             ORDER BY rank
-             LIMIT ?2"
-        );
-        let mut stmt = conn.prepare(&sql).map_err(be)?;
-        stmt.query_map(params![query_text, candidate_k], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32))
-        })
-        .map_err(be)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(be)?
-    };
-
-    let sparse_hits: Vec<(String, f32)> = match query_sparse {
+    let fts_hits = full_text_hits(conn, fts_tbl, query_text, candidate_k)?;
+    let sparse_hits: Vec<(String, f32)> = match query.query_sparse.as_ref() {
         Some(qs) => sparse_scan(conn, collection, qs, candidate_k)?,
         None => Vec::new(),
     };
-
-    let mut rrf_map: std::collections::HashMap<String, (f32, f32, f32, f32)> =
-        std::collections::HashMap::new();
-
-    for (rank, (cid, dist)) in vec_hits.iter().enumerate() {
-        let vec_score = 1.0 / (1.0 + dist);
-        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
-        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
-        entry.0 += rrf;
-        entry.1 = vec_score;
-    }
-    for (rank, (cid, fts_score)) in fts_hits.iter().enumerate() {
-        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
-        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
-        entry.0 += rrf;
-        entry.2 = *fts_score;
-    }
-    for (rank, (cid, sparse_score)) in sparse_hits.iter().enumerate() {
-        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
-        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
-        entry.0 += rrf;
-        entry.3 = *sparse_score;
-    }
+    let rrf_map = fuse_reciprocal_rank(&vec_hits, &fts_hits, &sparse_hits);
 
     let mut ranked: Vec<(String, f32, f32, f32, f32)> = rrf_map
         .into_iter()
@@ -242,6 +197,81 @@ pub(super) fn retrieve_hybrid(
             }))
         })
         .collect::<RagResult<Vec<_>>>()
+}
+
+/// Dense KNN hits `(chunk_id, distance)` for `query_vector`.
+fn dense_hits(
+    conn: &Connection,
+    vec_tbl: &str,
+    query_vector: &[f32],
+    candidate_k: i64,
+) -> RagResult<Vec<(String, f32)>> {
+    let blob = encode_vec(query_vector);
+    let sql = format!(
+        "SELECT chunk_id, distance FROM {vec_tbl}
+         WHERE embedding MATCH ?1 AND k = ?2"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(be)?;
+    stmt.query_map(params![blob, candidate_k], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32))
+    })
+    .map_err(be)?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(be)
+}
+
+/// FTS5 hits `(chunk_id, score)` for `query_text`, best first.
+fn full_text_hits(
+    conn: &Connection,
+    fts_tbl: &str,
+    query_text: &str,
+    candidate_k: i64,
+) -> RagResult<Vec<(String, f32)>> {
+    let sql = format!(
+        "SELECT chunk_id, -rank AS score FROM {fts_tbl}
+         WHERE content MATCH ?1
+         ORDER BY rank
+         LIMIT ?2"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(be)?;
+    stmt.query_map(params![query_text, candidate_k], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32))
+    })
+    .map_err(be)?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(be)
+}
+
+/// Reciprocal-rank fusion of the three ranked hit lists, keeping each list's own
+/// score alongside the fused one.
+fn fuse_reciprocal_rank(
+    vec_hits: &[(String, f32)],
+    fts_hits: &[(String, f32)],
+    sparse_hits: &[(String, f32)],
+) -> std::collections::HashMap<String, FusedScores> {
+    let mut rrf_map: std::collections::HashMap<String, FusedScores> =
+        std::collections::HashMap::new();
+
+    for (rank, (cid, dist)) in vec_hits.iter().enumerate() {
+        let vec_score = 1.0 / (1.0 + dist);
+        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
+        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
+        entry.0 += rrf;
+        entry.1 = vec_score;
+    }
+    for (rank, (cid, fts_score)) in fts_hits.iter().enumerate() {
+        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
+        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
+        entry.0 += rrf;
+        entry.2 = *fts_score;
+    }
+    for (rank, (cid, sparse_score)) in sparse_hits.iter().enumerate() {
+        let rrf = 1.0 / (K_RRF + rank as f32 + 1.0);
+        let entry = rrf_map.entry(cid.clone()).or_insert((0.0, 0.0, 0.0, 0.0));
+        entry.0 += rrf;
+        entry.3 = *sparse_score;
+    }
+    rrf_map
 }
 
 /// Brute-force sparse scan: score every chunk in `collection` that has a stored
@@ -392,4 +422,54 @@ pub(super) fn retrieve_late_interaction(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     Ok(scored)
+}
+
+/// Run `query` in its retrieval mode, before filtering and truncation.
+pub(super) fn retrieve_mode(
+    conn: &Connection,
+    vt: &str,
+    ft: &str,
+    collection: &str,
+    candidate_k: i64,
+    query: &RetrieveQuery,
+) -> RagResult<Vec<RetrievedChunk>> {
+    match query.mode {
+        RetrieveMode::Vector => {
+            let qv = query.query_vector.as_ref().ok_or_else(|| {
+                RagError::InvalidQuery(
+                    "SQLite backend cannot embed text; supply query_vector".to_string(),
+                )
+            })?;
+            retrieve_vector(conn, vt, qv, candidate_k, query)
+        }
+        RetrieveMode::FullText => {
+            let qt = query.query_text.as_ref().ok_or_else(|| {
+                RagError::InvalidQuery("full_text mode requires query_text".to_string())
+            })?;
+            retrieve_fts(conn, ft, qt, candidate_k, query)
+        }
+        RetrieveMode::Hybrid => retrieve_hybrid(conn, vt, ft, collection, candidate_k, query),
+        RetrieveMode::Sparse => {
+            let qs = query.query_sparse.as_ref().ok_or_else(|| {
+                RagError::InvalidQuery("sparse mode requires query_sparse".to_string())
+            })?;
+            retrieve_sparse(conn, collection, qs, candidate_k, query)
+        }
+        RetrieveMode::LateInteraction => {
+            let qmv = query.query_multi_vector.as_ref().ok_or_else(|| {
+                RagError::InvalidQuery(
+                    "late_interaction mode requires query_multi_vector".to_string(),
+                )
+            })?;
+            let qv = query.query_vector.as_deref().ok_or_else(|| {
+                RagError::InvalidQuery(
+                    "sqlite backend requires query_vector to seed late_interaction candidates via dense KNN; \
+                     query_text alone is insufficient for this backend (the in-memory backend does not have \
+                     this requirement)"
+                        .to_string(),
+                )
+            })?;
+            retrieve_late_interaction(conn, vt, qmv, qv, candidate_k, query)
+        }
+    }
 }

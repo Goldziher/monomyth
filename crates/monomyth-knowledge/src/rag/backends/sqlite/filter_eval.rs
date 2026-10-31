@@ -94,3 +94,50 @@ pub(super) fn eval_filter(filter: &Filter, doc: &DocumentRecord, chunk: &ChunkRe
         Filter::Not { filter } => !eval_filter(filter, doc, chunk),
     }
 }
+
+/// Whether any chunk of document `doc_id` satisfies `filter`; a document that
+/// no longer exists matches nothing.
+pub(super) fn document_matches_filter(
+    conn: &Connection,
+    doc_id: &str,
+    filter: &Filter,
+) -> RagResult<bool> {
+    let Some((doc_rec, _)) = load_document_record(conn, doc_id).map_err(be)? else {
+        return Ok(false);
+    };
+    let chunk_ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, ordinal, external_id, content, embedding, chunk_metadata
+                 FROM chunks WHERE document_id = ?1",
+            )
+            .map_err(be)?;
+        stmt.query_map(params![doc_id], |r| r.get::<_, String>(0))
+            .map_err(be)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(be)?
+    };
+    let matches = chunk_ids.iter().any(|cid| {
+        conn.query_row(
+            "SELECT ordinal, external_id, content, embedding, chunk_metadata
+             FROM chunks WHERE id = ?1",
+            params![cid],
+            |r| {
+                let meta_str: String = r.get(4)?;
+                Ok(ChunkRecord {
+                    external_id: r.get(1)?,
+                    ordinal: r.get::<_, u32>(0)?,
+                    content: r.get(2)?,
+                    embedding: Vec::new(),
+                    sparse_embedding: None,
+                    multi_vector: None,
+                    chunk_metadata: serde_json::from_str(&meta_str)
+                        .unwrap_or(serde_json::Value::Null),
+                })
+            },
+        )
+        .map(|chunk| eval_filter(filter, &doc_rec, &chunk))
+        .unwrap_or(false)
+    });
+    Ok(matches)
+}
