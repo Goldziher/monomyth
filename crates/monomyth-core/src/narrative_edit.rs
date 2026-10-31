@@ -514,7 +514,18 @@ impl NarrativeStructure {
                 self.node_mut(*node)?.motifs.clone_from(motifs);
                 Ok(())
             }
-            _ => unreachable!("apply_edit routes only attribute edits here"),
+            NarrativeEdit::AddNode { .. }
+            | NarrativeEdit::RemoveNode { .. }
+            | NarrativeEdit::Connect { .. }
+            | NarrativeEdit::Disconnect { .. }
+            | NarrativeEdit::RetargetEdge { .. }
+            | NarrativeEdit::MarkEnding { .. }
+            | NarrativeEdit::UnmarkEnding { .. }
+            | NarrativeEdit::InsertBeat { .. }
+            | NarrativeEdit::RemoveBeat { .. }
+            | NarrativeEdit::MoveBeat { .. } => {
+                unreachable!("apply_edit routes only attribute edits here")
+            }
         }
     }
 
