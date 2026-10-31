@@ -1,4 +1,5 @@
-# Pin the toolchain. Edition 2024 + xberg's rust-version 1.91 floor; 1.96 is what we develop against.
+# Pin the toolchain at the xberg-io/toolchains baseline (toolchains.toml). Edition 2024; rust-version stays
+# 1.91, xberg's floor.
 [toolchain]
 channel = "1.99.1"
 components = ["rustfmt", "clippy"]

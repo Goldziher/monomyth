@@ -5,6 +5,11 @@
 # every shipped build are ignored here — everything else must still block CI.
 [advisories]
 ignore = [
+  # Unmaintained (no vulnerability), mirrored from deny.toml: paste via xberg's
+  # tokenizers/hf-hub/indicatif chain, unsafe-libyaml via xberg's serde_yaml_ng (the xberg
+  # release that drops it needs Rust 1.92, above the 1.91 rust-version).
+  "RUSTSEC-2024-0436",
+  "RUSTSEC-2024-0449",
   # rsa "Marvin Attack" timing side-channel (5.9 medium, no upstream fix). Reachable ONLY via
   # the reserved acquire-s3/gcs/azblob cloud features (opendal cloud services → reqsign → rsa);
   # never compiled into the default or `--features acquire` build. Revisit before any cloud
