@@ -11,40 +11,40 @@ and building it.
 - **Rust**, pinned via [`rust-toolchain.toml`](https://github.com/Goldziher/monomyth/blob/main/rust-toolchain.toml)
   at the repository root. `rustup` picks up the pin automatically (channel `1.96`, with the
   `rustfmt` and `clippy` components) — no manual toolchain selection needed.
-- **[`task`](https://taskfile.dev)** — the task runner wrapping the build/test/lint gate. Optional
-  but recommended; see [`Taskfile.yaml`](https://github.com/Goldziher/monomyth/blob/main/Taskfile.yaml).
+- **[`mise`](https://mise.jdx.dev)** — installs the pinned tools and runs the build/test/lint tasks.
+  Optional but recommended; see [`mise.toml`](https://github.com/Goldziher/monomyth/blob/main/mise.toml).
 - **[`poly`](https://github.com/Goldziher/poly)** (polylint) — formats and lints the non-Rust files
-  in the repo (Markdown, TOML). Only needed if you plan to contribute changes.
+  in the repo (Markdown, TOML). Only needed if you plan to contribute changes; `mise install` provides it.
 
 ## Clone and build
 
 ```sh
 git clone https://github.com/Goldziher/monomyth.git
 cd monomyth
-task setup
+mise run setup
 ```
 
-`task setup` fetches dependencies and does a first debug build of the whole workspace
-(`cargo fetch && cargo build --workspace`). Without `task`, run the equivalent `cargo` commands
+`mise run setup` installs the pinned tools, fetches dependencies and does a first debug build of the whole
+workspace (`mise install && cargo fetch && cargo build --workspace`). Without mise, run the equivalent `cargo` commands
 directly.
 
 List every available task with:
 
 ```sh
-task --list
+mise tasks
 ```
 
 The commands that matter day to day:
 
 | Task | What it does |
 |---|---|
-| `task setup` | Fetch dependencies, first build. |
-| `task build` | Build the whole workspace. |
-| `task test` | Run the full test suite (`cargo test --workspace`). |
-| `task format` | Apply Rust and poly formatting in place. |
-| `task lint` | Clippy (deny warnings) plus poly lint. |
-| `task bench` | Run the Criterion microbenchmarks. |
-| `task check` | The full pre-commit gate — format check, lint, and tests. |
+| `mise run setup` | Install the pinned tools, fetch dependencies, first build. |
+| `mise run build` | Build the whole workspace. |
+| `mise run test` | Run the full test suite (`cargo test --workspace`). |
+| `mise run format` | Apply Rust and poly formatting in place. |
+| `mise run lint` | Clippy (deny warnings) plus poly lint. |
+| `mise run bench` | Run the Criterion microbenchmarks. |
+| `mise run check` | The full pre-commit gate — format check, lint, and tests. |
 
 ## Running the CLI
 

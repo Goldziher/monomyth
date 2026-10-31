@@ -215,7 +215,7 @@ poly.toml          poly (polylint) config — Rust + docs formatting/linting
 
 ## Development
 
-- Task runner: `task --list` (see [`Taskfile.yaml`](./Taskfile.yaml)). `task check` is the full gate.
+- Task runner: `mise tasks` (see [`mise.toml`](./mise.toml)). `mise run check` is the full gate.
 - Format & lint: `poly fmt --fix .` then `poly lint .` (`artifacts/**` is excluded — data, not source).
 - Rust: `cargo fmt`, `cargo clippy --workspace --all-targets --tests -- -D warnings`,
   `cargo test --workspace`.
