@@ -82,7 +82,7 @@ jobs:
         working-directory: monomyth
         run: |
           cargo fmt --check
-          poly fmt .
+          poly fmt --check .
 
       - name: Clippy
         working-directory: monomyth
