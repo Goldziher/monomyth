@@ -97,7 +97,11 @@ pub(crate) async fn draft_and_revise_section(
         return draft_single_unscored(llm, section, &grounding, prior, settings).await;
     };
 
-    revise_loop(llm, knowledge, section, &grounding, prior, settings, &gold).await
+    let target = ReviseTarget {
+        grounding: &grounding,
+        gold: &gold,
+    };
+    revise_loop(llm, knowledge, section, prior, settings, target).await
 }
 
 /// Produce a single, unscored draft: used when there is no grounding (or no
@@ -119,6 +123,14 @@ async fn draft_single_unscored(
     })
 }
 
+/// What a revision loop drafts against: the grounding passages handed to the
+/// model and the gold embedding each attempt is scored by.
+#[derive(Debug, Clone, Copy)]
+struct ReviseTarget<'a> {
+    grounding: &'a [String],
+    gold: &'a [f32],
+}
+
 /// Draft `section` against `grounding`/`gold`, revising until the score meets
 /// `settings.revise_threshold` or `settings.max_revise_iterations` is
 /// exhausted, keeping the best-scoring attempt either way.
@@ -126,11 +138,11 @@ async fn revise_loop(
     llm: &Llm,
     knowledge: &Knowledge,
     section: &OutlineSection,
-    grounding: &[String],
     prior: &str,
     settings: &ComposeSettings,
-    gold: &[f32],
+    target: ReviseTarget<'_>,
 ) -> Result<SectionDraft, ComposeError> {
+    let ReviseTarget { grounding, gold } = target;
     let mut best: Option<ScoredAttempt> = None;
 
     for _iteration in 0..=settings.max_revise_iterations {
