@@ -34,26 +34,24 @@ jobs:
           ref: v1.9.3
           path: xberg-io/liter-llm
 
+      # rust-toolchain.toml pins the channel and components; rustup installs it from there. ~keep
       - name: Install Rust
+        working-directory: monomyth
         run: |
-          rustup toolchain install 1.91 --profile minimal --component rustfmt --component clippy
-          rustup default 1.91
+          rustup toolchain install
           rustc --version
           cargo --version
 
-      - name: Install cargo policy tools
-        run: |
-          cargo install cargo-deny --version 0.19.6 --locked
-          cargo install cargo-audit --version 0.22.1 --locked
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+        with:
+          working-directory: monomyth
+          tools: github:Goldziher/poly cargo-deny aqua:rustsec/rustsec/cargo-audit
 
-      - name: Install poly
-        run: |
-          curl -LsSf -o poly.tar.gz \
-            https://github.com/Goldziher/poly/releases/download/v0.11.0/poly-0.11.0-x86_64-unknown-linux-gnu.tar.gz
-          echo "97e20117dd907fd0e4ef065cfd7824ba0da96e444cee596cc3bbd05dcf53eeee  poly.tar.gz" | sha256sum -c -
-          tar -xzf poly.tar.gz
-          sudo install -m 0755 poly /usr/local/bin/poly
-          poly --version
+      - name: Check toolchain
+        uses: xberg-io/actions/check-toolchain@v1
+        with:
+          working-directory: monomyth
 
       - name: Cargo metadata
         working-directory: monomyth
