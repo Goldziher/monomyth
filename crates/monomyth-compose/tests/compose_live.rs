@@ -59,7 +59,7 @@ async fn records_a_compose_cassette_against_live_gemini() {
         .expect("compose succeeds against live Gemini");
 
     assert_eq!(doc.sections().len(), outline.len());
-    assert!(!doc.prose().is_empty());
+    assert_ne!(doc.prose(), "");
 
     // Force the `RecordingBackend`'s drop-flush before inspecting the cassette ~keep
     // file it wrote. ~keep

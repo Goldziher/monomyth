@@ -553,10 +553,14 @@ impl Knowledge {
     #[cfg_attr(not(feature = "rag-ner-llm"), allow(unused_variables))]
     // `async` is genuinely needed: `xberg::detect_entities` is async and is ~keep
     // `.await`ed in the `rag-ner-llm` body below. With the feature off there is ~keep
-    // no await in this stub body, so `clippy::unused_async` fires spuriously — ~keep
-    // allow it only in that configuration rather than dropping `async` and ~keep
-    // forcing every call site to branch on the feature. ~keep
-    #[cfg_attr(not(feature = "rag-ner-llm"), allow(clippy::unused_async))]
+    // no await in this stub body, so `clippy::unused_async` (and, in a trait impl, ~keep
+    // `clippy::unused_async_trait_impl`) fires spuriously — allow them only in that ~keep
+    // configuration rather than dropping `async` and forcing every call site to ~keep
+    // branch on the feature. ~keep
+    #[cfg_attr(
+        not(feature = "rag-ner-llm"),
+        allow(clippy::unused_async, clippy::unused_async_trait_impl)
+    )]
     async fn extract_entities_best_effort(&self, text: &str, context: &str) -> Vec<String> {
         if !self.entity_enrichment.enabled {
             return Vec::new();

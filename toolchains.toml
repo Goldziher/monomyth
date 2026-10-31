@@ -1,6 +1,2 @@
 baseline = "v1.12.3"
 task_sets = ["governance"]
-
-[overrides.rust]
-version = "1.96"
-reason = "clippy 1.99 adds double_must_use, assert_is_empty and unused_async_trait_impl findings across the workspace; fix them before moving to the baseline"

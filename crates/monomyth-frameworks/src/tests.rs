@@ -228,7 +228,7 @@ fn arc_crosswalk_resolves_to_typed_functions() {
         arc_functions(MonomythStage::CallToAdventure),
         &[ProppFunction::VillainyOrLack, ProppFunction::Mediation],
     );
-    assert!(arc_functions(MonomythStage::RefusalOfTheCall).is_empty());
+    assert_eq!(arc_functions(MonomythStage::RefusalOfTheCall), []);
 }
 
 #[test]

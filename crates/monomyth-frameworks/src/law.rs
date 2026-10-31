@@ -248,7 +248,7 @@ mod tests {
             law.items.iter().map(|item| item.id).collect::<Vec<_>>(),
             vec![1, 2]
         );
-        assert!(!law.synthesis.reviewed_by.trim().is_empty());
+        assert_ne!(law.synthesis.reviewed_by.trim(), "");
         assert!(
             law.items[0].fields.contains_key("phase_order"),
             "law-specific fields must be captured via #[serde(flatten)]"

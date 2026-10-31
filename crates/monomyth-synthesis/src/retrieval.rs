@@ -179,7 +179,10 @@ mod tests {
             .await
             .expect("gather_grounding succeeds even with no matches");
 
-        assert!(grounding.is_empty());
+        assert!(
+            grounding.is_empty(),
+            "expected no grounding, got {grounding:?}"
+        );
     }
 
     /// [`Knowledge::ingest`]/[`Knowledge::ingest_reference`] always stamp a

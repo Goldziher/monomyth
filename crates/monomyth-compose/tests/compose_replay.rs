@@ -41,5 +41,5 @@ async fn replays_the_compose_cassette_offline() {
         .expect("compose succeeds against the replayed cassette");
 
     assert_eq!(doc.sections().len(), outline.len());
-    assert!(!doc.prose().is_empty());
+    assert_ne!(doc.prose(), "");
 }

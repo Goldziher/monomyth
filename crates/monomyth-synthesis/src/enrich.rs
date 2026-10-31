@@ -104,6 +104,6 @@ mod tests {
     #[test]
     fn from_key_rejects_an_unknown_framework() {
         assert_eq!(CoverageFramework::from_key("bogus"), None);
-        assert!(!CoverageFramework::known_keys().is_empty());
+        assert_ne!(CoverageFramework::known_keys(), &[] as &[&str]);
     }
 }
