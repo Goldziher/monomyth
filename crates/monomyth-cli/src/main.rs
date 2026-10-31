@@ -3,6 +3,8 @@
 //! This file is deliberately thin. All logic lives in [`commands`] and [`play`]
 //! so it stays unit-testable without spawning a process or hitting a provider.
 
+use std::path::Path;
+
 use anyhow::Result;
 use clap::Parser;
 
@@ -50,15 +52,7 @@ async fn main() -> Result<()> {
             commands::run_ingest(&source, content, reference, title, url, &cli.db).await
         }
         Command::Retrieve { query, top_k } => commands::run_retrieve(&query, top_k, &cli.db).await,
-        Command::Corpus { command } => match command {
-            CorpusCommand::Build { source, limit } => {
-                commands::run_corpus_build(source, limit, &cli.db).await
-            }
-            CorpusCommand::Audit {} => commands::run_corpus_audit(&cli.db).await,
-            CorpusCommand::Inspect { source, limit } => {
-                commands::run_corpus_inspect(source, limit, &cli.db).await
-            }
-        },
+        Command::Corpus { command } => run_corpus(command, &cli.db).await,
         Command::Eval {
             work,
             extractor,
@@ -70,46 +64,64 @@ async fn main() -> Result<()> {
             benchmarks_dir,
             out,
         } => evaluate::run_finetune_export(&work, &benchmarks_dir, out),
-        Command::Synthesize { command } => match command {
-            SynthesizeCommand::Law {
-                law,
-                domain,
-                query,
-                top_k,
-                model,
-                coverage_framework,
-                out,
-            } => {
-                synthesize::run_synthesize_law(
-                    synthesize::SynthesizeLawArgs {
-                        law,
-                        domain,
-                        query,
-                        top_k,
-                        model,
-                        coverage_framework,
-                        out,
-                    },
-                    &cli.db,
-                )
-                .await
-            }
-            SynthesizeCommand::Promote {
-                candidate,
-                reviewed_by,
-                laws_dir,
-            } => synthesize::run_synthesize_promote(synthesize::SynthesizePromoteArgs {
-                candidate,
-                reviewed_by,
-                laws_dir,
-            }),
-        },
+        Command::Synthesize { command } => run_synthesize(command, &cli.db).await,
         Command::Compose { seed, out, json } => {
             compose::run_compose(seed, out, json, cli.model, &cli.db).await
         }
         Command::Extract { input, out, genre } => {
             extract::run_extract(input, out, genre, cli.model).await
         }
+    }
+}
+
+/// Dispatch a `corpus` subcommand.
+async fn run_corpus(command: CorpusCommand, db: &Path) -> Result<()> {
+    match command {
+        CorpusCommand::Build { source, limit } => {
+            commands::run_corpus_build(source, limit, db).await
+        }
+        CorpusCommand::Audit {} => commands::run_corpus_audit(db).await,
+        CorpusCommand::Inspect { source, limit } => {
+            commands::run_corpus_inspect(source, limit, db).await
+        }
+    }
+}
+
+/// Dispatch a `synthesize` subcommand.
+async fn run_synthesize(command: SynthesizeCommand, db: &Path) -> Result<()> {
+    match command {
+        SynthesizeCommand::Law {
+            law,
+            domain,
+            query,
+            top_k,
+            model,
+            coverage_framework,
+            out,
+        } => {
+            synthesize::run_synthesize_law(
+                synthesize::SynthesizeLawArgs {
+                    law,
+                    domain,
+                    query,
+                    top_k,
+                    model,
+                    coverage_framework,
+                    out,
+                },
+                db,
+            )
+            .await
+        }
+        SynthesizeCommand::Promote {
+            candidate,
+            reviewed_by,
+            laws_dir,
+        } => synthesize::run_synthesize_promote(synthesize::SynthesizePromoteArgs {
+            candidate,
+            reviewed_by,
+            laws_dir,
+        }),
     }
 }
 

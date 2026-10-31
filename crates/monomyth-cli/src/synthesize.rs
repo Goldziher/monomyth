@@ -239,6 +239,32 @@ pub(crate) struct SynthesizeLawArgs {
     pub(crate) out: PathBuf,
 }
 
+/// The coverage sub-queries for `--coverage-framework`, or none when it is unset.
+///
+/// # Errors
+///
+/// Fails on an unknown framework key, listing the known ones.
+fn resolve_coverage_sub_queries(coverage_framework: Option<&str>) -> Result<Vec<String>> {
+    let Some(key) = coverage_framework else {
+        return Ok(Vec::new());
+    };
+    let framework = CoverageFramework::from_key(key).with_context(|| {
+        format!(
+            "unknown --coverage-framework {key:?}; known: {}",
+            CoverageFramework::known_keys().join(", ")
+        )
+    })?;
+    Ok(coverage_sub_queries(framework))
+}
+
+/// Today's UTC date as `YYYY-MM-DD`, the candidate law's `generated` stamp.
+fn today_utc() -> Result<String> {
+    let date_format = format_description!("[year]-[month]-[day]");
+    OffsetDateTime::now_utc()
+        .format(&date_format)
+        .context("formatting today's date")
+}
+
 /// Handle `synthesize law`: draft a pre-review candidate law artifact and
 /// write it to `out` for human review.
 ///
@@ -270,18 +296,7 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
     // Resolve coverage enrichment before any network/db work, mirroring the ~keep
     // forbidden-directory guard's fail-fast: a typo'd framework name should ~keep
     // error immediately, not after spending a retrieval + LLM call. ~keep
-    let sub_queries = match coverage_framework.as_deref() {
-        None => Vec::new(),
-        Some(key) => {
-            let framework = CoverageFramework::from_key(key).with_context(|| {
-                format!(
-                    "unknown --coverage-framework {key:?}; known: {}",
-                    CoverageFramework::known_keys().join(", ")
-                )
-            })?;
-            coverage_sub_queries(framework)
-        }
-    };
+    let sub_queries = resolve_coverage_sub_queries(coverage_framework.as_deref())?;
 
     let config = ConfigResolver::discover()
         .context("resolving configuration")?
@@ -300,10 +315,7 @@ pub(crate) async fn run_synthesize_law(args: SynthesizeLawArgs, db: &Path) -> Re
         .await
         .context("opening the knowledge store")?;
 
-    let date_format = format_description!("[year]-[month]-[day]");
-    let generated = OffsetDateTime::now_utc()
-        .format(&date_format)
-        .context("formatting today's date")?;
+    let generated = today_utc()?;
 
     let request = DraftRequest {
         law_id: law.clone(),
@@ -647,6 +659,42 @@ pub(crate) struct SynthesizePromoteArgs {
     pub(crate) laws_dir: PathBuf,
 }
 
+/// Re-run the anti-leak gate against the sidecar's recorded grounding passages.
+///
+/// # Errors
+///
+/// Fails when the sidecar records no passage wide enough for the shingle check (an empty
+/// or tampered array must not silently disable the gate), or when the candidate repeats
+/// recorded source wording verbatim.
+fn reverify_anti_leak(
+    artifact: &LawArtifact,
+    sidecar: &SidecarReviewContext,
+    sidecar_path: &Path,
+) -> Result<()> {
+    let reference_chunks = reference_chunks(sidecar);
+    let has_usable_passage = reference_chunks
+        .iter()
+        .any(|(_, text)| text.split_whitespace().count() >= MIN_SHINGLE_WORDS);
+    if !has_usable_passage {
+        bail!(
+            "cannot re-verify law {:?}: sidecar {} records no usable grounding passages (empty, \
+             or every passage is under the {MIN_SHINGLE_WORDS}-word anti-leak shingle width); an \
+             empty or tampered passages array must not silently disable the anti-leak gate",
+            artifact.law,
+            sidecar_path.display()
+        );
+    }
+
+    verify_no_verbatim(&candidate_leak_texts(artifact), &reference_chunks).with_context(|| {
+        format!(
+            "anti-leak re-check failed for law {:?}; a human edit must not reintroduce verbatim \
+             wording from the recorded sources",
+            artifact.law
+        )
+    })?;
+    Ok(())
+}
+
 /// Handle `synthesize promote`: stamp a human-reviewed candidate, re-verify
 /// it, and promote it into `laws_dir` (ADR-0016 Phase 2e).
 ///
@@ -722,27 +770,7 @@ pub(crate) fn run_synthesize_promote(args: SynthesizePromoteArgs) -> Result<()> 
         .trim()
         .clone_into(&mut artifact.synthesis.reviewed_by);
 
-    let reference_chunks = reference_chunks(&sidecar);
-    let has_usable_passage = reference_chunks
-        .iter()
-        .any(|(_, text)| text.split_whitespace().count() >= MIN_SHINGLE_WORDS);
-    if !has_usable_passage {
-        bail!(
-            "cannot re-verify law {:?}: sidecar {} records no usable grounding passages (empty, \
-             or every passage is under the {MIN_SHINGLE_WORDS}-word anti-leak shingle width); an \
-             empty or tampered passages array must not silently disable the anti-leak gate",
-            artifact.law,
-            sidecar_path.display()
-        );
-    }
-
-    verify_no_verbatim(&candidate_leak_texts(&artifact), &reference_chunks).with_context(|| {
-        format!(
-            "anti-leak re-check failed for law {:?}; a human edit must not reintroduce verbatim \
-             wording from the recorded sources",
-            artifact.law
-        )
-    })?;
+    reverify_anti_leak(&artifact, &sidecar, &sidecar_path)?;
 
     let stamped_json =
         serde_json::to_string_pretty(&artifact).context("serializing the stamped law artifact")?;
