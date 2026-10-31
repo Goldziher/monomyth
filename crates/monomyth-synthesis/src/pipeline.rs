@@ -226,21 +226,7 @@ pub async fn draft_law(
 ) -> Result<DraftedLaw, SynthesisError> {
     let config = &request.loop_config;
 
-    let mut queries = vec![request.query.clone()];
-    queries.extend(request.sub_queries.iter().cloned());
-    let mut grounding = gather_grounding(
-        knowledge,
-        &queries,
-        config.per_query_top_k,
-        config.max_grounding,
-    )
-    .await?;
-
-    if grounding.is_empty() {
-        return Err(SynthesisError::NoReferenceGrounding {
-            query: request.query.clone(),
-        });
-    }
+    let mut grounding = initial_grounding(knowledge, request).await?;
 
     let initial_prompt = build_distillation_prompt(&grounding);
     let Generated {
@@ -264,19 +250,13 @@ pub async fn draft_law(
         let bar =
             config.initial_passing_score + f64::from(iteration_index) * config.score_increment;
 
-        let pre = if framework_stages.is_empty() {
-            None
-        } else {
-            Some(pre_score(&candidate, &grounding, &framework_stages))
-        };
-
+        let pre = advisory_pre_score(&candidate, &grounding, &framework_stages);
         let verdict = judge_candidate(llm, &candidate, &grounding, DEFAULT_CRITERIA).await?;
         let score = weighted_score(&verdict, DEFAULT_CRITERIA);
-
-        let is_new_best = best
+        if best
             .as_ref()
-            .is_none_or(|current_best| score > current_best.score);
-        if is_new_best {
+            .is_none_or(|current_best| score > current_best.score)
+        {
             best = Some(IterationResult {
                 candidate: candidate.clone(),
                 usage: current_usage.clone(),
@@ -295,17 +275,7 @@ pub async fn draft_law(
             break;
         }
 
-        if !verdict.missing_phases.is_empty() {
-            let targeted = gather_grounding(
-                knowledge,
-                &verdict.missing_phases,
-                config.per_query_top_k,
-                config.max_grounding,
-            )
-            .await?;
-            grounding = merge_grounding(grounding, targeted, config.max_grounding);
-        }
-
+        grounding = extend_grounding_for(knowledge, config, &verdict, grounding).await?;
         let refine_prompt = build_refine_prompt(&candidate, &verdict, &grounding);
         let Generated {
             value: refined,
@@ -317,13 +287,47 @@ pub async fn draft_law(
         current_usage = refined_usage;
     }
 
+    finish_draft(
+        request,
+        best,
+        candidate,
+        current_usage,
+        grounding,
+        iterations,
+    )
+}
+
+/// The advisory pre-score against the targeted framework stages, or `None` when
+/// the run targeted none (nothing to measure against).
+fn advisory_pre_score(
+    candidate: &CandidateLaw,
+    grounding: &[Passage],
+    framework_stages: &[&str],
+) -> Option<PreScore> {
+    (!framework_stages.is_empty()).then(|| pre_score(candidate, grounding, framework_stages))
+}
+
+/// Run the anti-leak gate on the best candidate (or `candidate`, unscored, when no
+/// iteration ran) and stamp it into the drafted law.
+///
+/// # Errors
+///
+/// [`SynthesisError::VerbatimOverlap`] when the candidate repeats grounding verbatim.
+fn finish_draft(
+    request: &DraftRequest,
+    best: Option<IterationResult>,
+    candidate: CandidateLaw,
+    usage: Option<Usage>,
+    grounding: Vec<Passage>,
+    iterations: u32,
+) -> Result<DraftedLaw, SynthesisError> {
     let IterationResult {
         candidate: best_candidate,
         usage: best_usage,
         score: final_score,
         verdict: best_verdict,
         pre: best_pre,
-    } = best.unwrap_or_else(|| IterationResult::unscored(candidate, current_usage));
+    } = best.unwrap_or_else(|| IterationResult::unscored(candidate, usage));
 
     verify_candidate_against_passages(&best_candidate, &grounding)?;
 
@@ -341,6 +345,60 @@ pub async fn draft_law(
         verdict: Some(best_verdict),
         pre_score: best_pre,
     })
+}
+
+/// Grounding for `request.query` and its sub-queries.
+///
+/// # Errors
+///
+/// [`SynthesisError::NoReferenceGrounding`] when no passage is found, plus
+/// retrieval failures.
+async fn initial_grounding(
+    knowledge: &Knowledge,
+    request: &DraftRequest,
+) -> Result<Vec<Passage>, SynthesisError> {
+    let config = &request.loop_config;
+    let mut queries = vec![request.query.clone()];
+    queries.extend(request.sub_queries.iter().cloned());
+    let grounding = gather_grounding(
+        knowledge,
+        &queries,
+        config.per_query_top_k,
+        config.max_grounding,
+    )
+    .await?;
+
+    if grounding.is_empty() {
+        return Err(SynthesisError::NoReferenceGrounding {
+            query: request.query.clone(),
+        });
+    }
+    Ok(grounding)
+}
+
+/// `grounding` extended with targeted passages for the phases `verdict` names
+/// as missing; unchanged when it names none.
+///
+/// # Errors
+///
+/// Retrieval failures.
+async fn extend_grounding_for(
+    knowledge: &Knowledge,
+    config: &LoopConfig,
+    verdict: &JudgeVerdict,
+    grounding: Vec<Passage>,
+) -> Result<Vec<Passage>, SynthesisError> {
+    if verdict.missing_phases.is_empty() {
+        return Ok(grounding);
+    }
+    let targeted = gather_grounding(
+        knowledge,
+        &verdict.missing_phases,
+        config.per_query_top_k,
+        config.max_grounding,
+    )
+    .await?;
+    Ok(merge_grounding(grounding, targeted, config.max_grounding))
 }
 
 /// Merge `additional` passages into `existing`, deduplicating by
