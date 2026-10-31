@@ -11,3 +11,52 @@ pnpm = "12.15.0"
 cargo-deny = "0.20.2"
 # Repository-owned: the baseline does not pin cargo-audit. ~keep
 "aqua:rustsec/rustsec/cargo-audit" = "0.22.1"
+
+[tasks.setup]
+description = "Install the mise toolchain, fetch dependencies and do a first debug build"
+run = ["mise install", "cargo fetch", "cargo build --workspace"]
+
+[tasks.build]
+description = "Build the whole workspace"
+run = "cargo build --workspace"
+
+[tasks.test]
+description = "Run the full test suite"
+run = "cargo test --workspace"
+
+[tasks.format]
+description = "Apply Rust and poly formatting in place"
+run = ["cargo fmt --all", "poly fmt --fix ."]
+
+[tasks.lint]
+description = "Clippy (deny warnings) plus poly lint"
+run = ["cargo clippy --workspace --all-targets --tests -- -D warnings", "poly lint ."]
+
+[tasks.bench]
+description = "Run the Criterion microbenchmarks"
+run = "cargo bench --workspace"
+
+[tasks.check]
+description = "The full pre-commit gate: format check, lint and tests"
+run = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --workspace --all-targets --tests -- -D warnings",
+  "cargo test --workspace",
+  "poly lint .",
+]
+
+[tasks."governance:generate"]
+description = "Generate native AI governance outputs"
+run = "npx -y ai-rulez@latest generate --no-local --strict-config"
+
+[tasks."governance:check"]
+description = "Validate native AI governance and freshness"
+run = [
+  "npx -y ai-rulez@latest migrate okf --check",
+  "npx -y ai-rulez@latest validate --strict --no-local",
+  "npx -y ai-rulez@latest lock --check",
+  "npx -y ai-rulez@latest generate --check --no-local --strict-config",
+]
+
+[task_config]
+includes = ["mise-tasks", "mise-tasks/shared.toml"]

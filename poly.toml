@@ -8,6 +8,9 @@ trim_trailing_whitespace = true
 [discovery]
 exclude = [
   ".ai-rulez.bak-okf-*/**",
+  # toolchains.py sync writes these and its check compares them byte for byte. ~keep
+  "/mise-tasks/shared.toml",
+  "/mise-tasks/.shared/**",
   "/AGENTS.md",
   "/CLAUDE.md",
   "/.ai-rulez/.generated-manifest.json",
@@ -183,7 +186,6 @@ enabled = true
 "deny.toml" = ["comment", "doc-comment"]
 ".cargo/audit.toml" = ["comment", "doc-comment"]
 "poly.toml" = ["comment", "doc-comment"]
-"Taskfile.yaml" = ["comment", "doc-comment"]
 "monomyth.example.toml" = ["comment", "doc-comment"]
 "e2e/**" = ["comment", "doc-comment"]
 "**/e2e/**" = ["comment", "doc-comment"]
