@@ -432,40 +432,14 @@ impl NarrativeStructure {
                 self.retarget_edge(*source, *old_target, *new_target)?;
                 Ok(EditOutcome::Applied)
             }
-            NarrativeEdit::SetEdgeKind {
-                source,
-                target,
-                kind,
-            } => {
-                self.edge_mut(*source, *target)?.kind = *kind;
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::SetEdgeGuard {
-                source,
-                target,
-                guard,
-            } => {
-                self.edge_mut(*source, *target)?.guard.clone_from(guard);
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::RelabelNode { node, label } => {
-                self.node_mut(*node)?.label.clone_from(label);
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::SetNodeStage { node, stage } => {
-                self.node_mut(*node)?.stage.clone_from(stage);
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::SetNodeSituation { node, situation } => {
-                self.node_mut(*node)?.situation.clone_from(situation);
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::SetNodeFunctions { node, functions } => {
-                self.node_mut(*node)?.functions.clone_from(functions);
-                Ok(EditOutcome::Applied)
-            }
-            NarrativeEdit::SetNodeMotifs { node, motifs } => {
-                self.node_mut(*node)?.motifs.clone_from(motifs);
+            NarrativeEdit::SetEdgeKind { .. }
+            | NarrativeEdit::SetEdgeGuard { .. }
+            | NarrativeEdit::RelabelNode { .. }
+            | NarrativeEdit::SetNodeStage { .. }
+            | NarrativeEdit::SetNodeSituation { .. }
+            | NarrativeEdit::SetNodeFunctions { .. }
+            | NarrativeEdit::SetNodeMotifs { .. } => {
+                self.apply_attribute_edit(edit)?;
                 Ok(EditOutcome::Applied)
             }
             NarrativeEdit::MarkEnding { node } => {
@@ -496,6 +470,51 @@ impl NarrativeStructure {
                 let id = self.move_beat(*node, *source, *target)?;
                 Ok(EditOutcome::NodeAdded(id))
             }
+        }
+    }
+
+    /// Apply an edit that changes an edge's or node's attributes in place.
+    ///
+    /// [`apply_edit`](Self::apply_edit) routes only those variants here.
+    fn apply_attribute_edit(&mut self, edit: &NarrativeEdit) -> Result<(), EditError> {
+        match edit {
+            NarrativeEdit::SetEdgeKind {
+                source,
+                target,
+                kind,
+            } => {
+                self.edge_mut(*source, *target)?.kind = *kind;
+                Ok(())
+            }
+            NarrativeEdit::SetEdgeGuard {
+                source,
+                target,
+                guard,
+            } => {
+                self.edge_mut(*source, *target)?.guard.clone_from(guard);
+                Ok(())
+            }
+            NarrativeEdit::RelabelNode { node, label } => {
+                self.node_mut(*node)?.label.clone_from(label);
+                Ok(())
+            }
+            NarrativeEdit::SetNodeStage { node, stage } => {
+                self.node_mut(*node)?.stage.clone_from(stage);
+                Ok(())
+            }
+            NarrativeEdit::SetNodeSituation { node, situation } => {
+                self.node_mut(*node)?.situation.clone_from(situation);
+                Ok(())
+            }
+            NarrativeEdit::SetNodeFunctions { node, functions } => {
+                self.node_mut(*node)?.functions.clone_from(functions);
+                Ok(())
+            }
+            NarrativeEdit::SetNodeMotifs { node, motifs } => {
+                self.node_mut(*node)?.motifs.clone_from(motifs);
+                Ok(())
+            }
+            _ => unreachable!("apply_edit routes only attribute edits here"),
         }
     }
 

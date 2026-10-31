@@ -465,17 +465,18 @@ impl NarrativeStructure {
             .collect();
 
         let mut order = Vec::with_capacity(self.nodes.len());
-        while let Some(&next) = ready.iter().next() {
-            ready.remove(&next);
+        while let Some(next) = ready.pop_first() {
             order.push(next);
-            if let Some(node) = self.nodes.get(next) {
-                for edge in &node.out {
-                    if let Some(degree) = in_degree.get_mut(&edge.target) {
-                        *degree -= 1;
-                        if *degree == 0 {
-                            ready.insert(edge.target);
-                        }
-                    }
+            let Some(node) = self.nodes.get(next) else {
+                continue;
+            };
+            for edge in &node.out {
+                let Some(degree) = in_degree.get_mut(&edge.target) else {
+                    continue;
+                };
+                *degree -= 1;
+                if *degree == 0 {
+                    ready.insert(edge.target);
                 }
             }
         }
