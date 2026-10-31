@@ -140,6 +140,15 @@ impl RetrieveQuery {
                 got: vec.len() as u32,
             });
         }
+        self.validate_mode_inputs()?;
+        if let Some(filter) = &self.filter {
+            filter.validate()?;
+        }
+        Ok(())
+    }
+
+    /// Check that the inputs `self.mode` needs are present and well formed.
+    fn validate_mode_inputs(&self) -> RagResult<()> {
         match self.mode {
             RetrieveMode::Vector => {
                 if self.query_text.is_none() && self.query_vector.is_none() {
@@ -198,9 +207,6 @@ impl RetrieveQuery {
                     ));
                 }
             }
-        }
-        if let Some(filter) = &self.filter {
-            filter.validate()?;
         }
         Ok(())
     }
