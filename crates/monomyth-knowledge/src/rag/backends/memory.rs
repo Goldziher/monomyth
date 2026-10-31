@@ -181,6 +181,70 @@ fn eval_filter(filter: &Filter, doc: &DocumentRecord, chunk: &ChunkRecord) -> bo
     }
 }
 
+/// Score `candidates` against `query` in its (in-memory supported) retrieval mode.
+fn score_candidates(
+    coll: &Collection,
+    spec: &CollectionSpec,
+    candidates: &[&StoredChunk],
+    query: &RetrieveQuery,
+) -> RagResult<Vec<RetrievedChunk>> {
+    let scored = match query.mode {
+        RetrieveMode::Vector => {
+            let query_vector = query.query_vector.as_ref().ok_or_else(|| {
+                RagError::InvalidQuery(
+                    "in-memory backend cannot embed text; supply query_vector".to_string(),
+                )
+            })?;
+            candidates
+                .iter()
+                .map(|c| {
+                    let s = score(spec.distance_metric, query_vector, &c.record.embedding);
+                    to_retrieved_chunk(coll, c, query, s, PrimaryScore::Vector(s))
+                })
+                .collect()
+        }
+        RetrieveMode::Sparse => {
+            let query_sparse = query
+                .query_sparse
+                .as_ref()
+                .expect("validated: query_sparse present");
+            candidates
+                .iter()
+                .filter_map(|c| {
+                    let doc_sparse = c.record.sparse_embedding.as_ref()?;
+                    let s = sparse_dot(query_sparse, doc_sparse);
+                    (s > 0.0)
+                        .then(|| to_retrieved_chunk(coll, c, query, s, PrimaryScore::Sparse(s)))
+                })
+                .collect()
+        }
+        RetrieveMode::LateInteraction => {
+            let query_mv = query
+                .query_multi_vector
+                .as_ref()
+                .expect("validated: query_multi_vector present");
+            candidates
+                .iter()
+                .filter_map(|c| {
+                    let doc_mv = c.record.multi_vector.as_ref()?;
+                    let s = max_sim(query_mv, doc_mv);
+                    Some(to_retrieved_chunk(
+                        coll,
+                        c,
+                        query,
+                        s,
+                        PrimaryScore::LateInteraction(s),
+                    ))
+                })
+                .collect()
+        }
+        RetrieveMode::FullText | RetrieveMode::Hybrid => {
+            unreachable!("guarded by capability check above")
+        }
+    };
+    Ok(scored)
+}
+
 /// Build a [`RetrievedChunk`] from a stored chunk and a computed score.
 fn to_retrieved_chunk(
     coll: &Collection,
@@ -398,60 +462,7 @@ impl VectorStore for InMemoryVectorStore {
             })
             .collect();
 
-        let mut scored: Vec<RetrievedChunk> = match query.mode {
-            RetrieveMode::Vector => {
-                let query_vector = query.query_vector.as_ref().ok_or_else(|| {
-                    RagError::InvalidQuery(
-                        "in-memory backend cannot embed text; supply query_vector".to_string(),
-                    )
-                })?;
-                candidates
-                    .iter()
-                    .map(|c| {
-                        let s = score(spec.distance_metric, query_vector, &c.record.embedding);
-                        to_retrieved_chunk(coll, c, query, s, PrimaryScore::Vector(s))
-                    })
-                    .collect()
-            }
-            RetrieveMode::Sparse => {
-                let query_sparse = query
-                    .query_sparse
-                    .as_ref()
-                    .expect("validated: query_sparse present");
-                candidates
-                    .iter()
-                    .filter_map(|c| {
-                        let doc_sparse = c.record.sparse_embedding.as_ref()?;
-                        let s = sparse_dot(query_sparse, doc_sparse);
-                        (s > 0.0)
-                            .then(|| to_retrieved_chunk(coll, c, query, s, PrimaryScore::Sparse(s)))
-                    })
-                    .collect()
-            }
-            RetrieveMode::LateInteraction => {
-                let query_mv = query
-                    .query_multi_vector
-                    .as_ref()
-                    .expect("validated: query_multi_vector present");
-                candidates
-                    .iter()
-                    .filter_map(|c| {
-                        let doc_mv = c.record.multi_vector.as_ref()?;
-                        let s = max_sim(query_mv, doc_mv);
-                        Some(to_retrieved_chunk(
-                            coll,
-                            c,
-                            query,
-                            s,
-                            PrimaryScore::LateInteraction(s),
-                        ))
-                    })
-                    .collect()
-            }
-            RetrieveMode::FullText | RetrieveMode::Hybrid => {
-                unreachable!("guarded by capability check above")
-            }
-        };
+        let mut scored = score_candidates(coll, spec, &candidates, query)?;
 
         scored.sort_by(|a, b| {
             b.score
