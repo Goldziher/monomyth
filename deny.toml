@@ -27,6 +27,10 @@ yanked = "deny"
 ignore = [
   # Unmaintained transitive deps pulled through xberg's tokenizers/hf-hub/indicatif chain.
   "RUSTSEC-2024-0436", # paste — no longer maintained
+  # unsafe-libyaml is unmaintained (no vulnerability), reached only through xberg's serde_yaml_ng.
+  # xberg >= 1.3 replaces it with yaml_serde but requires Rust 1.92, above this workspace's 1.91
+  # rust-version. Revisit when rust-version moves to 1.92 and xberg can be updated.
+  "RUSTSEC-2024-0449", # unsafe-libyaml — unmaintained
   # quick-xml DoS advisories via opendal-core (O(N²) attribute scan / unbounded namespace
   # allocation on untrusted XML). opendal-core pulls quick-xml unconditionally, so it is in the
   # graph, but the vulnerable parsers are called only by opendal's XML object-store services

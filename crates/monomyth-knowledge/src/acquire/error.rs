@@ -76,9 +76,10 @@ pub enum AcquireError {
     Zip {
         /// What operation on the archive failed.
         what: &'static str,
-        /// The underlying `zip` crate error.
+        /// The underlying `zip` crate error, boxed: zip 9's error is large enough to
+        /// bloat every `Result` that carries an `AcquireError`.
         #[source]
-        source: zip::result::ZipError,
+        source: Box<zip::result::ZipError>,
     },
 
     /// A zip archive member (or the running total across members)
@@ -94,4 +95,14 @@ pub enum AcquireError {
         /// The byte cap that was exceeded.
         limit: u64,
     },
+}
+
+impl AcquireError {
+    /// An [`AcquireError::Zip`] for a failed `what` operation.
+    pub(crate) fn zip(what: &'static str, source: zip::result::ZipError) -> Self {
+        Self::Zip {
+            what,
+            source: Box::new(source),
+        }
+    }
 }

@@ -166,25 +166,24 @@ fn extract_zip_text_capped(
     per_member_cap: u64,
     total_cap: u64,
 ) -> Result<String, AcquireError> {
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|source| AcquireError::Zip {
-            what: "opening zip archive",
-            source,
-        })?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|e| AcquireError::zip("opening zip archive", e))?;
 
     let mut out = String::new();
     let mut total_read: u64 = 0;
     for index in 0..archive.len() {
         let mut member = archive
             .by_index(index)
-            .map_err(|source| AcquireError::Zip {
-                what: "reading zip member",
-                source,
-            })?;
-        if !member.is_file() || !is_text_like(member.name()) {
+            .map_err(|e| AcquireError::zip("reading zip member", e))?;
+        // zip 9 decodes member names fallibly; a name it cannot decode is as fatal ~keep
+        // as any other malformed member. ~keep
+        let name = member
+            .name()
+            .map_err(|e| AcquireError::zip("decoding zip member name", e))?
+            .into_owned();
+        if !member.is_file() || !is_text_like(&name) {
             continue;
         }
-        let name = member.name().to_owned();
 
         if total_read >= total_cap {
             return Err(AcquireError::ZipTooLarge {
@@ -201,10 +200,7 @@ fn extract_zip_text_capped(
         (&mut member)
             .take(per_member_cap.saturating_add(1))
             .read_to_end(&mut raw)
-            .map_err(|error| AcquireError::Zip {
-                what: "reading zip member",
-                source: zip::result::ZipError::Io(error),
-            })?;
+            .map_err(|e| AcquireError::zip("reading zip member", zip::result::ZipError::Io(e)))?;
         if u64::try_from(raw.len()).unwrap_or(u64::MAX) > per_member_cap {
             return Err(AcquireError::ZipTooLarge {
                 what: format!("decompressed zip member '{name}'"),
@@ -220,12 +216,12 @@ fn extract_zip_text_capped(
             });
         }
 
-        let content = String::from_utf8(raw).map_err(|error| AcquireError::Zip {
-            what: "decoding zip member as UTF-8",
-            source: zip::result::ZipError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                error,
-            )),
+        let content = String::from_utf8(raw).map_err(|e| {
+            let invalid = std::io::Error::new(std::io::ErrorKind::InvalidData, e);
+            AcquireError::zip(
+                "decoding zip member as UTF-8",
+                zip::result::ZipError::Io(invalid),
+            )
         })?;
         out.push_str("== ");
         out.push_str(&name);
