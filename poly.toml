@@ -175,6 +175,10 @@ enabled = true
 enabled = true
 
 [per-file-ignores]
+# An integration test's length is its scenario: one seeded run asserted step by step. Splitting
+# it to meet a production function-length limit scatters the scenario across helpers. Only
+# function length is relaxed; file size and complexity still apply to test code.
+"crates/*/tests/**" = ["function-too-long"]
 # basemind.toml is a tool-generated config whose inline comments document each
 # option; the uncomment rule must not treat that documentation as removable.
 "basemind.toml" = ["comment", "doc-comment"]
