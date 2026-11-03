@@ -31,6 +31,7 @@ serialized world/story schema may change between releases.
 
 ### Changed
 
+- Minimum supported versions raised: Rust 1.99.
 - The RAG base layer (formerly the standalone `xberg-rag` crate) now lives in-tree as
   `monomyth-knowledge`'s `rag` submodule, consuming published `xberg` from crates.io — removing the
   last relative-path dependency.
